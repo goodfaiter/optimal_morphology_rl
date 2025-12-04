@@ -1,0 +1,6 @@
+[submodule "tools/vlearn"]
+	path = tools/vlearn
+	url = git@github.com:vsim-tech/vlearn.git
+[submodule "tools/rl_games"]
+	path = tools/rl_games
+	url = https://github.com/Denys88/rl_games.git
