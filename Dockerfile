@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt update && apt install -y python3-pip git nano mesa-utils
 
 # Install vlearn dependencies
-RUN apt update && apt install -y --no-install-recommends 
+RUN apt update && apt install -y --no-install-recommends \
     curl \
     wget \
     gpg \
@@ -18,7 +18,7 @@ RUN apt update && apt install -y --no-install-recommends
     libglu1-mesa-dev \
     g++ \
     libzmq3-dev \ 
-    clang\
+    clang
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Add Kitware's APT repo (for latest CMake)
@@ -32,6 +32,12 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
 
 # Install basic python dependecies
 RUN pip3 install --upgrade uv --break-system-packages
+
+# Create a profile.d script for interactive shells
+COPY setenv.sh /docker-entrypoint.d/
+RUN chmod +x /docker-entrypoint.d/setenv.sh
+RUN echo 'source /docker-entrypoint.d/setenv.sh' >> /etc/profile
+RUN echo 'source /docker-entrypoint.d/setenv.sh' >> /root/.bashrc
 
 # Create python env
 # RUN mkdir /workspace
