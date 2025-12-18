@@ -4,19 +4,45 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
         {
-            "name": "Python Debugger: Current File",
+            "name": "Train",
             "type": "debugpy",
             "request": "launch",
-            "program": "${file}",
+            "program": "/workspace/tools/vlearn/train/rl_games_train.py",
             "console": "integratedTerminal",
+            "cwd": "/workspace/tools/vlearn/train",
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
                 "__NV_PRIME_RENDER_OFFLOAD": "1",
                 "__NV_PRIME_RENDER_OFFLOAD_PROVIDER": "nvidia",
-                "LD_LIBRARY_PATH": "${LD_LIBRARY_PATH}:/workspace/.venv/lib/python3.10/site-packages/vlearn/lib"
-            }
+                "LD_LIBRARY_PATH": "${LD_LIBRARY_PATH}:/workspace/.venv/lib/python3.10/site-packages/vlearn/lib:/workspace/tools/vlearn/myenv/lib/python3.10/site-packages/vlearn/lib",
+                "WANDB_API_KEY": "eec35c2a3ec81aeed2deaeb37585e1d2ab561f5f"
+            },
+            "args": [
+                "morph_hand_pen",
+                "train",
+                "--headless", "False"
+            ]
+        },
+        {
+            "name": "Train - Headless",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/workspace/tools/vlearn/train/rl_games_train.py",
+            "console": "integratedTerminal",
+            "cwd": "/workspace/tools/vlearn/train",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "__NV_PRIME_RENDER_OFFLOAD": "1",
+                "__NV_PRIME_RENDER_OFFLOAD_PROVIDER": "nvidia",
+                "LD_LIBRARY_PATH": "${LD_LIBRARY_PATH}:/workspace/.venv/lib/python3.10/site-packages/vlearn/lib",
+                "WANDB_API_KEY": "eec35c2a3ec81aeed2deaeb37585e1d2ab561f5f"
+            },
+            "args": [
+                "morph_hand_pen",
+                "train",
+                "--headless", "True"
+            ]
         }
     ]
 }

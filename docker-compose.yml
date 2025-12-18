@@ -19,3 +19,4 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:rw
       - ./:/workspace
+      - ~/.vsim_tech/:/vsim_tech/:r

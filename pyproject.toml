@@ -16,13 +16,15 @@ dependencies = [
     "pyyaml",
     "tensorboard",
     "h5py",
+    "gymnasium>=1.2.2",
+    "wandb>=0.12.21",
 ]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu129"}
 torchvision = { index = "pytorch-cu129"}
 torchaudio = { index = "pytorch-cu129"}
-vlearn = { path = "./tools/vlearn/vlearn-0.2.7-cp310-cp310-linux_x86_64.whl" }
+vlearn = { path = "./tools/vlearn/vlearn-0.2.8-cp310-cp310-linux_x86_64.whl" }
 rl_games = { path = "./tools/rl_games", editable = true }
 
 [[tool.uv.index]]
