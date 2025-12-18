@@ -1,0 +1,537 @@
+<robot name="hand">
+
+    <!--Base-->
+    <link name="wrist_base">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.046 -0.014 0." rpy="0 0 -0.1"/>
+            <geometry>
+                <box size="0.065 0.035 0.015" />
+            </geometry>
+        </collision>
+        <collision>
+            <origin xyz="0.039 0.016 0.0" rpy="0 0 0.35"/>
+            <geometry>
+                <box size="0.055 0.032 0.015" />
+            </geometry>
+        </collision>
+        <collision>
+            <origin xyz="0.043 0.0 0.0" rpy="0 0 0"/>
+            <geometry>
+                <box size="0.062 0.025 0.015" />
+            </geometry>
+        </collision>
+        <collision>
+            <origin xyz="0.011 -0.002 0.0" rpy="0 0 0"/>
+            <geometry>
+                <box size="0.006 0.05 0.015" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0 0 0" rpy="-3.142 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/wrist_bone.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+        <visual>
+            <origin xyz="0.014 -0.02 0" rpy="0 0 -1.661"/>
+            <geometry>
+                <mesh filename="meshes/metacarpal_long.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+        <visual>
+            <origin xyz="0.012 0.016 0" rpy="0 0 -1.241"/>
+            <geometry>
+                <mesh filename="meshes/metacarpal_short.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    
+    <!--Index-->
+    <link name="index_base">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.0035 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.007" radius="0.007" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="index_proximal">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.02 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.04" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_long.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    <link name="index_middle">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.014 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.028" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0.0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    <link name="index_distal">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.011 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.022" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link> 
+    
+    <joint name="wrist_to_index_base" type="fixed">
+        <child link="index_base"/>
+        <parent link="wrist_base"/>
+        <origin xyz="0.077 -0.028 0.0003" rpy="0 0 -0.09"/>
+    </joint>
+    <joint name="index_base_to_index_proximal" type="revolute">
+        <child link="index_proximal"/>
+        <parent link="index_base"/>
+        <origin xyz="0.007 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+    <joint name="index_proximal_to_index_middle" type="revolute">
+        <child link="index_middle"/>
+        <parent link="index_proximal"/>
+        <origin xyz="0.04 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+    <joint name="index_middle_to_index_distal" type="revolute">
+        <child link="index_distal"/>
+        <parent link="index_middle"/>
+        <origin xyz="0.028 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+
+    <!--Mid-->
+    <link name="mid_base">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.0035 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.007" radius="0.007" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="mid_proximal">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.02 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.04" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_long.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    <link name="mid_middle">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.014 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.028" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0.0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    <link name="mid_distal">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.011 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.022" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link> 
+    
+    <joint name="wrist_to_mid_base" type="fixed">
+        <child link="mid_base"/>
+        <parent link="wrist_base"/>
+        <origin xyz="0.074 -0.004 0.0003" rpy="0 0 0.05"/>
+    </joint>
+    <joint name="mid_base_to_mid_proximal" type="revolute">
+        <child link="mid_proximal"/>
+        <parent link="mid_base"/>
+        <origin xyz="0.007 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+    <joint name="mid_proximal_to_mid_middle" type="revolute">
+        <child link="mid_middle"/>
+        <parent link="mid_proximal"/>
+        <origin xyz="0.04 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+    <joint name="mid_middle_to_mid_distal" type="revolute">
+        <child link="mid_distal"/>
+        <parent link="mid_middle"/>
+        <origin xyz="0.028 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+
+    <!--Ring-->
+    <link name="ring_base">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.0035 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.007" radius="0.007" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="ring_proximal">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.02 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.04" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_long.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    <link name="ring_middle">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.014 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.028" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0.0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    <link name="ring_distal">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.011 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.022" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link> 
+    
+    <joint name="wrist_to_ring_base" type="fixed">
+        <child link="ring_base"/>
+        <parent link="wrist_base"/>
+        <origin xyz="0.066 0.015 0.0003" rpy="0 0 0.12"/>
+    </joint>
+    <joint name="ring_base_to_ring_proximal" type="revolute">
+        <child link="ring_proximal"/>
+        <parent link="ring_base"/>
+        <origin xyz="0.007 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+    <joint name="ring_proximal_to_ring_middle" type="revolute">
+        <child link="ring_middle"/>
+        <parent link="ring_proximal"/>
+        <origin xyz="0.04 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+    <joint name="ring_middle_to_ring_distal" type="revolute">
+        <child link="ring_distal"/>
+        <parent link="ring_middle"/>
+        <origin xyz="0.028 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+
+    <!--Pinky-->
+    <link name="pinky_base">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.0035 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.007" radius="0.007" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="pinky_proximal">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.02 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.04" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_long.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    <link name="pinky_middle">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.014 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.028" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0.0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    <link name="pinky_distal">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.011 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.022" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link> 
+    
+    <joint name="wrist_to_pinky_base" type="fixed">
+        <child link="pinky_base"/>
+        <parent link="wrist_base"/>
+        <origin xyz="0.057 0.032 0.0003" rpy="0 0 0.33"/>
+    </joint>
+    <joint name="pinky_base_to_pinky_proximal" type="revolute">
+        <child link="pinky_proximal"/>
+        <parent link="pinky_base"/>
+        <origin xyz="0.007 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+    <joint name="pinky_proximal_to_pinky_middle" type="revolute">
+        <child link="pinky_middle"/>
+        <parent link="pinky_proximal"/>
+        <origin xyz="0.04 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+    <joint name="pinky_middle_to_pinky_distal" type="revolute">
+        <child link="pinky_distal"/>
+        <parent link="pinky_middle"/>
+        <origin xyz="0.028 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+
+    <!--Thumb-->
+    <link name="thumb_yaw">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.004 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.01" radius="0.007" />
+            </geometry>
+        </collision>
+        <collision>
+            <origin xyz="-0.0035 -0.015 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <box size="0.016 0.04 0.005" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="-0.0033 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/thumb_yaw.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    <link name="thumb_base">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="-0.002 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.018" radius="0.007" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="thumb_proximal">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.02 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.04" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_long.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    <link name="thumb_middle">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.014 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.028" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0.0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link>
+    <link name="thumb_distal">
+        <inertial>
+            <density value="1400"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.011 0 0" rpy="0 -1.571 0"/>
+            <geometry>
+                <cylinder length="0.022" radius="0.007" />
+            </geometry>
+        </collision>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+        </visual>
+    </link> 
+
+    <joint name="wrist_to_thumb_yaw" type="revolute">
+        <child link="thumb_yaw"/>
+        <parent link="wrist_base"/>
+        <origin xyz="0.005 -0.003 0" rpy="0 0 -0.35"/>
+        <axis xyz="-1 0 0"/>
+        <limit lower="0.3" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+    <joint name="thumb_yaw_to_thumb_base" type="fixed">
+        <child link="thumb_base"/>
+        <parent link="thumb_yaw"/>
+        <origin xyz="0.005 -0.03 0.0" rpy="-0 0 -0.55"/>
+    </joint>
+    <joint name="thumb_base_to_thumb_proximal" type="revolute">
+        <child link="thumb_proximal"/>
+        <parent link="thumb_base"/>
+        <origin xyz="0.007 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+    <joint name="thumb_proximal_to_thumb_middle" type="revolute">
+        <child link="thumb_middle"/>
+        <parent link="thumb_proximal"/>
+        <origin xyz="0.04 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+    <joint name="thumb_middle_to_thumb_distal" type="revolute">
+        <child link="thumb_distal"/>
+        <parent link="thumb_middle"/>
+        <origin xyz="0.028 0 0" rpy="0 0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.571" effort="1e+15" velocity="20"/>
+    </joint>
+
+</robot>

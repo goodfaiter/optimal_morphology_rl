@@ -1,0 +1,20 @@
+<robot name="ball" version="0">
+    <!--Materials-->
+    <!--Links-->
+    <robotProperties maxDepenetrationVelocity="10"/>
+    <link name="ball_link">
+        <inertial>
+            <origin xyz="0 0 0" rpy="0 -0 0"/>
+            <mass value="0.0452389324371"/>
+            <density value="400"/>
+            <inertia ixx="1.6286015192e-05" iyy="1.6286015192e-05" izz="1.6286015192e-05" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 -0 0"/>
+            <geometry>
+                <sphere radius="0.035"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+    </link>
+</robot>

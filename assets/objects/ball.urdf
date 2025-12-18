@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<robot name="ball">
+  <link name="ball_link">
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.03"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <density value="400.0"/>
+    </inertial>
+  </link>
+</robot>

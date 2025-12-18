@@ -1,0 +1,31 @@
+<robot name="cube" version="0">
+    <!--Materials-->
+    <rigidMaterial name="CollisonMaterial" staticFriction="0.7" dynamicFriction="0.7" restitution="0" damping="0"/>
+
+    <!--Links-->
+    <robotProperties maxDepenetrationVelocity="10"/>
+    <link name="cube_link">
+        <inertial>
+            <origin xyz="0 0 0" rpy="0 -0 0"/>
+            <mass value="0.0159999989271"/>
+            <density value="500"/>
+            <inertia ixx="8.66666569809e-06" iyy="2.26666641335e-06" izz="1.06666654746e-05" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="0 -0 0"/>
+            <geometry>
+                <box size="0.035 0.035 0.035"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 -0 0"/>
+            <geometry>
+                <box size="0.035 0.035 0.035"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+</robot>

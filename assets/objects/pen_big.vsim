@@ -1,0 +1,24 @@
+<robot name="pen" version="0">
+    <!--Materials-->
+    <rigidMaterial name="CollisonMaterial" staticFriction="0.7" dynamicFriction="0.7" restitution="0" damping="0"/>
+
+    <!--Links-->
+    <robotProperties maxDepenetrationVelocity="10"/>
+    <link name="pen_link">
+        <inertial>
+            <origin xyz="0 0 0" rpy="0 -0 0"/>
+            <mass value="0.0193396426766"/>
+            <density value="500"/>
+            <inertia ixx="7.70888276073e-07" iyy="3.77072730469e-05" izz="3.77072730469e-05" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 -0 0"/>
+            <geometry>
+                <cylinder length="0.14" radius="0.009"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+</robot>

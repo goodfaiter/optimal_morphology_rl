@@ -1,0 +1,20 @@
+<robot name="cube">
+  <link name="cube">
+    <visual>
+      <origin xyz="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.04 0.04"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.04 0.04"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <density value="500.0"/>
+    </inertial>
+  </link>
+</robot>

@@ -1,0 +1,1563 @@
+<robot name="hand" version="0">
+
+    <!--Materials-->
+    <rigidMaterial name="CollisonMaterial" staticFriction="0.7" dynamicFriction="0.7" restitution="0" damping="0"/>
+    <elasticMaterial name="TendonMaterial" stiffness="0" damping="0" limitStiffness="1e+7" limitDamping="1e+5"/>
+
+    <!--Links-->
+
+    <!--Base-->
+    <link name="palm">
+        <inertial>
+            <origin xyz="0.0413322010416 -0.000728971532182 0" rpy="0 -0 0"/>
+            <mass value="0.123584997346"/>
+            <density value="1400"/>
+            <inertia ixx="3.29848587237e-05" iyy="4.51858357183e-05" izz="7.35362572166e-05" ixy="3.32028735909e-06" ixz="0" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="3.14118530718 -0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/wrist_bone.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <visual>
+            <origin xyz="0.014 -0.02 0" rpy="0 0 -1.661"/>
+            <geometry>
+                <mesh filename="meshes/metacarpal_long.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <visual>
+            <origin xyz="0.012 0.016 0" rpy="0 0 -1.241"/>
+            <geometry>
+                <mesh filename="meshes/metacarpal_short.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.046 -0.014 0" rpy="0 0 -0.1"/>
+            <geometry>
+                <box size="0.065 0.035 0.015"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <collision>
+            <origin xyz="0.039 0.016 0" rpy="0 -0 0.35"/>
+            <geometry>
+                <box size="0.055 0.032 0.015"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <collision>
+            <origin xyz="0.043 0 0" rpy="0 -0 0"/>
+            <geometry>
+                <box size="0.062 0.025 0.015"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <collision>
+            <origin xyz="0.011 -0.002 0" rpy="0 -0 0"/>
+            <geometry>
+                <box size="0.006 0.05 0.015"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+
+    <!--Index-->
+    <link name="index_base">
+        <inertial>
+            <origin xyz="0.00350000010803 0 0" rpy="0 -0 0"/>
+            <mass value="0.00352005044988"/>
+            <density value="1400"/>
+            <inertia ixx="1.25665796413e-07" iyy="1.25665804454e-07" izz="7.63850959433e-08" ixy="0" ixz="1.00350155434e-11" iyz="0"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.0035 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.007" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="index_proximal_base"/>
+    <link name="index_proximal">
+        <inertial>
+            <origin xyz="0.019999999553 0 0" rpy="0 -0 0"/>
+            <mass value="0.0106319886072"/>
+            <density value="1400"/>
+            <inertia ixx="2.3102158944e-06" iyy="2.31021609006e-06" izz="2.50627645472e-07" ixy="0" ixz="4.19393391206e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_long.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.02 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.04" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="index_middle_base"/>
+    <link name="index_middle">
+        <inertial>
+            <origin xyz="0.0140000004321 0 0" rpy="0 -0 0"/>
+            <mass value="0.00804582950877"/>
+            <density value="1400"/>
+            <inertia ixx="1.04967898232e-06" iyy="1.04967906818e-06" izz="1.87266717974e-07" ixy="0" ixz="1.75612773256e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.014 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.028" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="index_distal_base"/>
+    <link name="index_distal">
+        <inertial>
+            <origin xyz="0.0109999999404 0 0" rpy="0 -0 0"/>
+            <mass value="0.00675274932291"/>
+            <density value="1400"/>
+            <inertia ixx="6.48285482302e-07" iyy="6.48285533674e-07" izz="1.5558624534e-07" ixy="0" ixz="1.0032821072e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.011 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.022" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+
+    <!--Mid-->
+    <link name="mid_base">
+        <inertial>
+            <origin xyz="0.00350000010803 0 0" rpy="0 -0 0"/>
+            <mass value="0.00352005044988"/>
+            <density value="1400"/>
+            <inertia ixx="1.25665796413e-07" iyy="1.25665804454e-07" izz="7.63850959433e-08" ixy="0" ixz="1.00350155434e-11" iyz="0"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.0035 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.007" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="mid_proximal_base"/>
+    <link name="mid_proximal">
+        <inertial>
+            <origin xyz="0.019999999553 0 0" rpy="0 -0 0"/>
+            <mass value="0.0106319886072"/>
+            <density value="1400"/>
+            <inertia ixx="2.3102158944e-06" iyy="2.31021609006e-06" izz="2.50627645472e-07" ixy="0" ixz="4.19393391206e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_long.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.02 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.04" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="mid_middle_base"/>
+    <link name="mid_middle">
+        <inertial>
+            <origin xyz="0.0140000004321 0 0" rpy="0 -0 0"/>
+            <mass value="0.00804582950877"/>
+            <density value="1400"/>
+            <inertia ixx="1.04967898232e-06" iyy="1.04967906818e-06" izz="1.87266717974e-07" ixy="0" ixz="1.75612773256e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.014 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.028" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="mid_distal_base"/>
+    <link name="mid_distal">
+        <inertial>
+            <origin xyz="0.0109999999404 0 0" rpy="0 -0 0"/>
+            <mass value="0.00675274932291"/>
+            <density value="1400"/>
+            <inertia ixx="6.48285482302e-07" iyy="6.48285533674e-07" izz="1.5558624534e-07" ixy="0" ixz="1.0032821072e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.011 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.022" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+
+    <!--Ring-->
+    <link name="ring_base">
+        <inertial>
+            <origin xyz="0.00350000010803 0 0" rpy="0 -0 0"/>
+            <mass value="0.00352005044988"/>
+            <density value="1400"/>
+            <inertia ixx="1.25665796413e-07" iyy="1.25665804454e-07" izz="7.63850959433e-08" ixy="0" ixz="1.00350155434e-11" iyz="0"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.0035 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.007" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="ring_proximal_base"/>
+    <link name="ring_proximal">
+        <inertial>
+            <origin xyz="0.019999999553 0 0" rpy="0 -0 0"/>
+            <mass value="0.0106319886072"/>
+            <density value="1400"/>
+            <inertia ixx="2.3102158944e-06" iyy="2.31021609006e-06" izz="2.50627645472e-07" ixy="0" ixz="4.19393391206e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_long.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.02 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.04" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="ring_middle_base"/>
+    <link name="ring_middle">
+        <inertial>
+            <origin xyz="0.0140000004321 0 0" rpy="0 -0 0"/>
+            <mass value="0.00804582950877"/>
+            <density value="1400"/>
+            <inertia ixx="1.04967898232e-06" iyy="1.04967906818e-06" izz="1.87266717974e-07" ixy="0" ixz="1.75612773256e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.014 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.028" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="ring_distal_base"/>
+    <link name="ring_distal">
+        <inertial>
+            <origin xyz="0.0109999999404 0 0" rpy="0 -0 0"/>
+            <mass value="0.00675274932291"/>
+            <density value="1400"/>
+            <inertia ixx="6.48285482302e-07" iyy="6.48285533674e-07" izz="1.5558624534e-07" ixy="0" ixz="1.0032821072e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.011 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.022" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+
+    <!--Pinky-->
+    <link name="pinky_base">
+        <inertial>
+            <origin xyz="0.00350000010803 0 0" rpy="0 -0 0"/>
+            <mass value="0.00352005044988"/>
+            <density value="1400"/>
+            <inertia ixx="1.25665796413e-07" iyy="1.25665804454e-07" izz="7.63850959433e-08" ixy="0" ixz="1.00350155434e-11" iyz="0"/>
+        </inertial>
+        <collision>
+            <origin xyz="0.0035 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.007" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="pinky_proximal_base"/>
+    <link name="pinky_proximal">
+        <inertial>
+            <origin xyz="0.019999999553 0 0" rpy="0 -0 0"/>
+            <mass value="0.0106319886072"/>
+            <density value="1400"/>
+            <inertia ixx="2.3102158944e-06" iyy="2.31021609006e-06" izz="2.50627645472e-07" ixy="0" ixz="4.19393391206e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_long.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.02 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.04" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="pinky_middle_base"/>
+    <link name="pinky_middle">
+        <inertial>
+            <origin xyz="0.0140000004321 0 0" rpy="0 -0 0"/>
+            <mass value="0.00804582950877"/>
+            <density value="1400"/>
+            <inertia ixx="1.04967898232e-06" iyy="1.04967906818e-06" izz="1.87266717974e-07" ixy="0" ixz="1.75612773256e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.014 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.028" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="pinky_distal_base"/>
+    <link name="pinky_distal">
+        <inertial>
+            <origin xyz="0.0109999999404 0 0" rpy="0 -0 0"/>
+            <mass value="0.00675274932291"/>
+            <density value="1400"/>
+            <inertia ixx="6.48285482302e-07" iyy="6.48285533674e-07" izz="1.5558624534e-07" ixy="0" ixz="1.0032821072e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.011 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.022" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+
+    <!--Thumb-->
+    <link name="thumb_yaw">
+        <inertial>
+            <origin xyz="0.000114074873535 -0.00777185015037 0" rpy="0 -0 0"/>
+            <mass value="0.00864658960036"/>
+            <density value="1400"/>
+            <inertia ixx="1.36550981477e-06" iyy="4.13211175584e-07" izz="1.3060564925e-06" ixy="-2.42865834011e-07" ixz="3.68338169119e-11" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="-0.0033 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/thumb_yaw.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.004 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.01" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <collision>
+            <origin xyz="-0.0035 -0.015 0" rpy="3.14159265359 -1.57059265359 3.14159265359"/>
+            <geometry>
+                <box size="0.016 0.04 0.005"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="thumb_base">
+        <inertial>
+            <origin xyz="-0.00200000009499 0 0" rpy="0 -0 0"/>
+            <mass value="0.00589069650232"/>
+            <density value="1400"/>
+            <inertia ixx="4.49653996562e-07" iyy="4.49654031093e-07" izz="1.34465929026e-07" ixy="0" ixz="6.41816598928e-11" iyz="0"/>
+        </inertial>
+        <collision>
+            <origin xyz="-0.002 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.018" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="thumb_proximal_base"/>
+    <link name="thumb_proximal">
+        <inertial>
+            <origin xyz="0.019999999553 0 0" rpy="0 -0 0"/>
+            <mass value="0.0106319886072"/>
+            <density value="1400"/>
+            <inertia ixx="2.3102158944e-06" iyy="2.31021609006e-06" izz="2.50627645472e-07" ixy="0" ixz="4.19393391206e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_long.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.02 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.04" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="thumb_middle_base"/>
+    <link name="thumb_middle">
+        <inertial>
+            <origin xyz="0.0140000004321 0 0" rpy="0 -0 0"/>
+            <mass value="0.00804582950877"/>
+            <density value="1400"/>
+            <inertia ixx="1.04967898232e-06" iyy="1.04967906818e-06" izz="1.87266717974e-07" ixy="0" ixz="1.75612773256e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.014 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.028" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+    <link name="thumb_distal_base"/>
+    <link name="thumb_distal">
+        <inertial>
+            <origin xyz="0.0109999999404 0 0" rpy="0 -0 0"/>
+            <mass value="0.00675274932291"/>
+            <density value="1400"/>
+            <inertia ixx="6.48285482302e-07" iyy="6.48285533674e-07" izz="1.5558624534e-07" ixy="0" ixz="1.0032821072e-10" iyz="0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.007 0 0" rpy="0 0 -1.571"/>
+            <geometry>
+                <mesh filename="meshes/bone_short.stl" scale="0.001 0.001 0.001"/>
+                <settings planeNormalTolerance="0.949999988079" inflation="0" minThickness="9.99999974738e-05" maxVerts="32" mapResolution="0"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.011 0 0" rpy="1.571 0 0"/>
+            <geometry>
+                <cylinder length="0.022" radius="0.007"/>
+                <queryProperties useQueries="false"/>
+            </geometry>
+        </collision>
+        <rigidMaterialRef name="CollisonMaterial"/>
+        <miscellaneous maxDepenetrationVelocity="10" contactOffset="0.005" restOffset="0"/>
+    </link>
+
+    <!--Joints-->
+
+    <!--Index-->
+    <joint name="palm_to_index_base" type="fixed">
+        <child link="index_base"/>
+        <parent link="palm"/>
+        <origin xyz="0.077 -0.028 0.0003" rpy="0 0 -0.09"/>
+        <linkTransform xyz="0.077 -0.028 0.0003" rpy="0 0 -0.09"/>
+        <limit lower="1" upper="-1" effort="0" velocity="30"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="index_base_to_index_proximal" type="revolute">
+        <child link="index_proximal_base"/>
+        <parent link="index_base"/>
+        <origin xyz="0.007 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.007 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="index_proximal_morph" type="prismatic">
+        <child link="index_proximal"/>
+        <parent link="index_proximal_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.013" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="index_proximal_to_index_middle" type="revolute">
+        <child link="index_middle_base"/>
+        <parent link="index_proximal"/>
+        <origin xyz="0.04 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.04 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+
+    <!--Mid-->
+    <joint name="index_middle_morph" type="prismatic">
+        <child link="index_middle"/>
+        <parent link="index_middle_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.0075" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="index_middle_to_index_distal" type="revolute">
+        <child link="index_distal_base"/>
+        <parent link="index_middle"/>
+        <origin xyz="0.028 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.028 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="index_distal_morph" type="prismatic">
+        <child link="index_distal"/>
+        <parent link="index_distal_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.0075" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="palm_to_mid_base" type="fixed">
+        <child link="mid_base"/>
+        <parent link="palm"/>
+        <origin xyz="0.074 -0.004 0.0003" rpy="0 -0 0.05"/>
+        <linkTransform xyz="0.074 -0.004 0.0003" rpy="0 -0 0.05"/>
+        <limit lower="1" upper="-1" effort="0" velocity="30"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="mid_base_to_mid_proximal" type="revolute">
+        <child link="mid_proximal_base"/>
+        <parent link="mid_base"/>
+        <origin xyz="0.007 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.007 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="mid_proximal_morph" type="prismatic">
+        <child link="mid_proximal"/>
+        <parent link="mid_proximal_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.013" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="mid_proximal_to_mid_middle" type="revolute">
+        <child link="mid_middle_base"/>
+        <parent link="mid_proximal"/>
+        <origin xyz="0.04 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.04 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="mid_middle_morph" type="prismatic">
+        <child link="mid_middle"/>
+        <parent link="mid_middle_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.0075" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="mid_middle_to_mid_distal" type="revolute">
+        <child link="mid_distal_base"/>
+        <parent link="mid_middle"/>
+        <origin xyz="0.028 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.028 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="mid_distal_morph" type="prismatic">
+        <child link="mid_distal"/>
+        <parent link="mid_distal_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.0075" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+
+    <!--Ring-->
+    <joint name="palm_to_ring_base" type="fixed">
+        <child link="ring_base"/>
+        <parent link="palm"/>
+        <origin xyz="0.066 0.015 0.0003" rpy="0 -0 0.12"/>
+        <linkTransform xyz="0.066 0.015 0.0003" rpy="0 -0 0.12"/>
+        <limit lower="1" upper="-1" effort="0" velocity="30"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="ring_base_to_ring_proximal" type="revolute">
+        <child link="ring_proximal_base"/>
+        <parent link="ring_base"/>
+        <origin xyz="0.007 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.007 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="ring_proximal_morph" type="prismatic">
+        <child link="ring_proximal"/>
+        <parent link="ring_proximal_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.013" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="ring_proximal_to_ring_middle" type="revolute">
+        <child link="ring_middle_base"/>
+        <parent link="ring_proximal"/>
+        <origin xyz="0.04 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.04 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="ring_middle_morph" type="prismatic">
+        <child link="ring_middle"/>
+        <parent link="ring_middle_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.0075" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="ring_middle_to_ring_distal" type="revolute">
+        <child link="ring_distal_base"/>
+        <parent link="ring_middle"/>
+        <origin xyz="0.028 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.028 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="ring_distal_morph" type="prismatic">
+        <child link="ring_distal"/>
+        <parent link="ring_distal_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.0075" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+
+    <!--Pinky-->
+    <joint name="palm_to_pinky_base" type="fixed">
+        <child link="pinky_base"/>
+        <parent link="palm"/>
+        <origin xyz="0.057 0.032 0.0003" rpy="0 -0 0.33"/>
+        <linkTransform xyz="0.057 0.032 0.0003" rpy="0 -0 0.33"/>
+        <limit lower="1" upper="-1" effort="0" velocity="30"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="pinky_base_to_pinky_proximal" type="revolute">
+        <child link="pinky_proximal_base"/>
+        <parent link="pinky_base"/>
+        <origin xyz="0.007 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.007 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="pinky_proximal_morph" type="prismatic">
+        <child link="pinky_proximal"/>
+        <parent link="pinky_proximal_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.013" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="pinky_proximal_to_pinky_middle" type="revolute">
+        <child link="pinky_middle_base"/>
+        <parent link="pinky_proximal"/>
+        <origin xyz="0.04 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.04 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="pinky_middle_morph" type="prismatic">
+        <child link="pinky_middle"/>
+        <parent link="pinky_middle_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.0075" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="pinky_middle_to_pinky_distal" type="revolute">
+        <child link="pinky_distal_base"/>
+        <parent link="pinky_middle"/>
+        <origin xyz="0.028 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.028 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="pinky_distal_morph" type="prismatic">
+        <child link="pinky_distal"/>
+        <parent link="pinky_distal_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.0075" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+
+    <!--Thumb-->
+    <joint name="palm_to_thumb_yaw" type="revolute">
+        <child link="thumb_yaw"/>
+        <parent link="palm"/>
+        <origin xyz="0.005 -0.003 0" rpy="0 0 -0.35"/>
+        <linkTransform xyz="0.005 -0.003 0" rpy="0 0 -0.35"/>
+        <axis xyz="-1 0 0"/>
+        <limit lower="0.3" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="thumb_yaw_to_thumb_base" type="fixed">
+        <child link="thumb_base"/>
+        <parent link="thumb_yaw"/>
+        <origin xyz="0.005 -0.03 0" rpy="-0 0 -0.55"/>
+        <linkTransform xyz="0.005 -0.03 0" rpy="-0 0 -0.55"/>
+        <limit lower="1" upper="-1" effort="0" velocity="30"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="thumb_base_to_thumb_proximal" type="revolute">
+        <child link="thumb_proximal_base"/>
+        <parent link="thumb_base"/>
+        <origin xyz="0.007 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.007 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="thumb_proximal_morph" type="prismatic">
+        <child link="thumb_proximal"/>
+        <parent link="thumb_proximal_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.013" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="thumb_proximal_to_thumb_middle" type="revolute">
+        <child link="thumb_middle_base"/>
+        <parent link="thumb_proximal"/>
+        <origin xyz="0.04 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.04 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="thumb_middle_morph" type="prismatic">
+        <child link="thumb_middle"/>
+        <parent link="thumb_middle_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.0075" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="thumb_middle_to_thumb_distal" type="revolute">
+        <child link="thumb_distal_base"/>
+        <parent link="thumb_middle"/>
+        <origin xyz="0.028 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0.028 0 0" rpy="0 -0 0"/>
+        <axis xyz="0 -1 0"/>
+        <limit lower="0" upper="1.8" effort="1e+15" velocity="20"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    <joint name="thumb_distal_morph" type="prismatic">
+        <child link="thumb_distal"/>
+        <parent link="thumb_distal_base"/>
+        <origin xyz="0 0 0" rpy="0 -0 0"/>
+        <linkTransform xyz="0 0 0" rpy="0 -0 0"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.0075" upper="0" effort="1e+15" velocity="0.1"/>
+        <dynamics damping="0" stiffness="0" integral="0" friction="0" frictionLoss="0" armature="0"/>
+    </joint>
+    
+    <filter>
+        <pair link0="palm" link1="thumb_base"/>
+        <pair link0="palm" link1="thumb_proximal"/>
+        <pair link0="pinky_base" link1="pinky_proximal"/>
+        <pair link0="pinky_base" link1="ring_base"/>
+        <pair link0="ring_base" link1="ring_proximal"/>
+        <pair link0="ring_base" link1="mid_base"/>
+        <pair link0="mid_base" link1="mid_proximal"/>
+        <pair link0="ring_proximal" link1="mid_proximal"/>
+        <pair link0="index_base" link1="index_proximal"/>
+    </filter>
+
+    <!--Tendons-->
+
+    <!--Index-->
+        <tendon name="index_tendon_proximal" type="spatial" offset="0" lowLimit="-170" highLimit="0" materialRef="TendonMaterial">
+        <site name="index_tendon_proximal_0" coefficient="0" radius="0">
+            <origin xyz="-0.1 0 0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="index_tendon_proximal_1" coefficient="0" radius="0">
+            <origin xyz="0.0 0 0" rot="0 0 0 1"/>
+            <host link="index_base"/>
+        </site>
+        <site name="index_tendon_proximal_2" coefficient="0" radius="0.005">
+            <origin xyz="0.0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="index_proximal_base"/>
+        </site>
+        <site name="index_tendon_proximal_3" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="index_proximal_base"/>
+        </site>
+        <site name="index_tendon_proximal_4" coefficient="0" radius="0">
+            <origin xyz="0.033 0 0" rot="0 0 0 1"/>
+            <host link="index_proximal"/>
+        </site>
+        <connection>
+            <parent site="index_tendon_proximal_0"/>
+            <child site="index_tendon_proximal_1"/>
+        </connection>
+        <connection>
+            <parent site="index_tendon_proximal_1"/>
+            <child site="index_tendon_proximal_2"/>
+        </connection>
+        <connection>
+            <parent site="index_tendon_proximal_2"/>
+            <child site="index_tendon_proximal_3"/>
+        </connection>
+        <connection>
+            <parent site="index_tendon_proximal_3"/>
+            <child site="index_tendon_proximal_4"/>
+        </connection>
+    </tendon>
+    <tendon name="index_tendon_distal" type="spatial" offset="0" lowLimit="-170" highLimit="0" materialRef="TendonMaterial">
+        <site name="index_tendon_distal_0" coefficient="0" radius="0">
+            <origin xyz="-0.1 0 0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="index_tendon_distal_1" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="index_base"/>
+        </site>
+        <site name="index_tendon_distal_2" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="index_proximal_base"/>
+        </site>
+        <site name="index_tendon_distal_3" coefficient="0" radius="0">
+            <origin xyz="0.033 0 0" rot="0 0 0 1"/>
+            <host link="index_proximal"/>
+        </site>
+        <site name="index_tendon_distal_4" coefficient="0" radius="0.005">
+            <origin xyz="0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="index_middle_base"/>
+        </site>
+        <site name="index_tendon_distal_5" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="index_middle_base"/>
+        </site>
+        <site name="index_tendon_distal_6" coefficient="0" radius="0">
+            <origin xyz="0.02 0 0" rot="0 0 0 1"/>
+            <host link="index_middle"/>
+        </site>
+        <site name="index_tendon_distal_7" coefficient="0" radius="0.005">
+            <origin xyz="0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="index_distal_base"/>
+        </site>
+        <site name="index_tendon_distal_8" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="index_distal_base"/>
+        </site>
+        <site name="index_tendon_distal_9" coefficient="0" radius="0">
+            <origin xyz="0.02 0 0" rot="0 0 0 1"/>
+            <host link="index_distal"/>
+        </site>
+        <connection>
+            <parent site="index_tendon_distal_0"/>
+            <child site="index_tendon_distal_1"/>
+        </connection>
+        <connection>
+            <parent site="index_tendon_distal_1"/>
+            <child site="index_tendon_distal_2"/>
+        </connection>
+        <connection>
+            <parent site="index_tendon_distal_2"/>
+            <child site="index_tendon_distal_3"/>
+        </connection>
+        <connection>
+            <parent site="index_tendon_distal_3"/>
+            <child site="index_tendon_distal_4"/>
+        </connection>
+        <connection>
+            <parent site="index_tendon_distal_4"/>
+            <child site="index_tendon_distal_5"/>
+        </connection>
+        <connection>
+            <parent site="index_tendon_distal_5"/>
+            <child site="index_tendon_distal_6"/>
+        </connection>
+        <connection>
+            <parent site="index_tendon_distal_6"/>
+            <child site="index_tendon_distal_7"/>
+        </connection>
+        <connection>
+            <parent site="index_tendon_distal_7"/>
+            <child site="index_tendon_distal_8"/>
+        </connection>
+        <connection>
+            <parent site="index_tendon_distal_8"/>
+            <child site="index_tendon_distal_9"/>
+        </connection>
+    </tendon>
+
+    <!--Mid-->
+    <tendon name="mid_tendon_proximal" type="spatial" offset="0" lowLimit="-170" highLimit="0" materialRef="TendonMaterial">
+        <site name="mid_tendon_proximal_0" coefficient="0" radius="0">
+            <origin xyz="-0.1 0 0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="mid_tendon_proximal_1" coefficient="0" radius="0">
+            <origin xyz="0.0 0 0" rot="0 0 0 1"/>
+            <host link="mid_base"/>
+        </site>
+        <site name="mid_tendon_proximal_2" coefficient="0" radius="0.005">
+            <origin xyz="0.0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="mid_proximal_base"/>
+        </site>
+        <site name="mid_tendon_proximal_3" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="mid_proximal_base"/>
+        </site>
+        <site name="mid_tendon_proximal_4" coefficient="0" radius="0">
+            <origin xyz="0.033 0 0" rot="0 0 0 1"/>
+            <host link="mid_proximal"/>
+        </site>
+        <connection>
+            <parent site="mid_tendon_proximal_0"/>
+            <child site="mid_tendon_proximal_1"/>
+        </connection>
+        <connection>
+            <parent site="mid_tendon_proximal_1"/>
+            <child site="mid_tendon_proximal_2"/>
+        </connection>
+        <connection>
+            <parent site="mid_tendon_proximal_2"/>
+            <child site="mid_tendon_proximal_3"/>
+        </connection>
+        <connection>
+            <parent site="mid_tendon_proximal_3"/>
+            <child site="mid_tendon_proximal_4"/>
+        </connection>
+    </tendon>
+    <tendon name="mid_tendon_distal" type="spatial" offset="0" lowLimit="-170" highLimit="0" materialRef="TendonMaterial">
+        <site name="mid_tendon_distal_0" coefficient="0" radius="0">
+            <origin xyz="-0.1 0 0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="mid_tendon_distal_1" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="mid_base"/>
+        </site>
+        <site name="mid_tendon_distal_2" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="mid_proximal_base"/>
+        </site>
+        <site name="mid_tendon_distal_3" coefficient="0" radius="0">
+            <origin xyz="0.033 0 0" rot="0 0 0 1"/>
+            <host link="mid_proximal"/>
+        </site>
+        <site name="mid_tendon_distal_4" coefficient="0" radius="0.005">
+            <origin xyz="0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="mid_middle_base"/>
+        </site>
+        <site name="mid_tendon_distal_5" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="mid_middle_base"/>
+        </site>
+        <site name="mid_tendon_distal_6" coefficient="0" radius="0">
+            <origin xyz="0.02 0 0" rot="0 0 0 1"/>
+            <host link="mid_middle"/>
+        </site>
+        <site name="mid_tendon_distal_7" coefficient="0" radius="0.005">
+            <origin xyz="0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="mid_distal_base"/>
+        </site>
+        <site name="mid_tendon_distal_8" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="mid_distal_base"/>
+        </site>
+        <site name="mid_tendon_distal_9" coefficient="0" radius="0">
+            <origin xyz="0.02 0 0" rot="0 0 0 1"/>
+            <host link="mid_distal"/>
+        </site>
+        <connection>
+            <parent site="mid_tendon_distal_0"/>
+            <child site="mid_tendon_distal_1"/>
+        </connection>
+        <connection>
+            <parent site="mid_tendon_distal_1"/>
+            <child site="mid_tendon_distal_2"/>
+        </connection>
+        <connection>
+            <parent site="mid_tendon_distal_2"/>
+            <child site="mid_tendon_distal_3"/>
+        </connection>
+        <connection>
+            <parent site="mid_tendon_distal_3"/>
+            <child site="mid_tendon_distal_4"/>
+        </connection>
+        <connection>
+            <parent site="mid_tendon_distal_4"/>
+            <child site="mid_tendon_distal_5"/>
+        </connection>
+        <connection>
+            <parent site="mid_tendon_distal_5"/>
+            <child site="mid_tendon_distal_6"/>
+        </connection>
+        <connection>
+            <parent site="mid_tendon_distal_6"/>
+            <child site="mid_tendon_distal_7"/>
+        </connection>
+        <connection>
+            <parent site="mid_tendon_distal_7"/>
+            <child site="mid_tendon_distal_8"/>
+        </connection>
+        <connection>
+            <parent site="mid_tendon_distal_8"/>
+            <child site="mid_tendon_distal_9"/>
+        </connection>
+    </tendon>
+
+    <!--Ring-->
+    <tendon name="ring_tendon_proximal" type="spatial" offset="0" lowLimit="-170" highLimit="0" materialRef="TendonMaterial">
+        <site name="ring_tendon_proximal_0" coefficient="0" radius="0">
+            <origin xyz="-0.1 0 0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="ring_tendon_proximal_1" coefficient="0" radius="0">
+            <origin xyz="0.0 0 0" rot="0 0 0 1"/>
+            <host link="ring_base"/>
+        </site>
+        <site name="ring_tendon_proximal_2" coefficient="0" radius="0.005">
+            <origin xyz="0.0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="ring_proximal_base"/>
+        </site>
+        <site name="ring_tendon_proximal_3" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="ring_proximal_base"/>
+        </site>
+        <site name="ring_tendon_proximal_4" coefficient="0" radius="0">
+            <origin xyz="0.033 0 0" rot="0 0 0 1"/>
+            <host link="ring_proximal"/>
+        </site>
+        <connection>
+            <parent site="ring_tendon_proximal_0"/>
+            <child site="ring_tendon_proximal_1"/>
+        </connection>
+        <connection>
+            <parent site="ring_tendon_proximal_1"/>
+            <child site="ring_tendon_proximal_2"/>
+        </connection>
+        <connection>
+            <parent site="ring_tendon_proximal_2"/>
+            <child site="ring_tendon_proximal_3"/>
+        </connection>
+        <connection>
+            <parent site="ring_tendon_proximal_3"/>
+            <child site="ring_tendon_proximal_4"/>
+        </connection>
+    </tendon>
+    <tendon name="ring_tendon_distal" type="spatial" offset="0" lowLimit="-170" highLimit="0" materialRef="TendonMaterial">
+        <site name="ring_tendon_distal_0" coefficient="0" radius="0">
+            <origin xyz="-0.1 0 0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="ring_tendon_distal_1" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="ring_base"/>
+        </site>
+        <site name="ring_tendon_distal_2" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="ring_proximal_base"/>
+        </site>
+        <site name="ring_tendon_distal_3" coefficient="0" radius="0">
+            <origin xyz="0.033 0 0" rot="0 0 0 1"/>
+            <host link="ring_proximal"/>
+        </site>
+        <site name="ring_tendon_distal_4" coefficient="0" radius="0.005">
+            <origin xyz="0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="ring_middle_base"/>
+        </site>
+        <site name="ring_tendon_distal_5" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="ring_middle_base"/>
+        </site>
+        <site name="ring_tendon_distal_6" coefficient="0" radius="0">
+            <origin xyz="0.02 0 0" rot="0 0 0 1"/>
+            <host link="ring_middle"/>
+        </site>
+        <site name="ring_tendon_distal_7" coefficient="0" radius="0.005">
+            <origin xyz="0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="ring_distal_base"/>
+        </site>
+        <site name="ring_tendon_distal_8" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="ring_distal_base"/>
+        </site>
+        <site name="ring_tendon_distal_9" coefficient="0" radius="0">
+            <origin xyz="0.02 0 0" rot="0 0 0 1"/>
+            <host link="ring_distal"/>
+        </site>
+        <connection>
+            <parent site="ring_tendon_distal_0"/>
+            <child site="ring_tendon_distal_1"/>
+        </connection>
+        <connection>
+            <parent site="ring_tendon_distal_1"/>
+            <child site="ring_tendon_distal_2"/>
+        </connection>
+        <connection>
+            <parent site="ring_tendon_distal_2"/>
+            <child site="ring_tendon_distal_3"/>
+        </connection>
+        <connection>
+            <parent site="ring_tendon_distal_3"/>
+            <child site="ring_tendon_distal_4"/>
+        </connection>
+        <connection>
+            <parent site="ring_tendon_distal_4"/>
+            <child site="ring_tendon_distal_5"/>
+        </connection>
+        <connection>
+            <parent site="ring_tendon_distal_5"/>
+            <child site="ring_tendon_distal_6"/>
+        </connection>
+        <connection>
+            <parent site="ring_tendon_distal_6"/>
+            <child site="ring_tendon_distal_7"/>
+        </connection>
+        <connection>
+            <parent site="ring_tendon_distal_7"/>
+            <child site="ring_tendon_distal_8"/>
+        </connection>
+        <connection>
+            <parent site="ring_tendon_distal_8"/>
+            <child site="ring_tendon_distal_9"/>
+        </connection>
+    </tendon>
+
+    <!--Pinky-->
+    <tendon name="pinky_tendon_proximal" type="spatial" offset="0" lowLimit="-170" highLimit="0" materialRef="TendonMaterial">
+        <site name="pinky_tendon_proximal_0" coefficient="0" radius="0">
+            <origin xyz="-0.1 0 0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="pinky_tendon_proximal_1" coefficient="0" radius="0">
+            <origin xyz="0.0 0 0" rot="0 0 0 1"/>
+            <host link="pinky_base"/>
+        </site>
+        <site name="pinky_tendon_proximal_2" coefficient="0" radius="0.005">
+            <origin xyz="0.0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="pinky_proximal_base"/>
+        </site>
+        <site name="pinky_tendon_proximal_3" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="pinky_proximal_base"/>
+        </site>
+        <site name="pinky_tendon_proximal_4" coefficient="0" radius="0">
+            <origin xyz="0.033 0 0" rot="0 0 0 1"/>
+            <host link="pinky_proximal"/>
+        </site>
+        <connection>
+            <parent site="pinky_tendon_proximal_0"/>
+            <child site="pinky_tendon_proximal_1"/>
+        </connection>
+        <connection>
+            <parent site="pinky_tendon_proximal_1"/>
+            <child site="pinky_tendon_proximal_2"/>
+        </connection>
+        <connection>
+            <parent site="pinky_tendon_proximal_2"/>
+            <child site="pinky_tendon_proximal_3"/>
+        </connection>
+        <connection>
+            <parent site="pinky_tendon_proximal_3"/>
+            <child site="pinky_tendon_proximal_4"/>
+        </connection>
+    </tendon>
+    <tendon name="pinky_tendon_distal" type="spatial" offset="0" lowLimit="-170" highLimit="0" materialRef="TendonMaterial">
+        <site name="pinky_tendon_distal_0" coefficient="0" radius="0">
+            <origin xyz="-0.1 0 0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="pinky_tendon_distal_1" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="pinky_base"/>
+        </site>
+        <site name="pinky_tendon_distal_2" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="pinky_proximal_base"/>
+        </site>
+        <site name="pinky_tendon_distal_3" coefficient="0" radius="0">
+            <origin xyz="0.033 0 0" rot="0 0 0 1"/>
+            <host link="pinky_proximal"/>
+        </site>
+        <site name="pinky_tendon_distal_4" coefficient="0" radius="0.005">
+            <origin xyz="0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="pinky_middle_base"/>
+        </site>
+        <site name="pinky_tendon_distal_5" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="pinky_middle_base"/>
+        </site>
+        <site name="pinky_tendon_distal_6" coefficient="0" radius="0">
+            <origin xyz="0.02 0 0" rot="0 0 0 1"/>
+            <host link="pinky_middle"/>
+        </site>
+        <site name="pinky_tendon_distal_7" coefficient="0" radius="0.005">
+            <origin xyz="0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="pinky_distal_base"/>
+        </site>
+        <site name="pinky_tendon_distal_8" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="pinky_distal_base"/>
+        </site>
+        <site name="pinky_tendon_distal_9" coefficient="0" radius="0">
+            <origin xyz="0.02 0 0" rot="0 0 0 1"/>
+            <host link="pinky_distal"/>
+        </site>
+        <connection>
+            <parent site="pinky_tendon_distal_0"/>
+            <child site="pinky_tendon_distal_1"/>
+        </connection>
+        <connection>
+            <parent site="pinky_tendon_distal_1"/>
+            <child site="pinky_tendon_distal_2"/>
+        </connection>
+        <connection>
+            <parent site="pinky_tendon_distal_2"/>
+            <child site="pinky_tendon_distal_3"/>
+        </connection>
+        <connection>
+            <parent site="pinky_tendon_distal_3"/>
+            <child site="pinky_tendon_distal_4"/>
+        </connection>
+        <connection>
+            <parent site="pinky_tendon_distal_4"/>
+            <child site="pinky_tendon_distal_5"/>
+        </connection>
+        <connection>
+            <parent site="pinky_tendon_distal_5"/>
+            <child site="pinky_tendon_distal_6"/>
+        </connection>
+        <connection>
+            <parent site="pinky_tendon_distal_6"/>
+            <child site="pinky_tendon_distal_7"/>
+        </connection>
+        <connection>
+            <parent site="pinky_tendon_distal_7"/>
+            <child site="pinky_tendon_distal_8"/>
+        </connection>
+        <connection>
+            <parent site="pinky_tendon_distal_8"/>
+            <child site="pinky_tendon_distal_9"/>
+        </connection>
+    </tendon>
+
+    <!--Thumb-->
+    <tendon name="thumb_tendon_yaw" type="spatial" offset="0" lowLimit="-80" highLimit="0" materialRef="TendonMaterial">
+        <site name="thumb_tendon_yaw_0" coefficient="0" radius="0">
+            <origin xyz="-0.1 0 0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="thumb_tendon_yaw_1" coefficient="0" radius="0">
+            <origin xyz="0.015 0.015 0.0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="thumb_tendon_yaw_2" coefficient="0" radius="0">
+            <origin xyz="0 -0.005 0.008" rot="0 0 0 1"/>
+            <host link="thumb_yaw"/>
+        </site>
+        <connection>
+            <parent site="thumb_tendon_yaw_0"/>
+            <child site="thumb_tendon_yaw_1"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_yaw_1"/>
+            <child site="thumb_tendon_yaw_2"/>
+        </connection>
+    </tendon>
+    <tendon name="thumb_tendon_proximal" type="spatial" offset="0" lowLimit="-170" highLimit="0" materialRef="TendonMaterial">
+        <site name="thumb_tendon_proximal_0" coefficient="0" radius="0">
+            <origin xyz="-0.1 0 0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="thumb_tendon_proximal_1" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="thumb_yaw"/>
+        </site>
+        <site name="thumb_tendon_proximal_2" coefficient="0" radius="0">
+            <origin xyz="0.0 0 0" rot="0 0 0 1"/>
+            <host link="thumb_base"/>
+        </site>
+        <site name="thumb_tendon_proximal_3" coefficient="0" radius="0.005">
+            <origin xyz="0.0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="thumb_proximal_base"/>
+        </site>
+        <site name="thumb_tendon_proximal_4" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="thumb_proximal_base"/>
+        </site>
+        <site name="thumb_tendon_proximal_5" coefficient="0" radius="0">
+            <origin xyz="0.033 0 0" rot="0 0 0 1"/>
+            <host link="thumb_proximal"/>
+        </site>
+        <connection>
+            <parent site="thumb_tendon_proximal_0"/>
+            <child site="thumb_tendon_proximal_1"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_proximal_1"/>
+            <child site="thumb_tendon_proximal_2"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_proximal_2"/>
+            <child site="thumb_tendon_proximal_3"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_proximal_3"/>
+            <child site="thumb_tendon_proximal_4"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_proximal_4"/>
+            <child site="thumb_tendon_proximal_5"/>
+        </connection>
+    </tendon>
+    <tendon name="thumb_tendon_distal" type="spatial" offset="0" lowLimit="-170" highLimit="0" materialRef="TendonMaterial">
+        <site name="thumb_tendon_distal_0" coefficient="0" radius="0">
+            <origin xyz="-0.1 0 0" rot="0 0 0 1"/>
+            <host link="palm"/>
+        </site>
+        <site name="thumb_tendon_distal_1" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="thumb_yaw"/>
+        </site>
+        <site name="thumb_tendon_distal_2" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="thumb_base"/>
+        </site>
+        <site name="thumb_tendon_distal_3" coefficient="0" radius="0">
+            <origin xyz="0 0 0" rot="0 0 0 1"/>
+            <host link="thumb_proximal_base"/>
+        </site>
+        <site name="thumb_tendon_distal_4" coefficient="0" radius="0">
+            <origin xyz="0.033 0 0" rot="0 0 0 1"/>
+            <host link="thumb_proximal"/>
+        </site>
+        <site name="thumb_tendon_distal_5" coefficient="0" radius="0.005">
+            <origin xyz="0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="thumb_middle_base"/>
+        </site>
+        <site name="thumb_tendon_distal_6" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="thumb_middle_base"/>
+        </site>
+        <site name="thumb_tendon_distal_7" coefficient="0" radius="0">
+            <origin xyz="0.02 0 0" rot="0 0 0 1"/>
+            <host link="thumb_middle"/>
+        </site>
+        <site name="thumb_tendon_distal_8" coefficient="0" radius="0.005">
+            <origin xyz="0 0 0" rot="0.5 0.5 0.5 0.5"/>
+            <host link="thumb_distal_base"/>
+        </site>
+        <site name="thumb_tendon_distal_9" coefficient="0" radius="0">
+            <origin xyz="0.007 0 0" rot="0 0 0 1"/>
+            <host link="thumb_distal_base"/>
+        </site>
+        <site name="thumb_tendon_distal_10" coefficient="0" radius="0">
+            <origin xyz="0.02 0 0" rot="0 0 0 1"/>
+            <host link="thumb_distal"/>
+        </site>
+
+        <connection>
+            <parent site="thumb_tendon_distal_0"/>
+            <child site="thumb_tendon_distal_1"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_distal_1"/>
+            <child site="thumb_tendon_distal_2"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_distal_2"/>
+            <child site="thumb_tendon_distal_3"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_distal_3"/>
+            <child site="thumb_tendon_distal_4"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_distal_4"/>
+            <child site="thumb_tendon_distal_5"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_distal_5"/>
+            <child site="thumb_tendon_distal_6"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_distal_6"/>
+            <child site="thumb_tendon_distal_7"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_distal_7"/>
+            <child site="thumb_tendon_distal_8"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_distal_8"/>
+            <child site="thumb_tendon_distal_9"/>
+        </connection>
+        <connection>
+            <parent site="thumb_tendon_distal_9"/>
+            <child site="thumb_tendon_distal_10"/>
+        </connection>
+    </tendon>
+</robot>
