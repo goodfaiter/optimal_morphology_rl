@@ -15,7 +15,7 @@
                 "CUDA_VISIBLE_DEVICES": "0",
                 "__NV_PRIME_RENDER_OFFLOAD": "1",
                 "__NV_PRIME_RENDER_OFFLOAD_PROVIDER": "nvidia",
-                "LD_LIBRARY_PATH": "${LD_LIBRARY_PATH}:/workspace/.venv/lib/python3.10/site-packages/vlearn/lib:/workspace/tools/vlearn/myenv/lib/python3.10/site-packages/vlearn/lib",
+                "LD_LIBRARY_PATH": "${LD_LIBRARY_PATH}:/workspace/.venv/lib/python3.10/site-packages/vlearn/lib",
                 "WANDB_API_KEY": "eec35c2a3ec81aeed2deaeb37585e1d2ab561f5f"
             },
             "args": [

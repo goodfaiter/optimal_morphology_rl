@@ -1,0 +1,14 @@
+{
+    "python.analysis.extraPaths": [
+        "/workspace/tools/vlearn/train/envs/environment.py",
+        "/workspace/tools/vlearn/train/envs/",
+        "/workspace/tools/vlearn/train/",
+        "/workspace/tools/vlearn/"
+    ],
+    "python.autoComplete.extraPaths": [
+        "/workspace/tools/vlearn/train/envs/environment.py",
+        "/workspace/tools/vlearn/train/envs/",
+        "/workspace/tools/vlearn/train/",
+        "/workspace/tools/vlearn/"
+    ],
+}

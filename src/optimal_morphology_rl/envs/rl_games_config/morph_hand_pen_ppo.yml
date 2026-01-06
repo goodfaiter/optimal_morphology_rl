@@ -24,7 +24,7 @@ params:
         fixed_sigma: True
 
     mlp:
-      units: [256, 128, 64]
+      units: [512, 256, 128]
       activation: elu
       d2rl: False
 
@@ -83,8 +83,8 @@ params:
     clip_value: True
     seq_length: 4
     bounds_loss_coef: 0.0001
-    # player:
-    #   deterministic: True
-    #   use_vecenv: True
-    #   games_num: 1000000
-    #   print_stats: False 
+      # player:
+      #   deterministic: True
+      #   use_vecenv: True
+      #   games_num: 1000000
+      #   print_stats: False 
