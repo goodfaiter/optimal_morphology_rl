@@ -21,6 +21,11 @@ elif env == "morph_hand_pen":
     env_name = "morph_hand_pen-env"
     yml_file = "/workspace/src/optimal_morphology_rl/envs/rl_games_config/morph_hand_pen_ppo.yml"
 ...
+import wandb
+wandb.init(project="optimal_morphology_rl", config=config, monitor_gym=True, save_code=True)
+runner.run(run_args)
+wandb.finish()
+...
 ```
 
 ```
