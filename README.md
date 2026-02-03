@@ -4,6 +4,26 @@
 Using docker:
 
 ```
+cd optimal_morphology_rl
+git submodule update --init --recursive
+```
+*Unfortunately, there is no easy way to add our environment to rl_games_train.py of vlearn. Here we do it manually.*:
+```
+...
+"minimal",
+"morph_hand_pen",
+"piper_reach_space",
+...
+elif env == "morph_hand_pen":
+    from optimal_morphology_rl.envs.hand_envs.morph_hand_pen_env import MorphHandPenEnvironmentGpu as EnvClass
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), '/workspace/tools/vlearn/train/envs/'))
+    env_name = "morph_hand_pen-env"
+    yml_file = "/workspace/src/optimal_morphology_rl/envs/rl_games_config/morph_hand_pen_ppo.yml"
+...
+```
+
+```
 docker compose up dev_gpu -d --build
 ```
 
