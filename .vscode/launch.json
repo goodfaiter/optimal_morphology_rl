@@ -19,7 +19,7 @@
                 "WANDB_API_KEY": "eec35c2a3ec81aeed2deaeb37585e1d2ab561f5f"
             },
             "args": [
-                "morph_hand_pen",
+                "finger",
                 "train",
                 "--headless", "False"
             ]
@@ -39,10 +39,49 @@
                 "WANDB_API_KEY": "eec35c2a3ec81aeed2deaeb37585e1d2ab561f5f"
             },
             "args": [
-                "morph_hand_pen",
+                "finger",
                 "train",
-                "--headless", "True"
+                "--headless", "True",
+                "--max_epochs", "10",
             ]
+        },
+        {
+            "name": "Play - Headless",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/workspace/tools/vlearn/train/rl_games_train.py",
+            "console": "integratedTerminal",
+            "cwd": "/workspace/tools/vlearn/train",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "__NV_PRIME_RENDER_OFFLOAD": "1",
+                "__NV_PRIME_RENDER_OFFLOAD_PROVIDER": "nvidia",
+                "LD_LIBRARY_PATH": "${LD_LIBRARY_PATH}:/workspace/.venv/lib/python3.10/site-packages/vlearn/lib",
+                "WANDB_API_KEY": "eec35c2a3ec81aeed2deaeb37585e1d2ab561f5f"
+            },
+            "args": [
+                "finger",
+                "play",
+                "runs/Finger_EE_Tracking_11-16-12-10/nn/last_Finger_EE_Tracking_ep_300_rew_-22.066715.pth",
+                "--headless", "True",
+                "--max_epochs", "10",
+            ]
+        },
+        {
+            "name": "Test",
+            "type": "debugpy",
+            "request": "launch",
+            // "program": "/workspace/src/optimal_morphology_rl/test_hand.py",
+            "program": "/workspace/src/optimal_morphology_rl/envs/hand_envs/finger_ee_tracking.py",
+            "console": "integratedTerminal",
+            "cwd": "/workspace/tools/vlearn/train",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "__NV_PRIME_RENDER_OFFLOAD": "1",
+                "__NV_PRIME_RENDER_OFFLOAD_PROVIDER": "nvidia",
+                "LD_LIBRARY_PATH": "${LD_LIBRARY_PATH}:/workspace/.venv/lib/python3.10/site-packages/vlearn/lib",
+                "WANDB_API_KEY": "eec35c2a3ec81aeed2deaeb37585e1d2ab561f5f"
+            },
         }
     ]
 }

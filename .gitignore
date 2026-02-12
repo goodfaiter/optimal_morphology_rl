@@ -420,3 +420,4 @@ FodyWeavers.xsd
 # Virtual environments
 .venv/
 *egg*
+assets/
