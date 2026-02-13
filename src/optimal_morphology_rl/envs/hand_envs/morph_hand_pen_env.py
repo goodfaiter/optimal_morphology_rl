@@ -4,6 +4,8 @@ import numpy as np
 from vlearn.spaces import Box
 from typing import Tuple, List
 import vlearn as v
+import random
+import wandb
 
 # from tools.vlearn.train.envs.environment import EnvironmentGpu
 import os
@@ -15,12 +17,6 @@ from vlearn_train.envs.environment import EnvironmentGpu
 
 # from vlearn.train.envs.environment import EnvironmentGpu
 from vlearn.torch_utils.torch_jit_utils import scale, quat_mul, quat_conjugate, v_rpy_from_quat
-
-
-@torch.jit.script
-def reset_noise_helper(init_val: torch.Tensor, noise_scale: float, scale1: float, scale2: float):
-    """Generate reset noise for state initialization."""
-    return noise_scale * (torch.rand(init_val.shape, dtype=torch.float32, device=init_val.device) * scale1 - scale2)
 
 
 @torch.jit.script
@@ -62,18 +58,7 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
     """
     Based on https://github.com/rayangdn/MorphHand environments
     Morphological hand environment with with pen interaction.
-
-    Features:
-    - 16 revolute joints (actuated)
-    - Pen interaction object
-
-    Control modes:
-    - 'pid': Direct joint position control
     """
-
-    # Constants
-    NUM_REVOLUTE = 16
-    NUM_DOFS = NUM_REVOLUTE
 
     def __init__(
         self,
@@ -83,9 +68,9 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
         enable_scene_query: bool = False,
         max_episode_length: int = 200,
         gravity: v.Vec3 = v.Vec3(0, 0, -9.81),
-        timestep: float = 0.01667,
+        timestep: float = 0.01,
         frame_skip: int = 1,
-        spacing: float = 0.5,
+        spacing: float = 1.0,
         initial_is_paused: bool = False,
         send_interrupt: bool = False,
         print_hash: bool = False,
@@ -93,8 +78,8 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
         has_self_collisions: bool = False,
         force_mass_inertia_computation: bool = True,
         with_window: bool = True,
-        reset_noise_scale: float = 1.0,
         pen_size: str = "big",
+        fixed_hand: bool = False,
     ):
 
         assert pen_size in ["small", "mid", "big"], f"Invalid pen size: {pen_size}"
@@ -103,12 +88,9 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
         self.device = device
         self.max_episode_length = max_episode_length
         self.pen_size = pen_size
-        self.reset_noise_scale = reset_noise_scale
         self.has_self_collisions = has_self_collisions
         self.force_mass_inertia_computation = force_mass_inertia_computation
-
-        # Control parameters
-        self._setup_control_parameters()
+        self.fixed_hand = fixed_hand
 
         super().__init__(
             num_envs,
@@ -120,7 +102,6 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
             frame_skip,
             spacing,
             gravity,
-            self.NUM_DOFS,
             initial_is_paused=initial_is_paused,
             send_interrupt=send_interrupt,
             up_axis=v.Vec3(0, 0, 1),
@@ -129,12 +110,12 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
             with_window=with_window,
         )
 
+        # Create environments
+        self.create_envs()
+
         # Setup action and observation spaces
         self._setup_action_space()
         self._setup_observation_space()
-
-        # Create environments
-        self.create_envs()
 
         # Store initial conditions
         self.store_initial_conditions()
@@ -148,27 +129,69 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
         # Finalize gym
         self.gym.gym_finalize()
 
-    def _setup_control_parameters(self):
-        """Initialize control-specific parameters."""
-        self.force_scale_factor = -480.0  # Tendon force scale
+    def create_envs(self):
+        """Create simulation environments."""
+        # Create environment definition
+        self.env_def_handle = self.gym.create_environment_def("hand_env")
+        env_def = self.gym.get_environment_def(self.env_def_handle)
 
-        # Relative control scales
-        self.revolute_scale = torch.full((self.NUM_REVOLUTE,), math.pi / 10, device=self.device)
+        # Load appropriate hand model
+        # hand_file = "/workspace/assets/hands/hand.urdf"
+        hand_file = "/workspace/assets/oph_hand/xml/oph_hand.xml"
+
+        env_def.import_definitions(
+            hand_file,
+            fixed=self.fixed_hand,
+            use_visual_mesh=True,
+            force_mass_computation=self.force_mass_inertia_computation,
+            force_inertia_computation=self.force_mass_inertia_computation,
+        )
+
+        # Configure articulation
+        self.def_handle = env_def.get_articulation_def_handle(0)
+        self.art_def = env_def.get_articulation_def(self.def_handle)
+        self.art_def.has_self_collisions = self.has_self_collisions
+
+        if self.has_self_collisions:
+            self.art_def.contact_offset = 0.005
+
+        # Create articulation
+        self.arti_handle = env_def.create_articulation(self.def_handle, v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, 0)), "hand")
+
+        # Validate dimensions
+        self.num_dofs = self.art_def.get_num_joint_dof_defs()
+        self.num_links = self.art_def.get_num_link_defs()
+        self.link_masses = torch.zeros(self.num_links, dtype=torch.float32, device=self.device)
+        for i in range(self.num_links):
+            self.link_masses[i] = self.art_def.get_link_def(i).mass
+
+        # Configure PID gains
+        self._configure_pid_gains()
+
+        # Load and configure pen
+        self._create_pen(env_def)
+
+        # Create table
+        self._create_table(env_def)
+
+        env_def.finalize()
+        super().create_envs(self.env_def_handle)
 
     def _setup_action_space(self):
         """Configure action space dimensions."""
-        self.num_actions = self.NUM_REVOLUTE
-
-        print(f"Action space size: {self.num_actions}")
+        self.num_actions = self.num_dofs + 6  # Revolute joints + base link velocity
 
         self.single_action_space = Box(
             low=np.full(self.num_actions, -1.0, dtype=np.float32), high=np.full(self.num_actions, 1.0, dtype=np.float32), dtype=np.float32
         )
 
+        self.velocity_scale = torch.tensor([0.2, 0.2, 0.2, 0.1, 0.1, 0.1], dtype=torch.float32, device=self.device)
+        self.revolute_scale = torch.full((self.num_dofs,), math.pi / 10, device=self.device)
+
     def _setup_observation_space(self):
         """Configure observation space dimensions."""
         # Joint positions + velocities + ball state + actions
-        self.num_obs = 2 * self.NUM_REVOLUTE  # Joint positions + velocities
+        self.num_obs = 2 * self.num_dofs  # Joint positions + velocities
         self.num_obs += 6 + 6  # Pen pose (euler + pos) + ball vel (linear + angular)
         self.num_obs += 2 * self.num_actions  # Current actions + last actions
         self.num_obs += 3  # Pen goal rotation (euler)
@@ -180,52 +203,6 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
             high=np.full(self.num_obs, np.finfo("f").max, dtype=np.float32),
             dtype=np.float32,
         )
-
-    def create_envs(self):
-        """Create simulation environments."""
-        # Create environment definition
-        self.env_def_handle = self.gym.create_environment_def("hand_env")
-        env_def = self.gym.get_environment_def(self.env_def_handle)
-
-        # Load appropriate hand model
-        hand_file = "/workspace/assets/hands/hand.urdf"
-
-        env_def.import_definitions(
-            hand_file,
-            fixed=False,
-            use_visual_mesh=False,
-            force_mass_computation=self.force_mass_inertia_computation,
-            force_inertia_computation=self.force_mass_inertia_computation,
-        )
-
-        # Configure articulation
-        self.def_handle = env_def.get_articulation_def_handle_by_name("hand")
-        self.art_def = env_def.get_articulation_def(self.def_handle)
-        self.art_def.has_self_collisions = self.has_self_collisions
-
-        if self.has_self_collisions:
-            self.art_def.contact_offset = 0.005
-
-        # Set initial pose
-        self.root_trans_init = v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, 0))
-        self.root_vel_init = v.SpatialVector(0)
-
-        # Create articulation
-        self.arti_handle = env_def.create_articulation(self.def_handle, self.root_trans_init, "hand")
-
-        # Validate dimensions
-        assert self.NUM_DOFS == self.art_def.get_num_joint_dof_defs()
-
-        # Configure PID gains
-        self._configure_pid_gains()
-
-        # Load and configure pen
-        self._create_pen(env_def)
-
-        self._create_table(env_def)
-
-        env_def.finalize()
-        super().create_envs(self.env_def_handle)
 
     def _configure_pid_gains(self):
         """Set PID controller gains for joints."""
@@ -275,49 +252,42 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
         rgb_mat.spec_intensity = 0.25
         rgb_mat_handle = env_def.create_rgb_material(rgb_mat)
 
-        table_def_handle = env_def.create_box_def(half_size = v.Vec3(0.2, 0.4, 0.02), name="table", fixed=True, rgb_material_handle = rgb_mat_handle)
+        table_def_handle = env_def.create_box_def(
+            half_size=v.Vec3(0.2, 0.4, 0.02), name="table", fixed=True, rgb_material_handle=rgb_mat_handle
+        )
         table_handle = env_def.create_rigid_body(table_def_handle, v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0.15, 0.0, -0.15)), "table")
 
     def store_initial_conditions(self):
-        """Extract and store joint and tendon limits."""
-        dof_pos_low, dof_pos_high, dof_pos_init = [], [], []
+        """Extract and store joint limits."""
+        dof_pos_low, dof_pos_high = [], []
 
         # Extract DOF limits
-        for i, dofdef in enumerate(self.art_def.get_joint_dof_defs()):
+        for dofdef in self.art_def.get_joint_dof_defs():
             dof_pos_low.append(dofdef.low_limit)
             dof_pos_high.append(dofdef.high_limit)
-
-            init_pos = dofdef.low_limit + (dofdef.high_limit - dofdef.low_limit) / 2.0
-
-            dof_pos_init.append(np.clip(init_pos, dofdef.low_limit, dofdef.high_limit))
 
         # Convert to tensors
         self.dof_pos_low = torch.tensor(dof_pos_low, dtype=torch.float32, device=self.device)
         self.dof_pos_high = torch.tensor(dof_pos_high, dtype=torch.float32, device=self.device)
-        self.dof_pos_init = torch.tensor(dof_pos_init, dtype=torch.float32, device=self.device)
+        self.dof_pos_init = self.dof_pos_low.unsqueeze(0).repeat(self.num_envs, 1) + torch.rand(
+            self.num_envs, self.num_dofs, device=self.device
+        ) * (self.dof_pos_high - self.dof_pos_low).unsqueeze(0)
         self.dof_vel_init = torch.zeros_like(self.dof_pos_init)
 
-        # Setup action limits based on control mode
-        self._setup_action_limits()
-
-    def _setup_action_limits(self):
-        """Configure action space limits."""
-        self.action_low = self.dof_pos_low
-        self.action_high = self.dof_pos_high
+        # Root transform and velocity buffers
+        self.root_transform_init = torch.tensor(
+            [0, 0, 0, 1, 0, 0, 0.15],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        self.root_vel_init = torch.zeros((self.num_envs, 6), dtype=torch.float32, device=self.device)
 
     def allocate_buffers(self):
         """Allocate GPU buffers for state and control."""
         super().allocate_buffers()
 
-        # Set hand kinematics
-        self.gpu_init_dof_pos = self.dof_pos_init.unsqueeze(0).repeat(self.num_envs, 1)
-        self.gpu_init_dof_vel = torch.zeros_like(self.gpu_init_dof_pos)
-
-        # Root transform and velocity buffers
-        self._init_root_state_buffers()
-
         # PID target buffer (used in all modes)
-        self.set_pid_target_buf = torch.zeros((self.num_envs, self.NUM_DOFS), device=self.device, dtype=torch.float32)
+        self.set_pid_target_buf = torch.zeros((self.num_envs, self.num_dofs), device=self.device, dtype=torch.float32)
 
         # Pen state buffers
         self._allocate_pen_buffers()
@@ -325,38 +295,8 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
         # Last action buffer
         self.last_act_buf = torch.zeros_like(self.act_buf)
 
-    def _init_root_state_buffers(self):
-        """Initialize root transform and velocity buffers."""
-        # Root velocities
-        root_vel = torch.tensor(
-            [
-                self.root_vel_init.top.x,
-                self.root_vel_init.top.y,
-                self.root_vel_init.top.z,
-                self.root_vel_init.bottom.x,
-                self.root_vel_init.bottom.y,
-                self.root_vel_init.bottom.z,
-            ],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        self.gpu_init_root_velocities = root_vel.unsqueeze(0).repeat(self.num_envs, 1)
-
-        # Root transforms
-        root_trans = torch.tensor(
-            [
-                self.root_trans_init.q.x,
-                self.root_trans_init.q.y,
-                self.root_trans_init.q.z,
-                self.root_trans_init.q.w,
-                self.root_trans_init.p.x,
-                self.root_trans_init.p.y,
-                self.root_trans_init.p.z,
-            ],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        self.gpu_init_root_transforms = root_trans.unsqueeze(0).repeat(self.num_envs, 1)
+        # External force/torque buffer
+        self.set_force_torque_buf = torch.zeros((self.num_envs, 1, 6), dtype=torch.float32, device=self.device)
 
     def _allocate_pen_buffers(self):
         """Allocate buffers for pen state and control."""
@@ -366,38 +306,11 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
 
         # Pen kinematics control buffers
         self.set_pen_pos_buf = torch.zeros((self.num_envs, 7), device=self.device, dtype=torch.float32)
-
         self.set_pen_vel_buf = torch.zeros((self.num_envs, 6), device=self.device, dtype=torch.float32)
 
         # Pen initial state
-        pen_vel = torch.tensor(
-            [
-                self.pen_root_vel_init.top.x,
-                self.pen_root_vel_init.top.y,
-                self.pen_root_vel_init.top.z,
-                self.pen_root_vel_init.bottom.x,
-                self.pen_root_vel_init.bottom.y,
-                self.pen_root_vel_init.bottom.z,
-            ],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        self.gpu_init_pen_velocities = pen_vel.unsqueeze(0).repeat(self.num_envs, 1)
-
-        pen_trans = torch.tensor(
-            [
-                self.pen_root_trans_init.q.x,
-                self.pen_root_trans_init.q.y,
-                self.pen_root_trans_init.q.z,
-                self.pen_root_trans_init.q.w,
-                self.pen_root_trans_init.p.x,
-                self.pen_root_trans_init.p.y,
-                self.pen_root_trans_init.p.z,
-            ],
-            dtype=torch.float32,
-            device=self.device,
-        )
-        self.gpu_init_pen_transforms = pen_trans.unsqueeze(0).repeat(self.num_envs, 1)
+        self.gpu_init_pen_velocities = torch.zeros(6, dtype=torch.float32, device=self.device)
+        self.gpu_init_pen_transforms = torch.tensor([0, 0, 0.7819, 0.6234, 0.07, 0, 0.15], dtype=torch.float32, device=self.device)
 
         self.set_pen_pos_buf[:] = self.gpu_init_pen_transforms
         self.set_pen_vel_buf[:] = self.gpu_init_pen_velocities
@@ -411,9 +324,6 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
 
     def create_gpu_commands(self):
         """Create GPU command arrays for efficient state queries and control."""
-        # Joint state commands
-        self._create_joint_state_commands()
-
         # Kinematic state command
         self._create_kinematic_state_command()
 
@@ -423,32 +333,54 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
         # Pen commands
         self._create_pen_commands()
 
-    def _create_joint_state_commands(self):
-        """Create commands for querying joint positions and velocities."""
-        get_pos_cmd = self.env_group.create_joint_state_command(v.wrap_gpu_buffer(self.get_dof_pos_buf), self.arti_handle)
-        self.gpu_get_joint_positions_command_array = self.gym.create_joint_state_command_gpu_array([get_pos_cmd])
+        # Create external force command
+        set_force_torque_cmd = self.env_group.create_link_external_force_command(
+            v.wrap_gpu_buffer(self.set_force_torque_buf), self.arti_handle, [0, 1], force_type=v.ForceType.FORCE_TORQUE
+        )
 
-        get_vel_cmd = self.env_group.create_joint_state_command(v.wrap_gpu_buffer(self.get_dof_vel_buf), self.arti_handle)
-        self.gpu_get_joint_velocities_command_array = self.gym.create_joint_state_command_gpu_array([get_vel_cmd])
+        self.set_force_torque_cmd_arr = self.gym.create_link_external_force_command_gpu_array([set_force_torque_cmd])
 
     def _create_kinematic_state_command(self):
         """Create command for setting articulation kinematic state."""
-        set_kin_cmd = self.env_group.create_articulation_kinematic_state_command(
-            v.wrap_gpu_buffer(self.set_dof_pos_buf),
-            v.wrap_gpu_buffer(self.set_dof_vel_buf),
-            v.wrap_gpu_buffer(self.gpu_init_root_transforms),
-            v.wrap_gpu_buffer(self.gpu_init_root_velocities),
+        reset_kin_cmd = self.env_group.create_articulation_kinematic_state_command(
+            v.wrap_gpu_buffer(self.reset_dof_pos_buf),
+            v.wrap_gpu_buffer(self.reset_dof_vel_buf),
+            v.wrap_gpu_buffer(self.reset_root_transform_buf),
+            v.wrap_gpu_buffer(self.reset_root_vel_buf),
             self.arti_handle,
-            (0, self.NUM_DOFS),
+            (0, self.num_dofs),
             (0, 1),
             masks_buffer=v.wrap_gpu_buffer(self.reset_buf),
         )
+        self.gpu_reset_kinematic_state_command_array = self.gym.create_articulation_kinematic_state_command_gpu_array([reset_kin_cmd])
+
+        set_kin_cmd = self.env_group.create_articulation_kinematic_state_command(
+            v.wrap_gpu_buffer(self.set_dof_pos_buf),
+            v.wrap_gpu_buffer(self.set_dof_vel_buf),
+            v.wrap_gpu_buffer(self.set_root_transform_buf),
+            v.wrap_gpu_buffer(self.set_root_vel_buf),
+            self.arti_handle,
+            (0, self.num_dofs),
+            (0, 1),
+            masks_buffer=v.wrap_gpu_buffer(self.inverse_reset_buf),
+        )
         self.gpu_set_kinematic_state_command_array = self.gym.create_articulation_kinematic_state_command_gpu_array([set_kin_cmd])
+
+        get_kin_cmd = self.env_group.create_articulation_kinematic_state_command(
+            v.wrap_gpu_buffer(self.get_dof_pos_buf),
+            v.wrap_gpu_buffer(self.get_dof_vel_buf),
+            v.wrap_gpu_buffer(self.get_root_transform_buf),
+            v.wrap_gpu_buffer(self.get_root_vel_buf),
+            self.arti_handle,
+            (0, self.num_dofs),
+            (0, 1),
+        )
+        self.gpu_get_kinematic_state_command_array = self.gym.create_articulation_kinematic_state_command_gpu_array([get_kin_cmd])
 
     def _create_pid_command(self):
         """Create command for PID control."""
         set_pid_cmd = self.env_group.create_pid_control_command(
-            v.wrap_gpu_buffer(self.set_pid_target_buf), self.arti_handle, (0, self.NUM_DOFS)
+            v.wrap_gpu_buffer(self.set_pid_target_buf), self.arti_handle, (0, self.num_dofs)
         )
         self.gpu_set_pid_cmd_arr = self.gym.create_pid_control_command_gpu_array([set_pid_cmd])
 
@@ -472,27 +404,20 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
     def reset_idx(self):
         """Reset environments based on reset_buf mask."""
         # Reset kinematics
-        random_pos_init = (
-            torch.rand((self.num_envs, self.NUM_DOFS), dtype=torch.float32, device=self.device) * (self.dof_pos_high - self.dof_pos_low)
-            + self.dof_pos_low
-        )
-        self.set_dof_pos_buf[:] = random_pos_init
-        self.set_dof_vel_buf[:] = self.gpu_init_dof_vel
-        self.gym.set_articulation_kinematic_states(self.gpu_set_kinematic_state_command_array)
+        self.reset_dof_pos_buf[:] = self.dof_pos_init
+        self.reset_dof_vel_buf[:] = self.dof_vel_init
+        self.reset_root_transform_buf[:] = self.root_transform_init
+        self.reset_root_vel_buf[:] = 0.0
+        self.gym.set_articulation_kinematic_states(self.gpu_reset_kinematic_state_command_array)
 
         # Reset control buffers
         reset_mask = self.reset_buf.unsqueeze(1)
 
         self.act_buf = torch.where(reset_mask, torch.zeros_like(self.act_buf), self.act_buf)
-        self.set_pid_target_buf[:] = torch.where(reset_mask.expand(-1, self.NUM_DOFS), self.set_dof_pos_buf, self.set_pid_target_buf)
+        self.set_pid_target_buf[:] = torch.where(reset_mask.expand(-1, self.num_dofs), self.set_dof_pos_buf, self.set_pid_target_buf)
 
         # Reset pen state with noise
-        self.set_pen_pos_buf[:, 4:] = self.gpu_init_pen_transforms[:, 4:] + reset_noise_helper(
-            self.gpu_init_pen_transforms[:, 4:], self.reset_noise_scale, 0.02, 0.005
-        )
-        self.set_pen_pos_buf[:, :4] = self.gpu_init_pen_transforms[:, :4] + reset_noise_helper(
-            self.gpu_init_pen_transforms[:, :4], self.reset_noise_scale, 0.8, 0.3
-        )
+        self.set_pen_pos_buf[:] = self.gpu_init_pen_transforms
         self.set_pen_vel_buf[:] = self.gpu_init_pen_velocities
         self.gym.set_rigid_body_kinematic_states(self.gpu_set_pen_kin_cmd_array)
 
@@ -502,6 +427,7 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
     def reset(self):
         """Reset all environments."""
         self.reset_buf[:] = True
+        self.inverse_reset_buf[:] = False
         super().reset()
         self.compute_observations()
         return self.obs_buf.clone(), {}
@@ -513,7 +439,19 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
         # Scale actions to control space
         self._scale_actions(actions)
 
-        self._apply_pid_control()
+        self._apply_pid_control(self.act_buf[:, 6:])
+
+        # Set velocity of base link
+        self.set_dof_pos_buf[:] = self.get_dof_pos_buf
+        self.set_dof_vel_buf[:] = self.get_dof_vel_buf
+        self.set_root_transform_buf[:] = self.get_root_transform_buf
+        self.set_root_vel_buf[:] = self.act_buf[:, :6]  # note that vel is first 3 angular, last 3 linear
+        self.gym.set_articulation_kinematic_states(self.gpu_set_kinematic_state_command_array)
+
+        # Gravity compensation on base link
+        self.set_force_torque_buf[:] = 0.0
+        self.set_force_torque_buf[:, 0, 2] = 9.81 * self.link_masses[0]
+        self.gym.set_link_external_forces(self.set_force_torque_cmd_arr)
 
         # Clamp and set PID targets
         self.set_pid_target_buf.clamp_(self.dof_pos_low, self.dof_pos_high)
@@ -521,16 +459,16 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
 
     def _scale_actions(self, actions: torch.Tensor):
         """Scale normalized actions to appropriate control ranges."""
-        self.act_buf[:] = scale(actions, -self.revolute_scale, self.revolute_scale)
+        self.act_buf[:, :6] = scale(actions[:, :6], -self.velocity_scale, self.velocity_scale)
+        self.act_buf[:, 6:] = scale(actions[:, 6:], -self.revolute_scale, self.revolute_scale)
 
-    def _apply_pid_control(self):
+    def _apply_pid_control(self, actions: torch.Tensor = None):
         """Apply PID position targets."""
-        self.set_pid_target_buf += self.act_buf
+        self.set_pid_target_buf += actions
 
     def refresh_buffers(self):
         """Refresh all state buffers from simulation."""
-        self.gym.get_joint_positions(self.gpu_get_joint_positions_command_array)
-        self.gym.get_joint_velocities(self.gpu_get_joint_velocities_command_array)
+        self.gym.get_articulation_kinematic_states(self.gpu_get_kinematic_state_command_array)
         self.gym.get_rigid_body_kinematic_states(self.gpu_get_pen_kin_cmd_array)
 
     def post_physics_step(self):
@@ -538,7 +476,8 @@ class MorphHandPenEnvironmentGpu(EnvironmentGpu):
         self.progress_buf += 1
 
         # Check for episode termination
-        self.reset_buf[:] = torch.logical_or(self.term_buf, self.trunc_buf)
+        # self.reset_buf[:] = torch.logical_or(self.term_buf, self.trunc_buf)
+        # self.inverse_reset_buf[:] = ~self.reset_buf
         self.reset_idx()
 
         # Update state
@@ -588,6 +527,7 @@ if __name__ == "__main__":
         "with_window": get_VL_VISUAL_TESTS(),
         "max_episode_length": 1000,
         "pen_size": "small",  # 'small', 'mid', or 'big'
+        "fixed_hand": True,
     }
 
     assert torch.cuda.is_available(), "CUDA required"
@@ -613,8 +553,13 @@ if __name__ == "__main__":
         # Create sliders based on control mode
         sliders = []
 
-        for i, dof_def in enumerate(envs.art_def.get_joint_dof_defs()):
-            name = dof_def.name or f"DOF_{i}"
+        for i in range(envs.num_dofs + 6):
+            if i < 3:
+                name = f"Angular_Vel_{i}"
+            elif i < 6:
+                name = f"Linear_Vel_{i - 3}"
+            else:
+                name = f"DOF_{i - 6}"
             sliders.append(v.UserSlider(name, -1, 1, 0.0))
             render.register_menu_item(sliders[-1])
 
@@ -639,3 +584,8 @@ if __name__ == "__main__":
         step += 1
 
     print(f"Simulation completed after {step} steps")
+
+    """Simple test script to create a hand with zero gravity and move via sliders."""
+
+    # Configuration
+    
