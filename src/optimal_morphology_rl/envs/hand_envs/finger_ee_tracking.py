@@ -125,14 +125,6 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.gym.get_link_properties(self.set_mass_cmd_arr)
         self.default_masses = torch.clone(self.set_mass_buf)
 
-        # Randomize mass
-        self.set_mass_buf[:] = self.default_masses + (torch.rand_like(self.default_masses) - 0.5) * 0.2 * self.default_masses
-        self.gym.set_link_properties(self.set_mass_cmd_arr)
-
-        # Randomize friction
-        self.set_joint_friction_buf[:] = torch.rand((len(self.num_envs), self.num_dofs), device=self.device) * 0.1
-        self.gym.set_joint_properties(self.set_joint_friction_cmd_arr)
-
         if self.gym.get_render() is not None:
 
             # Camera eye, dir: Vec3(-0.000000, -0.000000, 5.000000), Vec3(0.490521, 0.742927, -0.455465)
@@ -381,6 +373,15 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.pully_radius[self.reset_buf, :] = self.default_pully_radius + (torch.rand((self.reset_buf.sum(), self.num_tendons), device=self.device) - 0.5) * 0.2 * self.default_pully_radius
         self.zero_offset_length[self.reset_buf, :] = self.default_zero_offset_length + (torch.rand((self.reset_buf.sum(), self.num_tendons), device=self.device) - 0.5) * 0.2 * self.default_zero_offset_length
         self.spring[self.reset_buf, :] = self.default_spring + (torch.rand((self.reset_buf.sum(), self.num_dofs), device=self.device) - 0.5) * 0.2 * self.default_spring
+
+        # NOTE(VY): This ONLY works if we reset ALL envs at the same time every time (ie, no termination conditions)
+        # Randomize mass
+        self.set_mass_buf[:] = self.default_masses + (torch.rand_like(self.default_masses) - 0.5) * 0.2 * self.default_masses
+        self.gym.set_link_properties(self.set_mass_cmd_arr)
+
+        # Randomize friction
+        self.set_joint_friction_buf[:] = torch.rand((len(self.num_envs), self.num_dofs), device=self.device) * 0.1
+        self.gym.set_joint_properties(self.set_joint_friction_cmd_arr)
 
     def reset(self):
         return super().reset()
