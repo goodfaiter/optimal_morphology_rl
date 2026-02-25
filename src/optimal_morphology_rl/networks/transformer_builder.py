@@ -77,7 +77,7 @@ class TransformerActorCriticBuilder(NetworkBuilder):
             if self.fixed_sigma:
                 self.sigma = nn.Parameter(
                     torch.zeros(actions_num, requires_grad=True, dtype=torch.float32),
-                    requires_grad=True,
+                    requires_grad=False,
                 )
             else:
                 self.sigma_head = nn.Linear(self.hidden_dim, actions_num)
