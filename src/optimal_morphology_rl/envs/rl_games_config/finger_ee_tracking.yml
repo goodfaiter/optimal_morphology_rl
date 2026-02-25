@@ -24,7 +24,7 @@ params:
 
     transformer:
       seq_len:    30  # must match hist_size in the env
-      hidden_dim: 64
+      hidden_dim: 16
       num_heads:  4  # hidden_dim % num_heads == 0
       num_layers: 2
       dropout:    0.0

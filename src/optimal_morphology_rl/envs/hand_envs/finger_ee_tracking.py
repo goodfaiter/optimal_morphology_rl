@@ -83,7 +83,8 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.create_envs()
 
         # Observation space
-        self.hist_size = 1
+        self.num_features = 5
+        self.hist_size = 30
         self.num_obs = 2 * self.num_tendons  # tendon lengths and tendon velocities
         self.num_obs += self.num_tendons  # action
         self.num_obs += self.num_tendons  # prev action
@@ -437,7 +438,17 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.prev_act_history.add(self.prev_act_buf[:, :])
         self.angle_history.add(self._angle)
 
-        # idx = 0
+        idx = 0
+        self.obs_buf[:, idx :: self.num_features] = self.motor_pos.buffer[:, :]
+        idx += 1
+        self.obs_buf[:, idx :: self.num_features] = self.motor_vel.buffer[:, :]
+        idx += 1
+        self.obs_buf[:, idx :: self.num_features] = self.act_history.buffer[:, :]
+        idx += 1
+        self.obs_buf[:, idx :: self.num_features] = self.prev_act_history.buffer[:, :]
+        idx += 1
+        self.obs_buf[:, idx :: self.num_features] = self.angle_history.buffer[:, :]
+
         # self.obs_buf[:, idx : idx + self.num_tendons * self.hist_size] = self.motor_pos.buffer[:, :]
         # idx += self.num_tendons * self.hist_size
         # self.obs_buf[:, idx : idx + self.num_tendons * self.hist_size] = self.motor_vel.buffer[:, :]
@@ -448,18 +459,18 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         # idx += self.num_tendons * self.hist_size
         # self.obs_buf[:, idx : idx + self.hist_size] = self.angle_history.buffer[:, :]
 
-        idx = 0
-        self.obs_buf[:, idx : idx + self.num_tendons] = motor_pos_rad[:, :]
-        idx += self.num_tendons
-        self.obs_buf[:, idx : idx + self.num_tendons] = motor_vel_rad_per_sec[:, :]
-        idx += self.num_tendons
-        self.obs_buf[:, idx : idx + self.num_tendons] = self.act_buf[:, :]
-        idx += self.num_tendons
-        self.obs_buf[:, idx : idx + self.num_tendons] = self.prev_act_buf[:, :]
-        idx += self.num_tendons
-        self.obs_buf[:, idx : idx + self.num_tendons] = self._angle[:, :]
+        # idx = 0
+        # self.obs_buf[:, idx : idx + self.num_tendons] = motor_pos_rad[:, :]
+        # idx += self.num_tendons
+        # self.obs_buf[:, idx : idx + self.num_tendons] = motor_vel_rad_per_sec[:, :]
+        # idx += self.num_tendons
+        # self.obs_buf[:, idx : idx + self.num_tendons] = self.act_buf[:, :]
+        # idx += self.num_tendons
+        # self.obs_buf[:, idx : idx + self.num_tendons] = self.prev_act_buf[:, :]
+        # idx += self.num_tendons
+        # self.obs_buf[:, idx : idx + self.num_tendons] = self._angle[:, :]
 
-        print("observations: {}".format(self.obs_buf[0, :]))
+        # print("observations: {}".format(self.obs_buf[0, :]))
 
     def compute_reward_termination_truncation(self):
 
