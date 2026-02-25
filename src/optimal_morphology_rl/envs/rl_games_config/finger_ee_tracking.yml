@@ -1,4 +1,3 @@
-# Adapted from https://github.com/NVIDIA-Omniverse/IsaacGymEnvs/blob/main/isaacgymenvs/cfg/train/HumanoidPPO.yaml
 params:
   seed: 200964
 
@@ -9,8 +8,8 @@ params:
     name: continuous_a2c_logstd
 
   network:
-    name: actor_critic
-    separate: True
+    name: transformer_actor_critic
+    separate: False
 
     space:
       continuous:
@@ -23,20 +22,12 @@ params:
           val: 0
         fixed_sigma: True
 
-    mlp:
-      units: [16, 8, 4]
-      # units: [64, 32, 16]
-      # units: [256, 128, 64]
-      activation: relu
-      d2rl: False
-
-      initializer:
-        name: default
-      regularizer:
-        name: None
-
-          #load_checkpoint: ${if:${...checkpoint},True,False} # flag which sets whether to load the checkpoint
-          #load_path: ${...checkpoint} # path to the checkpoint to load
+    transformer:
+      seq_len:    30  # must match hist_size in the env
+      hidden_dim: 64
+      num_heads:  4  # hidden_dim % num_heads == 0
+      num_layers: 2
+      dropout:    0.0
 
   config:
     name: finger_ee_tracking
@@ -59,10 +50,10 @@ params:
     # kl_threshold: 0.008
     kl_threshold: 0.016
     score_to_win: 20000000
-    max_epochs: 500 
+    max_epochs: 1000
     save_best_after: 200
     save_frequency: 100
-    print_stats: False
+    print_stats: True
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: False
@@ -74,7 +65,7 @@ params:
     critic_coef: 1.0
     clip_actions: False
     clip_value: False
-    seq_length: 4
+    seq_length: 1
     bounds_loss_coef: 0.0
       # player:
       #   deterministic: True
