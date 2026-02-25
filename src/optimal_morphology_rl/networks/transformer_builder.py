@@ -52,7 +52,7 @@ class TransformerActorCriticBuilder(NetworkBuilder):
             self.input_proj = nn.Linear(self.feature_dim, self.hidden_dim)
             self.pos_enc = PositionalEncoding(self.seq_len, self.hidden_dim)
 
-            encoder_layer = nn.TransformerEncoderLayer(
+            action_encoder_layer = nn.TransformerEncoderLayer(
                 d_model=self.hidden_dim,
                 nhead=self.num_heads,
                 dim_feedforward=self.hidden_dim * 4,
