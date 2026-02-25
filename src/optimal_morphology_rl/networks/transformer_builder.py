@@ -122,11 +122,16 @@ class TransformerActorCriticBuilder(NetworkBuilder):
 
             # Mask
             mask = self.causal_mask.to(dtype=x.dtype)
-            x = self.transformer(x, mask=mask, is_causal=True)
-            x = x[:, -1, :]  # [B, hidden_dim]
 
-            mu = self.mu_head(x)
-            value = self.value_head(x)
+            # Action
+            mu = self.action_transformer(x, mask=mask, is_causal=True)
+            mu = mu[:, -1, :]  # [B, hidden_dim]
+            mu = self.mu_head(mu)
+
+            # Value
+            value = self.value_transformer(x, mask=mask, is_causal=True)
+            value = value[:, -1, :]  # [B, hidden_dim]
+            value = self.value_head(value)
 
             if self.fixed_sigma:
                 sigma = mu * 0.0 + self.sigma
