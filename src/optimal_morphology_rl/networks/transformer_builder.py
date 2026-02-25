@@ -61,17 +61,35 @@ class TransformerActorCriticBuilder(NetworkBuilder):
                 batch_first=True,
                 norm_first=True,
             )
-            self.transformer = nn.TransformerEncoder(
-                encoder_layer,
+            self.action_transformer = nn.TransformerEncoder(
+                action_encoder_layer,
                 num_layers=self.num_layers,
                 enable_nested_tensor=False,
             )
+
+            if self.is_separate_critic():
+                value_encoder_layer = nn.TransformerEncoderLayer(
+                    d_model=self.hidden_dim,
+                    nhead=self.num_heads,
+                    dim_feedforward=self.hidden_dim * 4,
+                    dropout=self.dropout,
+                    activation="relu",
+                    batch_first=True,
+                    norm_first=True,
+                )
+                self.value_transformer = nn.TransformerEncoder(
+                    value_encoder_layer,
+                    num_layers=self.num_layers,
+                    enable_nested_tensor=False,
+                )
+            else:
+                self.value_transformer = self.action_transformer
 
             # Causal mask
             causal_mask = nn.Transformer.generate_square_subsequent_mask(self.seq_len)
             self.register_buffer("causal_mask", causal_mask)
 
-            self.mu_head = nn.Linear(self.hidden_dim, actions_num)
+            self.mu_head = nn.Linear(self.hidden_dim, actions_num)  
             self.value_head = nn.Linear(self.hidden_dim, self.value_size)
 
             if self.fixed_sigma:
