@@ -105,9 +105,6 @@ class FingerEnvironmentGpu(EnvironmentGpu):
             dtype=np.float32,
         )
 
-        # Setup tendon joint mapping
-        # self.setup_tendon_joint_mapping()
-
         # Allocate buffers
         self.allocate_buffers()
 
@@ -115,7 +112,7 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.create_gpu_commands()
 
         # Load model
-        model_path = "/workspace/src/optimal_morphology_rl/tendon_model/2026_02_12_16_02_10_best.pt"
+        model_path = "/workspace/src/optimal_morphology_rl/tendon_model/2026_02_28_09_09_02_final.pt"
         self.tendon_force_model = TendonForceEstimation(model_path, num_envs=self.total_num_envs, device=self.device)
 
         # Finalize gym
@@ -126,10 +123,9 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.default_masses = torch.clone(self.set_mass_buf)
 
         if self.gym.get_render() is not None:
-
-            # Camera eye, dir: Vec3(-0.000000, -0.000000, 5.000000), Vec3(0.490521, 0.742927, -0.455465)
-            # Camera eye, dir: Vec3(-0.125011, -0.001044, 0.065207), Vec3(0.880567, 0.397776, -0.257634)
-            self.gym_render.reset_camera(v.Vec3(-0.125011, -0.001044, 0.065207), v.Vec3(0.880567, 0.397776, -0.257634))
+            #  v.Vec3(-0.132636, 0.030610, 0.021915), v.Vec3(0.991742, 0.127220, -0.016226)
+            #  v.Vec3(-0.125011, -0.001044, 0.065207), v.Vec3(0.880567, 0.397776, -0.257634)
+            self.gym_render.reset_camera(v.Vec3(-0.132636, 0.030610, 0.021915), v.Vec3(0.991742, 0.127220, -0.016226))
 
         self.info['rewards'] = {}
 
@@ -144,7 +140,7 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         env_def.import_definitions(
             hand_filename,
             fixed=True,
-            use_visual_mesh=True,
+            use_visual_mesh=False,
             force_mass_computation=self.force_mass_inertia_computation,
             force_inertia_computation=self.force_mass_inertia_computation,
         )
@@ -204,25 +200,6 @@ class FingerEnvironmentGpu(EnvironmentGpu):
                 env_handle=self.env_sets[0].get_environment_handle(0),
             )
             self.gym.get_render().register_line_shape(self._cube)
-
-    # def setup_tendon_joint_mapping(self):
-
-    #     self.tendon_joint_mapping = {
-    #         0: [0, 1],  # Tendon 0: both joints
-    #     }
-
-    #     # Convert to tensor for efficient computation
-    #     self.tendon_joint_map = torch.zeros((self.num_tendons, self.num_dofs), dtype=torch.bool, device=self.device)
-    #     for tendon_idx, joint_indices in self.tendon_joint_mapping.items():
-    #         for joint_idx in joint_indices:
-    #             self.tendon_joint_map[tendon_idx, joint_idx] = True
-
-    #     print("\nTendon-Joint Mapping:")
-    #     for tendon_idx, joint_indices in self.tendon_joint_mapping.items():
-    #         if len(joint_indices) == 0:
-    #             print(f"  Tendon {tendon_idx}: Free (no joints)")
-    #         else:
-    #             print(f"  Tendon {tendon_idx}: Joints {joint_indices}")
 
     def allocate_buffers(self):
         super().allocate_buffers()
@@ -320,7 +297,6 @@ class FingerEnvironmentGpu(EnvironmentGpu):
             v.wrap_gpu_buffer(self.set_mass_buf),
             self.art_def_handle,
             (0, self.num_links),
-            # v.wrap_gpu_buffer(self.reset_buf)
         )
         self.set_mass_cmd_arr = self.gym.create_gpu_array([set_mass_cmd])
 
@@ -332,14 +308,18 @@ class FingerEnvironmentGpu(EnvironmentGpu):
             v.wrap_gpu_buffer(self.set_joint_friction_buf),
             self.art_def_handle,
             (0, self.num_dofs),
-            # masks_buffer=v.wrap_gpu_buffer(self.reset_buf),
         )
 
         self.set_joint_friction_cmd_arr = self.gym.create_gpu_array([set_joint_friction_cmd])
 
-    def update_goal(self, update_indx):
-        amp = 0.06
-        self._angle[update_indx, :] = torch.rand((update_indx.sum(), 1), device=self.device) * 0.6 * torch.pi
+    def update_goal(self, update_indx=None, angle=None):
+        amp = 0.04
+        if update_indx is None:
+            update_indx = torch.arange(self.total_num_envs, device=self.device)
+        if angle is not None:
+            self._angle[update_indx, :] = angle
+        else:
+            self._angle[update_indx, :] = torch.rand((update_indx.sum(), 1), device=self.device) * 0.6 * torch.pi
         self.goal_pose[update_indx, 0] = 0
         self.goal_pose[update_indx, 1] = amp * torch.cos(self._angle[update_indx].squeeze()) + 0.03
         self.goal_pose[update_indx, 2] = amp * torch.sin(self._angle[update_indx].squeeze())
@@ -349,6 +329,7 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.act_buf[self.reset_buf, :] = 0.0
 
         self.reset_dof_pos_buf[self.reset_buf, :] = torch.rand((self.reset_buf.sum(), self.num_dofs), device=self.device) * 0.5 * torch.pi
+        # self.reset_dof_pos_buf[self.reset_buf, :] = 0.0
         self.reset_dof_vel_buf[self.reset_buf, :] = 0.0
         self.reset_root_transform_buf[self.reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=self.device)  # identity quat
         self.reset_root_transform_buf[self.reset_buf, 4:] = torch.tensor([0.0, 0.0, 0.0], device=self.device)
@@ -369,9 +350,9 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.prev_act_history.reset(self.reset_buf)
         self.angle_history.reset(self.reset_buf)
         
-        # radomize radius, offset, and spring
+        # # radomize radius, offset, and spring
         self.pully_radius[self.reset_buf, :] = self.default_pully_radius + (torch.rand((self.reset_buf.sum(), self.num_tendons), device=self.device) - 0.5) * 0.2 * self.default_pully_radius
-        self.zero_offset_length[self.reset_buf, :] = self.default_zero_offset_length + (torch.rand((self.reset_buf.sum(), self.num_tendons), device=self.device) - 0.5) * 0.2 * self.default_zero_offset_length
+        self.zero_offset_length[self.reset_buf, :] = self.default_zero_offset_length + (torch.rand((self.reset_buf.sum(), self.num_tendons), device=self.device) - 0.5) * 0.05 * self.default_zero_offset_length
         self.spring[self.reset_buf, :] = self.default_spring + (torch.rand((self.reset_buf.sum(), self.num_dofs), device=self.device) - 0.5) * 0.2 * self.default_spring
 
         # NOTE(VY): This ONLY works if we reset ALL envs at the same time every time (ie, no termination conditions)
@@ -380,13 +361,14 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.gym.set_link_properties(self.set_mass_cmd_arr)
 
         # Randomize friction
-        self.set_joint_friction_buf[:] = torch.rand((len(self.num_envs), self.num_dofs), device=self.device) * 0.1
+        self.set_joint_friction_buf[:] = torch.rand((len(self.num_envs), self.num_dofs), device=self.device) * 1.0
         self.gym.set_joint_properties(self.set_joint_friction_cmd_arr)
 
     def reset(self):
         return super().reset()
 
     def pre_physics_step(self, actions):
+        actions *= 2.0
         self.prev_act_buf[:] = self.act_buf[:]
         self.act_buf[:] = actions[:]
 
@@ -395,14 +377,34 @@ class FingerEnvironmentGpu(EnvironmentGpu):
 
         motor_pos_rad = -1.0 * (self.get_tendon_lengths_buf - self.zero_offset_length) / self.pully_radius  # dL = radius [m] * angle [rad]
         des_pos_rad = torch.clamp(motor_pos_rad + self.act_buf, 0.0, 2.0 * torch.pi)
+        # des_pos_rad = actions
         motor_vel_rad_per_sec = -1.0 * self.get_tendon_vel_buf / self.pully_radius
 
         self.tendon_force_model.desired_position(des_pos_rad)
         self.tendon_force_model.measured_position(motor_pos_rad)
         self.tendon_force_model.measured_velocity(motor_vel_rad_per_sec)
         self.set_tendon_controls_buf[:] = self.tendon_force_model.forward().unsqueeze(1)
-        self.set_tendon_controls_buf[:] = torch.clamp(self.set_tendon_controls_buf, 0.0, 30.0)
+        self.set_tendon_controls_buf[:] = torch.clamp(self.set_tendon_controls_buf, 0.0, 30)
         self.gym.set_spatial_tendon_forces(self.gpu_set_tendon_control_command_array)
+
+        # print(self.set_tendon_controls_buf[0, :])
+
+        # self.set_tendon_controls_buf[:] = self.act_buf[:, :]
+        # self.gym.set_spatial_tendon_forces(self.gpu_set_tendon_control_command_array)
+
+        # pure torque source
+        # delta_motor_pos_rad = des_pos_rad - motor_pos_rad
+        # desired_tendon_force = 4.2 * delta_motor_pos_rad  # P controller
+        # self.set_tendon_controls_buf[:] = torch.clamp(desired_tendon_force, 0.0, 30.0)
+        # self.gym.set_spatial_tendon_forces(self.gpu_set_tendon_control_command_array)
+
+        # motor_pos_rad = actions
+        # tendon_length_offset = -1.0 * motor_pos_rad * 0.012
+        # print("tendon length offset command: {}".format(tendon_length_offset[0, :]))
+        # # print("tendon length from sensor: {}".format(self.get_tendon_lengths_buf[0, :]))
+        # print("tendon length real offset: {}".format(self.get_tendon_lengths_buf[0, :] - self.zero_offset_length[0, :]))
+        # self.set_tendon_controls_buf[:] = tendon_length_offset * 13
+        # self.gym.set_spatial_tendon_controls(self.gpu_set_tendon_control_command_array)
 
         # self.set_tendon_controls_buf[:] = self.act_buf[:]
         # self.gym.set_spatial_tendon_forces(self.gpu_set_tendon_control_command_array)
@@ -414,7 +416,7 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.gym.get_kinematic_sensor_states(self.gpu_get_tip_sensor_command_array)
 
     def post_physics_step(self):
-        self.progress_buf[:] += 1
+        # self.progress_buf[:] += 1
 
         self.reset_buf[:] = torch.logical_or(self.term_buf, self.trunc_buf)
         self.reset_idx()
@@ -424,7 +426,7 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.compute_reward_termination_truncation()
 
         # update goal angle
-        update_indx = torch.rand(self.total_num_envs, device=self.device) < 0.025
+        update_indx = torch.rand(self.total_num_envs, device=self.device) < 0.005
         if update_indx.sum() > 0:
             self.update_goal(update_indx)
 
@@ -439,26 +441,27 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.prev_act_history.add(self.prev_act_buf[:, :])
         self.angle_history.add(self._angle)
 
-        idx = 0
-        self.obs_buf[:, idx :: self.num_features] = self.motor_pos.buffer[:, :]
-        idx += 1
-        self.obs_buf[:, idx :: self.num_features] = self.motor_vel.buffer[:, :]
-        idx += 1
-        self.obs_buf[:, idx :: self.num_features] = self.act_history.buffer[:, :]
-        idx += 1
-        self.obs_buf[:, idx :: self.num_features] = self.prev_act_history.buffer[:, :]
-        idx += 1
-        self.obs_buf[:, idx :: self.num_features] = self.angle_history.buffer[:, :]
+        # idx = 0
+        # self.obs_buf[:, idx :: self.num_features] = self.motor_pos.buffer[:, :]
+        # idx += 1
+        # self.obs_buf[:, idx :: self.num_features] = self.motor_vel.buffer[:, :]
+        # idx += 1
+        # self.obs_buf[:, idx :: self.num_features] = self.act_history.buffer[:, :]
+        # idx += 1
+        # self.obs_buf[:, idx :: self.num_features] = self.prev_act_history.buffer[:, :]
+        # idx += 1
+        # self.obs_buf[:, idx :: self.num_features] = self.angle_history.buffer[:, :]
 
-        # self.obs_buf[:, idx : idx + self.num_tendons * self.hist_size] = self.motor_pos.buffer[:, :]
-        # idx += self.num_tendons * self.hist_size
-        # self.obs_buf[:, idx : idx + self.num_tendons * self.hist_size] = self.motor_vel.buffer[:, :]
-        # idx += self.num_tendons * self.hist_size
-        # self.obs_buf[:, idx : idx + self.num_tendons * self.hist_size] = self.act_history.buffer[:, :]
-        # idx += self.num_tendons * self.hist_size
-        # self.obs_buf[:, idx : idx + self.num_tendons * self.hist_size] = self.prev_act_history.buffer[:, :]
-        # idx += self.num_tendons * self.hist_size
-        # self.obs_buf[:, idx : idx + self.hist_size] = self.angle_history.buffer[:, :]
+        idx = 0
+        self.obs_buf[:, idx : idx + self.num_tendons * self.hist_size] = self.motor_pos.buffer[:, :]
+        idx += self.num_tendons * self.hist_size
+        self.obs_buf[:, idx : idx + self.num_tendons * self.hist_size] = self.motor_vel.buffer[:, :]
+        idx += self.num_tendons * self.hist_size
+        self.obs_buf[:, idx : idx + self.num_tendons * self.hist_size] = self.act_history.buffer[:, :]
+        idx += self.num_tendons * self.hist_size
+        self.obs_buf[:, idx : idx + self.num_tendons * self.hist_size] = self.prev_act_history.buffer[:, :]
+        idx += self.num_tendons * self.hist_size
+        self.obs_buf[:, idx : idx + self.hist_size] = self.angle_history.buffer[:, :]
 
         # idx = 0
         # self.obs_buf[:, idx : idx + self.num_tendons] = motor_pos_rad[:, :]
@@ -481,7 +484,7 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         # Reward tip position
         tip_pose = self.get_tip_pose_sensor_buf[:, 4:]
         tip_to_goal = self.goal_pose - tip_pose
-        tip_to_goal_reward = -1.0 * torch.norm(tip_to_goal, dim=1)
+        tip_to_goal_reward = -5.0 * torch.norm(tip_to_goal, dim=1)
         self.rew_buf[:] += tip_to_goal_reward
         self.info['rewards']["tip_to_goal_reward"] = tip_to_goal_reward.sum().item() / self.total_num_envs
 
@@ -491,7 +494,7 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.info['rewards']["smoothness_penalty"] = smoothness_penalty.sum().item() / self.total_num_envs
 
         # Tendon Vel
-        tendon_vel_penalty = -100.0 * torch.sum(self.get_tendon_vel_buf**2, dim=1)
+        tendon_vel_penalty = -50.0 * torch.sum(self.get_tendon_vel_buf**2, dim=1)
         self.rew_buf[:] += tendon_vel_penalty
         self.info['rewards']["tendon_vel_penalty"] = tendon_vel_penalty.sum().item() / self.total_num_envs
 
@@ -508,6 +511,17 @@ class FingerEnvironmentGpu(EnvironmentGpu):
 if __name__ == "__main__":
 
     from vlearn.utils import get_VL_VISUAL_TESTS
+
+    from helpers.mcap_to_pandas import read_mcap_to_dataframe
+    path = "/workspace/data/rosbag2_2026_02_26-15_25_26_0_predicted_0.mcap" # sine
+    # path = "/workspace/data/mlp_30_model_steps_rosbag2_2026_02_28-09_30_03_0_processed_0.mcap"
+    # path = "/workspace/data/mlp_30_pure_rosbag2_2026_02_28-09_41_03_0_processed_0.mcap"
+    data_df = read_mcap_to_dataframe(path, topics=["/desired_position_rad_data", "/measured_position_rad_data", "/desired_ee_angle_rad_data"])
+    data_df = data_df.groupby(data_df.index).first()
+
+    des_pos_rad = torch.tensor(data_df["desired_position_rad_data_data"].values, dtype=torch.float32, device="cuda:0")
+    motor_pos_rad = torch.tensor(data_df["measured_position_rad_data_data"].values, dtype=torch.float32, device="cuda:0")
+    # des_ee_angle_rad = torch.tensor(data_df["desired_ee_angle_rad_data_data"].values, dtype=torch.float32, device="cuda:0")
 
     rendering = True
     with_window = get_VL_VISUAL_TESTS()
@@ -527,6 +541,8 @@ if __name__ == "__main__":
         max_episode_length=max_episode_length,
     )
 
+    envs.testing = True
+
     obs, _ = envs.reset()
 
     gym = v.get_gym()
@@ -542,7 +558,8 @@ if __name__ == "__main__":
         sliders = []
         for i, tendon_def in enumerate(envs.art_def.get_spatial_tendon_defs()):
             name = tendon_def.name if tendon_def.name else f"Tendon_{i}"
-            sliders.append(v.UserSlider(name, 0, 20, 0.0))
+            # sliders.append(v.UserSlider(name, 0, 20, 0.0))
+            sliders.append(v.UserSlider(name, 0, 2.0 * np.pi, 0.0))
             render.register_menu_item(sliders[-1])
 
         def control_by_menu():
@@ -557,14 +574,47 @@ if __name__ == "__main__":
 
     done = False
     step = 0
+    indx = 0
+    tip_pose = torch.zeros((num_envs, des_pos_rad.shape[0], 3), dtype=torch.float32, device=device)
+    goal_pose = torch.zeros((num_envs, des_pos_rad.shape[0], 3), dtype=torch.float32, device=device)
     while not done:
-        actions = control_fn()
-        # actions = torch.ones(envs.num_tendons, dtype=torch.float32, device=device) * 1.0
+        # actions = control_fn()
+        if indx < des_pos_rad.shape[0]:
+            actions = des_pos_rad[indx].unsqueeze(0).repeat(num_envs, 1)
+            # actions = motor_pos_rad[indx].unsqueeze(0).repeat(num_envs, 1)
+            # envs.update_goal(angle=des_ee_angle_rad[indx].unsqueeze(0).repeat(num_envs, 1))
+
+        indx += 1
+        # print("actions: {}".format(actions[0, :]))
+        # actions = torch.ones((num_envs, envs.num_tendons), dtype=torch.float32, device=device) * 0.0
 
         obs, rewards, terminations, truncations, infos = envs.step(actions)
 
-        done = envs.render_finished
+        goal_pose[:, indx - 1, :] = envs.goal_pose[:, :]
+        tip_pose[:, indx - 1, :] = envs.get_tip_pose_sensor_buf[:, 4:]
+
+        if indx >= des_pos_rad.shape[0]:
+            done = True
+
+        # done = envs.render_finished
 
         step += 1
         if step >= num_iter:
             done = True
+        
+
+    # save tip pose to dataframe and csv
+    tip_pose_np = tip_pose[0, :, :].cpu().numpy()
+    goal_pose_np = goal_pose[0, :, :].cpu().numpy()
+    num_steps, _ = tip_pose_np.shape
+    import pandas as pd
+    tip_pose_df = pd.DataFrame(
+        tip_pose_np,
+        columns=["tip_x", "tip_y", "tip_z"],
+    )
+    goal_pose_df = pd.DataFrame(
+        goal_pose_np,
+        columns=["goal_x", "goal_y", "goal_z"],
+    )
+    combined_df = pd.concat([tip_pose_df, goal_pose_df], axis=1)
+    combined_df.to_csv("/workspace/data/simulated_tip_poses.csv", index=False)
