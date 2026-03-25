@@ -12,65 +12,22 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "/workspace/tools/vlearn/train/envs/"))
 from environment import EnvironmentGpu
-from optimal_morphology_rl.tendon_model.buffer import TimeSeriesBuffer
+from optimal_morphology_rl.helpers.buffer import TimeSeriesBuffer
+from optimal_morphology_rl.envs.hand_envs.helpers.hand_pen_helpers import (
+    world_down_in_robot_frame_from_quat_robot_to_world,
+    palm_down_in_world_frame_from_quat_robot_to_world,
+    rotate_by_quat_A_to_B,
+    pen_forward_in_world_frame_from_quat_pen_to_world,
+)
+from optimal_morphology_rl.envs.hand_envs.helpers.numpy_vlearn import (
+    vec3_to_numpy,
+    quat_to_numpy,
+    numpy_to_vec3,
+    numpy_to_quat,
+    random_uniform_quaternion,
+)
 
-# from vlearn_train.envs.environment import EnvironmentGpu
-
-# from vlearn.train.envs.environment import EnvironmentGpu
-from vlearn.torch_utils.torch_jit_utils import scale, quat_mul, quat_conjugate, v_rpy_from_quat, quat_rotate
-
-
-def vec3_to_numpy(vec: v.Vec3) -> np.ndarray:
-    return np.array([vec.x, vec.y, vec.z], dtype=np.float32)
-
-
-def quat_to_numpy(quat: v.Quat) -> np.ndarray:
-    return np.array([quat.x, quat.y, quat.z, quat.w], dtype=np.float32)
-
-
-def numpy_to_vec3(arr: np.ndarray) -> v.Vec3:
-    return v.Vec3(arr[0], arr[1], arr[2])
-
-
-def numpy_to_quat(arr: np.ndarray) -> v.Quat:
-    return v.Quat(arr[0], arr[1], arr[2], arr[3])
-
-
-def world_down_in_robot_frame_from_quat_robot_to_world(quat_robot_to_world: torch.Tensor) -> torch.Tensor:
-    quat_world_to_robot = quat_conjugate(quat_robot_to_world)
-    down_in_world = (
-        torch.tensor([0, 0, -1], device=quat_world_to_robot.device, dtype=quat_world_to_robot.dtype)
-        .unsqueeze(0)
-        .expand(quat_world_to_robot.shape[0], -1)
-    )
-    return quat_rotate(quat_world_to_robot, down_in_world)
-
-
-def palm_down_in_world_frame_from_quat_robot_to_world(quat_robot_to_world: torch.Tensor) -> torch.Tensor:
-    palm_down_in_world = (
-        torch.tensor([0, 1, 0], device=quat_robot_to_world.device, dtype=quat_robot_to_world.dtype)
-        .unsqueeze(0)
-        .expand(quat_robot_to_world.shape[0], -1)
-    )
-    return quat_rotate(quat_robot_to_world, palm_down_in_world)
-
-
-def rotate_by_quat_A_to_B(quat_A_to_B: torch.Tensor, vec_A: torch.Tensor) -> torch.Tensor:
-    return quat_rotate(quat_A_to_B, vec_A)
-
-
-def pen_forward_in_world_frame_from_quat_pen_to_world(quat_pen_to_world: torch.Tensor) -> torch.Tensor:
-    pen_forward_in_world = (
-        torch.tensor([1, 0, 0], device=quat_pen_to_world.device, dtype=quat_pen_to_world.dtype)
-        .unsqueeze(0)
-        .expand(quat_pen_to_world.shape[0], -1)
-    )
-    return quat_rotate(quat_pen_to_world, pen_forward_in_world)
-
-
-def random_uniform_quaternion(num_envs, device, dtype):
-    q = torch.randn(num_envs, 4, device=device, dtype=dtype)  # 4 independent Gaussians
-    return q / torch.norm(q, dim=1, keepdim=True)  # Normalize to unit length
+from vlearn.torch_utils.torch_jit_utils import scale, quat_mul, quat_conjugate
 
 
 class HandPenEnvironmentGpu(EnvironmentGpu):
@@ -302,7 +259,7 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         )
 
         self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=self.device)
-        self.revolute_scale = torch.full((2, ), 0.25, device=self.device)
+        self.revolute_scale = torch.full((2,), 0.25, device=self.device)
         # self.revolute_scale = torch.full((self.num_motors, ), 0.25, device=self.device)
 
     def _setup_observation_space(self):
@@ -334,10 +291,7 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
             device=self.device,
         )
 
-        print(
-            f"Observation space size: {self.num_obs} "
-            f"(base={self.base_num_obs}, num_hist={self.num_hist}, stride={self.hist_stride})"
-        )
+        print(f"Observation space size: {self.num_obs} " f"(base={self.base_num_obs}, num_hist={self.num_hist}, stride={self.hist_stride})")
 
         self.observation_space = Box(
             low=np.full(self.num_obs, np.finfo("f").min, dtype=np.float32),
@@ -588,9 +542,13 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         self.last_act_buf[self.reset_buf, :] = 0.0
 
         # Reset Hand Kinematics
-        self.reset_joint_pos_buf[self.reset_buf, :] = torch.rand((self.reset_buf.sum(), self.num_joints), device=self.device) * 0.5 * torch.pi
+        self.reset_joint_pos_buf[self.reset_buf, :] = (
+            torch.rand((self.reset_buf.sum(), self.num_joints), device=self.device) * 0.5 * torch.pi
+        )
         self.reset_joint_vel_buf[self.reset_buf, :] = 0.0
-        self.reset_root_transform_buf[self.reset_buf, :4] = random_uniform_quaternion(self.reset_buf.sum(), device=self.device, dtype=torch.float32)
+        self.reset_root_transform_buf[self.reset_buf, :4] = random_uniform_quaternion(
+            self.reset_buf.sum(), device=self.device, dtype=torch.float32
+        )
         self.reset_root_transform_buf[self.reset_buf, 4:] = (
             self.table_bounds[:, 0]
             + 0.1
@@ -601,14 +559,18 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         self.gym.set_articulation_kinematic_states(self.gpu_reset_kinematic_state_command_array)
 
         # Reset selected reward object state with noise.
-        self.set_reward_object_pos_buf[self.reset_buf, :4] = random_uniform_quaternion(self.reset_buf.sum(), device=self.device, dtype=torch.float32)
+        self.set_reward_object_pos_buf[self.reset_buf, :4] = random_uniform_quaternion(
+            self.reset_buf.sum(), device=self.device, dtype=torch.float32
+        )
         # self.set_reward_object_pos_buf[self.reset_buf, 4:] = (
         #     self.table_bounds[:, 0]
         #     + 0.1
         #     + torch.rand((self.reset_buf.sum(), 3), device=self.device) * (self.table_bounds[:, 1] - self.table_bounds[:, 0] - 0.1)
         # )
         self.set_reward_object_pos_buf[self.reset_buf, 4:6] = self.reset_root_transform_buf[self.reset_buf, 4:6]
-        self.set_reward_object_pos_buf[self.reset_buf, 6] += torch.rand((self.reset_buf.sum(),), device=self.device) * 0.05 + 0.05  # ensure object is above the hand
+        self.set_reward_object_pos_buf[self.reset_buf, 6] += (
+            torch.rand((self.reset_buf.sum(),), device=self.device) * 0.05 + 0.05
+        )  # ensure object is above the hand
         self.set_reward_object_vel_buf[self.reset_buf, :] = 0.0
         self.gym.set_rigid_body_kinematic_states(self.gpu_set_reward_object_kin_cmd_array)
 
@@ -846,7 +808,7 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         self.rew_buf[:] += action_penalty_reward
 
         # Action smoothness
-        action_smoothness_penalty = torch.sum((self.act_buf - self.last_act_buf)**2, dim=-1)
+        action_smoothness_penalty = torch.sum((self.act_buf - self.last_act_buf) ** 2, dim=-1)
         # action_smoothness_penalty_normalized = action_smoothness_penalty / self.num_actions
         # action_smoothness_reward = torch.exp(-1.0 * action_smoothness_penalty_normalized**2)
         action_smoothness_reward = -0.0001 * action_smoothness_penalty
