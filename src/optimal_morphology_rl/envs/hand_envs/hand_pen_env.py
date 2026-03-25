@@ -2,7 +2,7 @@ import math
 import torch
 import numpy as np
 from vlearn.spaces import Box
-from typing import Tuple, List
+from typing import Dict, Tuple, List
 import vlearn as v
 import random
 
@@ -10,9 +10,11 @@ import random
 import os
 import sys
 
-# sys.path.append(os.path.join(os.path.dirname(__file__), '/workspace/tools/vlearn/train/envs/'))
-# from environment import EnvironmentGpu
-from vlearn_train.envs.environment import EnvironmentGpu
+sys.path.append(os.path.join(os.path.dirname(__file__), "/workspace/tools/vlearn/train/envs/"))
+from environment import EnvironmentGpu
+from optimal_morphology_rl.tendon_model.buffer import TimeSeriesBuffer
+
+# from vlearn_train.envs.environment import EnvironmentGpu
 
 # from vlearn.train.envs.environment import EnvironmentGpu
 from vlearn.torch_utils.torch_jit_utils import scale, quat_mul, quat_conjugate, v_rpy_from_quat, quat_rotate
@@ -46,11 +48,12 @@ def world_down_in_robot_frame_from_quat_robot_to_world(quat_robot_to_world: torc
 
 def palm_down_in_world_frame_from_quat_robot_to_world(quat_robot_to_world: torch.Tensor) -> torch.Tensor:
     palm_down_in_world = (
-        torch.tensor([0, -1, 0], device=quat_robot_to_world.device, dtype=quat_robot_to_world.dtype)
+        torch.tensor([0, 1, 0], device=quat_robot_to_world.device, dtype=quat_robot_to_world.dtype)
         .unsqueeze(0)
         .expand(quat_robot_to_world.shape[0], -1)
     )
     return quat_rotate(quat_robot_to_world, palm_down_in_world)
+
 
 def rotate_by_quat_A_to_B(quat_A_to_B: torch.Tensor, vec_A: torch.Tensor) -> torch.Tensor:
     return quat_rotate(quat_A_to_B, vec_A)
@@ -64,6 +67,7 @@ def pen_forward_in_world_frame_from_quat_pen_to_world(quat_pen_to_world: torch.T
     )
     return quat_rotate(quat_pen_to_world, pen_forward_in_world)
 
+
 def random_uniform_quaternion(num_envs, device, dtype):
     q = torch.randn(num_envs, 4, device=device, dtype=dtype)  # 4 independent Gaussians
     return q / torch.norm(q, dim=1, keepdim=True)  # Normalize to unit length
@@ -72,7 +76,7 @@ def random_uniform_quaternion(num_envs, device, dtype):
 class HandPenEnvironmentGpu(EnvironmentGpu):
     """
     Based on https://github.com/rayangdn/MorphHand environments
-    Morphological hand environment with with pen interaction.
+    Morphological hand environment with generic object interaction.
     """
 
     def __init__(
@@ -80,20 +84,19 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         num_envs: int,
         device: torch.device,
         rendering: bool = False,
-        enable_scene_query: bool = False,
-        max_episode_length: int = 4 * 50,  # 4 seconds at 50Hz control frequency
+        enable_scene_query: bool = True,
+        max_episode_length: int = 2 * 60,  # 2 seconds at 60Hz control frequency
         gravity: v.Vec3 = v.Vec3(0, 0, -9.81),
-        timestep: float = 1/120,  # 120Hz sim frequency
+        timestep: float = 1 / 120,  # 120Hz sim frequency
         frame_skip: int = 2,  # 60Hz control step
         spacing: float = 0.5,
         initial_is_paused: bool = False,
         send_interrupt: bool = False,
         print_hash: bool = False,
-        max_contact_pairs_per_env: int = 64,
         has_self_collisions: bool = False,
         force_mass_inertia_computation: bool = False,
         with_window: bool = True,
-        pen_size: str = "big",
+        reward_object: str = "pen",
         fixed_hand: bool = False,
     ):
 
@@ -108,24 +111,50 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
             spacing,
             gravity,
             initial_is_paused=initial_is_paused,
+            initial_render_substep=False,
             send_interrupt=send_interrupt,
             up_axis=v.Vec3(0, 0, 1),
             print_hash=print_hash,
-            max_contact_pairs_per_env=max_contact_pairs_per_env,
             with_window=with_window,
         )
 
-        assert pen_size in ["small", "mid", "big"], f"Invalid pen size: {pen_size}"
+        assert reward_object in ["pen", "tomato", "knife", "mug"], f"Invalid reward_object: {reward_object}"
 
-        self.num_envs_per_set = 32
+        self.num_envs_per_set = 1
         if self.num_envs % self.num_envs_per_set != 0:
             raise ValueError(f"num_envs must be a multiple of {self.num_envs_per_set}.")
         self.num_envs = [self.num_envs_per_set] * (self.num_envs // self.num_envs_per_set)
         self.device = device
         self.max_episode_length = max_episode_length
-        self.pen_size = pen_size
+        self.reward_object = reward_object
         self.force_mass_inertia_computation = force_mass_inertia_computation
         self.fixed_hand = fixed_hand
+        self.max_contact_pairs_per_env = 64
+        self.num_hist = 3
+        self.hist_stride = 10
+        self.obs_history_length = 1 + (self.num_hist - 1) * self.hist_stride
+
+        # Generic object map for loading and canonical initial transforms.
+        # self.object_creation_order = ["pen", "tomato", "knife", "mug"]
+        self.object_creation_order = [reward_object]
+        self.object_asset_map: Dict[str, str] = {
+            "pen": "/workspace/assets/objects/pen_big.vsim",
+            "tomato": "/workspace/assets/objects/tomato.vsim",
+            "knife": "/workspace/assets/objects/kitchen_knife.vsim",
+            "mug": "/workspace/assets/objects/mug.vsim",
+        }
+        self.object_visual_mesh_map: Dict[str, bool] = {
+            "pen": False,
+            "tomato": False,
+            "knife": False,
+            "mug": False,
+        }
+        self.object_init_transform_map: Dict[str, np.ndarray] = {
+            "pen": np.array([0, 0, 0, 1, 0.0, 0.0, 0.1], dtype=np.float32),
+            "knife": np.array([0, 0, 0, 1, 0.0, 0.0, 0.1], dtype=np.float32),
+            "tomato": np.array([0, 0, 0, 1, 0.0, 0.1, 0.1], dtype=np.float32),
+            "mug": np.array([0, 0, 0, 1, 0.0, 0.2, 0.1], dtype=np.float32),
+        }
 
         # Create environments
         self.create_envs()
@@ -143,6 +172,9 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         # Finalize gym
         self.gym.finalize()
         self.gym.update_scene_dependent_components()
+
+        # Cache transform indices needed to identify pen-hand contacts per environment.
+        self._cache_contact_transform_indices()
 
         if self.gym.get_render() is not None:
             #  v.Vec3(-0.132636, 0.030610, 0.021915), v.Vec3(0.991742, 0.127220, -0.016226)
@@ -222,8 +254,8 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         # Create table
         self._create_table(env_def)
 
-        # Load and configure pen
-        self._create_pen(env_def)
+        # Load all supported objects through a generic loader.
+        self._create_objects(env_def)
 
         env_set_offsets = []
         spacing = math.sqrt(self.num_envs_per_set)
@@ -237,53 +269,75 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         env_def.finalize()
         super().create_envs(self.env_def_handle, env_set_offsets=env_set_offsets)
 
+    def _cache_contact_transform_indices(self):
+        max_envs_in_set = max(self.num_envs)
+        self.contact_env_lookup = torch.full((len(self.num_envs), max_envs_in_set), -1, dtype=torch.long, device=self.device)
+        self.reward_object_transform_index_by_env = torch.full((self.total_num_envs,), -1, dtype=torch.long, device=self.device)
+        self.table_transform_index_by_env = torch.full((self.total_num_envs,), -1, dtype=torch.long, device=self.device)
+        self.hand_transform_indices_by_env = torch.full((self.total_num_envs, self.num_links), -1, dtype=torch.long, device=self.device)
+
+        self.hand_transform_indices_by_env[:, :] = torch.tensor(
+            [i for i in range(self.num_links)], dtype=torch.long, device=self.device
+        ).repeat(self.total_num_envs, 1)
+        self.table_transform_index_by_env[:] = self.num_links
+        # Transform index layout is hand links, table, then objects in object_creation_order.
+        reward_object_offset = self.object_creation_order.index(self.reward_object)
+        self.reward_object_transform_index_by_env[:] = self.num_links + 1 + reward_object_offset
+
+        env_flat_index = 0
+        for set_index, env_set in enumerate(self.env_sets):
+            num_envs_in_set = env_set.get_num_environments()
+            for env_index in range(num_envs_in_set):
+                self.contact_env_lookup[set_index, env_index] = env_flat_index
+                env_flat_index += 1
+
     def _setup_action_space(self):
         """Configure action space dimensions."""
         # self.num_actions = self.num_joints + 6  # Revolute joints + base link velocity
         self.num_actions = 6 + 1 + 1  # wrist velocities (6) + 1 grasp command + 1 thumb command
+        # self.num_actions = 6 + self.num_motors  # wrist velocities (6) + motor commands
 
         self.action_space = Box(
             low=np.full(self.num_actions, -1.0, dtype=np.float32), high=np.full(self.num_actions, 1.0, dtype=np.float32), dtype=np.float32
         )
 
         self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=self.device)
-        self.revolute_scale = torch.full((1,), 0.25, device=self.device)
+        self.revolute_scale = torch.full((2, ), 0.25, device=self.device)
+        # self.revolute_scale = torch.full((self.num_motors, ), 0.25, device=self.device)
 
     def _setup_observation_space(self):
         """Configure observation space dimensions."""
+        self.base_num_obs = 3  # hand position in world
+        self.base_num_obs += 4  # hand orientation in world (quat)
+        self.base_num_obs += 3  # hand angular velocity in hand frame
+        self.base_num_obs += 3  # hand linear velocity in hand frame
+        self.base_num_obs += self.num_joints  # joint positions
+        self.base_num_obs += self.num_joints  # joint velocities
+        self.base_num_obs += self.num_actions  # current actions
+        self.base_num_obs += self.num_actions  # last actions
+        self.base_num_obs += 3  # reward object position in world frame
+        self.base_num_obs += 4  # reward object orientation in world frame (quat)
+        self.base_num_obs += 3  # reward object linear velocity in world frame
+        self.base_num_obs += 3  # reward object angular velocity in world frame
+        self.base_num_obs += 4  # reward object goal orientation in world frame
+        self.base_num_obs += 3  # reward object goal position in world frame
+
         # Joint positions + velocities + ball state + actions
-        self.num_obs = 3  # hand position in world
-        self.num_obs += 4 # hand orientation in world (quat)
-        self.num_obs += 3  # hand angular velocity in hand frame
-        self.num_obs += 3  # hand linear velocity in hand frame
-        self.num_obs += self.num_joints  # joint positions
-        self.num_obs += self.num_joints  # joint velocities
-        self.num_obs += self.num_actions # current actions
-        self.num_obs += self.num_actions  # last actions
-        self.num_obs += 3  # pen position in hand frame
-        self.num_obs += 4  # pen orientation in hand frame (quat)
-        self.num_obs += 3  # pen linear velocity in hand frame
-        self.num_obs += 3  # pen angular velocity in hand frame
-        self.num_obs += 4  # Pen goal orientation quaternion in world frame
-        self.num_obs += 1  # Pen goal height
+        self.num_obs = self.base_num_obs * self.num_hist
 
+        # Observation and contact history buffer.
+        self.obs_history = TimeSeriesBuffer(
+            num_envs=self.total_num_envs,
+            dim=self.base_num_obs,
+            max_size=self.obs_history_length,
+            stride=self.hist_stride,
+            device=self.device,
+        )
 
-                # # self.robot_pos_in_world,  # base link position in world
-                # world_down_in_robot_frame,  # world down in robot frame (for orientation)
-                # self.robot_angular_velocity_in_robot_frame,  # Base link angular velocity in robot frame
-                # self.robot_linear_velocity_in_robot_frame,  # Base link linear velocity in robot frame
-                # self.get_joint_pos_buf,  # Joint positions
-                # self.get_joint_vel_buf,  # Joint velocities
-                # self.act_buf,  # Current actions
-                # self.last_act_buf,  # Last actions
-                # pen_down_in_world,  # pen down direction in world frame
-                # self.pen_position_in_robot_frame,  # Pen position
-                # self.pen_orientation_in_robot_frame,  # Pen orientation in robot frame (quat)
-                # self.pen_linear_velocity_in_robot_frame,  # Pen linear velocity in robot frame
-                # self.pen_angular_velocity_in_robot_frame,  # Pen angular velocity in robot frame
-                # self.pen_goal_quat_pen_to_world,
-
-        print(f"Observation space size: {self.num_obs}")
+        print(
+            f"Observation space size: {self.num_obs} "
+            f"(base={self.base_num_obs}, num_hist={self.num_hist}, stride={self.hist_stride})"
+        )
 
         self.observation_space = Box(
             low=np.full(self.num_obs, np.finfo("f").min, dtype=np.float32),
@@ -303,7 +357,7 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         table_def_handle = env_def.create_box_def(
             half_size=self.table_half_size, name="table", fixed=True, rgb_material_handle=rgb_mat_handle
         )
-        table_handle = env_def.create_rigid_body(
+        self.table_handle = env_def.create_rigid_body(
             table_def_handle, v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, -self.table_half_size.z)), "table"
         )
 
@@ -317,56 +371,42 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
             dtype=torch.float32,
         )
 
-    def _create_pen(self, env_def):
-        """Load and configure the pen object."""
-        # rgb_mat = v.RGBMaterial()
-        # rgb_mat.color = v.Vec3(0, 1, 0)
-        # rgb_mat.specular = 40
-        # rgb_mat.spec_intensity = 0.25
-        # rgb_mat_handle = env_def.create_rgb_material(rgb_mat)
+    def _create_objects(self, env_def):
+        """Load all supported objects with one generic loader."""
+        self.object_handles: Dict[str, int] = {}
+        self._init_object_transforms: Dict[str, np.ndarray] = {}
 
-        # if self.pen_size == "small":
-        #     pen_half_size = v.Vec3(0.005, 0.075, 0.005)
-        # elif self.pen_size == "mid":
-        #     pen_half_size = v.Vec3(0.05, 0.08, 0.05)
-        # else:  # big
-        #     pen_half_size = v.Vec3(0.07, 0.11, 0.07)
+        for object_name in self.object_creation_order:
+            self._create_object(
+                env_def=env_def,
+                object_name=object_name,
+                asset_file=self.object_asset_map[object_name],
+                init_transform=self.object_init_transform_map[object_name],
+                use_visual_mesh=self.object_visual_mesh_map[object_name],
+            )
 
-        # pen_def_handle = env_def.create_box_def(half_size=pen_half_size, name="pen", fixed=False, rgb_material_handle=rgb_mat_handle)
+        self.reward_object_handle = self.object_handles[self.reward_object]
+        self._init_reward_object_transforms = self._init_object_transforms[self.reward_object]
 
-        # # Set initial pen pose
-        # self._init_pen_transforms = np.array([0, 0, 0, 1, 0, 0, 0], dtype=np.float32)  # quat (x,y,z,w) + pos (x,y,z)
-        # pen_root_trans_init = v.Transform(numpy_to_quat(self._init_pen_transforms[:4]), numpy_to_vec3(self._init_pen_transforms[4:]))
-
-        # # Create pen
-        # self.pen_handle = env_def.create_rigid_body(pen_def_handle, pen_root_trans_init, "pen")
-
-        """Load and configure the pen ob0, ject."""
-        # Load appropriate pen model
-        pen_files = {
-            "small": "/workspace/assets/objects/pen_small.vsim",
-            "mid": "/workspace/assets/objects/pen_mid.vsim",
-            "big": "/workspace/assets/objects/pen_big.vsim",
-        }
-        print(f"Loading pen of size: {self.pen_size}")
-
+    def _create_object(self, env_def, object_name: str, asset_file: str, init_transform: np.ndarray, use_visual_mesh: bool):
         env_def.import_definitions(
-            pen_files[self.pen_size],
+            asset_file,
             fixed=False,
-            use_visual_mesh=False,
+            use_visual_mesh=use_visual_mesh,
             force_mass_computation=False,
             force_inertia_computation=False,
         )
 
-        # Get pen definition
-        pen_def_handle = env_def.get_rigid_body_def_handle_by_name("pen")
+        object_def_handle = env_def.get_rigid_body_def_handle_by_name(object_name)
+        object_root_trans_init = v.Transform(numpy_to_quat(init_transform[:4]), numpy_to_vec3(init_transform[4:]))
+        object_handle = env_def.create_rigid_body(object_def_handle, object_root_trans_init, object_name)
 
-        # # Set initial pen pose
-        self._init_pen_transforms = np.array([0, 0, 0, 1, 0, 0, 0], dtype=np.float32)  # quat (x,y,z,w) + pos (x,y,z)
-        pen_root_trans_init = v.Transform(numpy_to_quat(self._init_pen_transforms[:4]), numpy_to_vec3(self._init_pen_transforms[4:]))
+        self.object_handles[object_name] = object_handle
+        self._init_object_transforms[object_name] = init_transform
 
-        # Create pen
-        self.pen_handle = env_def.create_rigid_body(pen_def_handle, pen_root_trans_init, "pen")
+        # Keep legacy attributes to avoid breaking downstream code.
+        setattr(self, f"{object_name}_handle", object_handle)
+        setattr(self, f"_init_{object_name}_transforms", init_transform)
 
     def allocate_buffers(self):
         """Allocate GPU buffers for state and control."""
@@ -397,23 +437,27 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         self.robot_linear_velocity_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
         self.robot_angular_velocity_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
 
-        # Pen state buffers
-        self.get_pen_pos_buf = torch.zeros((self.total_num_envs, 7), device=self.device, dtype=torch.float32)
-        self.get_pen_vel_buf = torch.zeros((self.total_num_envs, 6), device=self.device, dtype=torch.float32)
+        # Per-object readback state buffers (all objects).
+        self.get_object_pos_bufs: Dict[str, torch.Tensor] = {}
+        self.get_object_vel_bufs: Dict[str, torch.Tensor] = {}
+        for object_name in self.object_creation_order:
+            self.get_object_pos_bufs[object_name] = torch.zeros((self.total_num_envs, 7), device=self.device, dtype=torch.float32)
+            self.get_object_vel_bufs[object_name] = torch.zeros((self.total_num_envs, 6), device=self.device, dtype=torch.float32)
 
-        # Pen kinematics control buffers
-        self.set_pen_pos_buf = torch.zeros((self.total_num_envs, 7), device=self.device, dtype=torch.float32)
-        self.set_pen_vel_buf = torch.zeros((self.total_num_envs, 6), device=self.device, dtype=torch.float32)
+        # Selected reward object read/write buffers.
+        self.get_reward_object_pos_buf = self.get_object_pos_bufs[self.reward_object]
+        self.get_reward_object_vel_buf = self.get_object_vel_bufs[self.reward_object]
+        self.set_reward_object_pos_buf = torch.zeros((self.total_num_envs, 7), device=self.device, dtype=torch.float32)
+        self.set_reward_object_vel_buf = torch.zeros((self.total_num_envs, 6), device=self.device, dtype=torch.float32)
 
-        # Pen initial state
-        self.gpu_init_pen_transforms = torch.tensor(self._init_pen_transforms, dtype=torch.float32, device=self.device)
-        self.gpu_init_pen_velocities = torch.zeros(6, dtype=torch.float32, device=self.device)
+        self.gpu_init_reward_object_transforms = torch.tensor(self._init_reward_object_transforms, dtype=torch.float32, device=self.device)
+        self.gpu_init_reward_object_velocities = torch.zeros(6, dtype=torch.float32, device=self.device)
 
-        self.set_pen_pos_buf[:] = self.gpu_init_pen_transforms
-        self.set_pen_vel_buf[:] = self.gpu_init_pen_velocities
+        self.set_reward_object_pos_buf[:] = self.gpu_init_reward_object_transforms
+        self.set_reward_object_vel_buf[:] = self.gpu_init_reward_object_velocities
 
-        # Goal pen rotation (upright)
-        self.pen_goal_quat_pen_to_world = (
+        # Goal reward object rotation.
+        self.object_goal_quat_object_to_world = (
             torch.tensor([0, 0, 0, 1], device=self.device, dtype=torch.float32).unsqueeze(0).repeat(self.total_num_envs, 1)
         )
 
@@ -432,7 +476,22 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         self.set_static_friction_buf = torch.zeros(len(self.num_envs), dtype=torch.float32, device=self.device)
         self.set_dynamic_friction_buf = torch.zeros(len(self.num_envs), dtype=torch.float32, device=self.device)
 
-        self.pen_goal_z = torch.ones((self.total_num_envs, 1), device=self.device, dtype=torch.float32) * (self.table_bounds[2, 1] - 0.1)
+        # Contact query buffers for reward-object-hand contact reward
+        self.contact_normals_buf = torch.zeros(
+            (self.max_contact_pairs_per_env * self.total_num_envs, 3), dtype=torch.float32, device=self.device
+        )
+        self.contact_point_seps_buf = torch.zeros(
+            (self.max_contact_pairs_per_env * self.total_num_envs, 4), dtype=torch.float32, device=self.device
+        )
+        self.contact_id_a_buf = torch.zeros(
+            (self.max_contact_pairs_per_env * self.total_num_envs, 4), dtype=torch.uint32, device=self.device
+        )
+        self.contact_id_b_buf = torch.zeros(
+            (self.max_contact_pairs_per_env * self.total_num_envs, 4), dtype=torch.uint32, device=self.device
+        )
+
+        self.object_goal_pos_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
+        self.object_hand_contact_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
 
     def create_gpu_commands(self):
         """Create GPU command arrays for efficient state queries and control."""
@@ -479,21 +538,27 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         )
         self.gpu_set_motor_control_command_array = self.gym.create_gpu_array([set_motor_cmd])
 
-        ### Pen commands
-        # Get pen state
-        get_pen_kin_cmd = self.env_group.create_rigid_body_kinematic_state_command(
-            v.wrap_gpu_buffer(self.get_pen_pos_buf), v.wrap_gpu_buffer(self.get_pen_vel_buf), self.pen_handle
-        )
-        self.gpu_get_pen_kin_cmd_array = self.gym.create_gpu_array([get_pen_kin_cmd])
+        ### Object commands
+        # Read state for all objects.
+        get_object_kin_cmds = []
+        for object_name in self.object_creation_order:
+            get_object_kin_cmds.append(
+                self.env_group.create_rigid_body_kinematic_state_command(
+                    v.wrap_gpu_buffer(self.get_object_pos_bufs[object_name]),
+                    v.wrap_gpu_buffer(self.get_object_vel_bufs[object_name]),
+                    self.object_handles[object_name],
+                )
+            )
+        self.gpu_get_object_kin_cmd_array = self.gym.create_gpu_array(get_object_kin_cmds)
 
-        # Set pen state (for reset)
-        set_pen_kin_cmd = self.env_group.create_rigid_body_kinematic_state_command(
-            v.wrap_gpu_buffer(self.set_pen_pos_buf),
-            v.wrap_gpu_buffer(self.set_pen_vel_buf),
-            self.pen_handle,
+        # Set selected reward object state (for reset).
+        set_reward_object_kin_cmd = self.env_group.create_rigid_body_kinematic_state_command(
+            v.wrap_gpu_buffer(self.set_reward_object_pos_buf),
+            v.wrap_gpu_buffer(self.set_reward_object_vel_buf),
+            self.reward_object_handle,
             masks_buffer=v.wrap_gpu_buffer(self.reset_buf),
         )
-        self.gpu_set_pen_kin_cmd_array = self.gym.create_gpu_array([set_pen_kin_cmd])
+        self.gpu_set_reward_object_kin_cmd_array = self.gym.create_gpu_array([set_reward_object_kin_cmd])
 
         ### Gravity Comp Commands
         # Create external force command
@@ -518,15 +583,12 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         )
         self.gpu_set_friction_cmd = self.gym.create_gpu_array([set_static_friction_cmd, set_dynamic_friction_cmd])
 
-
     def reset_idx(self):
         self.act_buf[self.reset_buf, :] = 0.0
         self.last_act_buf[self.reset_buf, :] = 0.0
 
         # Reset Hand Kinematics
-        self.reset_joint_pos_buf[self.reset_buf, :] = (
-            torch.rand((self.reset_buf.sum(), self.num_joints), device=self.device) * 0.5 * torch.pi
-        )
+        self.reset_joint_pos_buf[self.reset_buf, :] = torch.rand((self.reset_buf.sum(), self.num_joints), device=self.device) * 0.5 * torch.pi
         self.reset_joint_vel_buf[self.reset_buf, :] = 0.0
         self.reset_root_transform_buf[self.reset_buf, :4] = random_uniform_quaternion(self.reset_buf.sum(), device=self.device, dtype=torch.float32)
         self.reset_root_transform_buf[self.reset_buf, 4:] = (
@@ -534,31 +596,43 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
             + 0.1
             + torch.rand((self.reset_buf.sum(), 3), device=self.device) * (self.table_bounds[:, 1] - self.table_bounds[:, 0] - 0.1)
         )
+        # self.reset_root_transform_buf[self.reset_buf, 4:] = torch.tensor([0.0, 0.0, 0.15], device=self.device)
         self.reset_root_vel_buf[self.reset_buf, :] = 0.0
         self.gym.set_articulation_kinematic_states(self.gpu_reset_kinematic_state_command_array)
 
-        # Reset pen state with noise
-        self.set_pen_pos_buf[self.reset_buf, :4] = random_uniform_quaternion(self.reset_buf.sum(), device=self.device, dtype=torch.float32)
-        self.set_pen_pos_buf[self.reset_buf, 4:] = (
+        # Reset selected reward object state with noise.
+        self.set_reward_object_pos_buf[self.reset_buf, :4] = random_uniform_quaternion(self.reset_buf.sum(), device=self.device, dtype=torch.float32)
+        # self.set_reward_object_pos_buf[self.reset_buf, 4:] = (
+        #     self.table_bounds[:, 0]
+        #     + 0.1
+        #     + torch.rand((self.reset_buf.sum(), 3), device=self.device) * (self.table_bounds[:, 1] - self.table_bounds[:, 0] - 0.1)
+        # )
+        self.set_reward_object_pos_buf[self.reset_buf, 4:6] = self.reset_root_transform_buf[self.reset_buf, 4:6]
+        self.set_reward_object_pos_buf[self.reset_buf, 6] += torch.rand((self.reset_buf.sum(),), device=self.device) * 0.05 + 0.05  # ensure object is above the hand
+        self.set_reward_object_vel_buf[self.reset_buf, :] = 0.0
+        self.gym.set_rigid_body_kinematic_states(self.gpu_set_reward_object_kin_cmd_array)
+
+        # Random height
+        self.object_goal_pos_in_world[self.reset_buf, :] = (
             self.table_bounds[:, 0]
             + 0.1
             + torch.rand((self.reset_buf.sum(), 3), device=self.device) * (self.table_bounds[:, 1] - self.table_bounds[:, 0] - 0.1)
         )
-        self.set_pen_vel_buf[self.reset_buf, :] = 0.0
-        self.gym.set_rigid_body_kinematic_states(self.gpu_set_pen_kin_cmd_array)
-
-        # Random height
-        self.pen_goal_z[self.reset_buf] = (self.table_bounds[2, 0] + 0.05 + torch.rand(self.reset_buf.sum(), device=self.device) * (self.table_bounds[2, 1] - self.table_bounds[2, 0] - 0.05)).unsqueeze(-1)
 
         # Random orientation vector
-        self.pen_goal_quat_pen_to_world[self.reset_buf, :] = random_uniform_quaternion(self.reset_buf.sum(), device=self.device, dtype=torch.float32)
+        self.object_goal_quat_object_to_world[self.reset_buf, :] = random_uniform_quaternion(
+            self.reset_buf.sum(), device=self.device, dtype=torch.float32
+        )
 
         # Reset progress
         self.progress_buf[self.reset_buf] = 0
 
+        # reset history
+        self.obs_history.reset(self.reset_buf)
+
         # Randomize rigid body material
         # Write to buffers
-        friction = torch.rand(len(self.num_envs), device=self.device) * 0.7 + 0.3  # [0.3, 1.0]
+        friction = torch.rand(len(self.num_envs), device=self.device) * 0.3 + 0.7  # [0.7, 1.0]
         self.set_static_friction_buf[:] = friction
         self.set_dynamic_friction_buf[:] = friction
         self.gym.set_rigid_material_properties(self.gpu_set_friction_cmd)
@@ -582,6 +656,7 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         # Apply joint motor commands
         self.set_motor_cmd_buf[:] = self.scaled_act_buf[:, 6].unsqueeze(-1).expand(-1, self.num_motors)
         self.set_motor_cmd_buf[:, self.thumb_motor_index] = self.scaled_act_buf[:, 7]  # thumb command
+        # self.set_motor_cmd_buf[:] = self.scaled_act_buf[:, 6:]
         self.gym.set_motor_forces(self.gpu_set_motor_control_command_array)
 
         # Gravity compensation on base link
@@ -591,7 +666,7 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
     def refresh_buffers(self):
         """Refresh all state buffers from simulation."""
         self.gym.get_articulation_kinematic_states(self.gpu_get_kinematic_state_command_array)
-        self.gym.get_rigid_body_kinematic_states(self.gpu_get_pen_kin_cmd_array)
+        self.gym.get_rigid_body_kinematic_states(self.gpu_get_object_kin_cmd_array)
 
     def post_physics_step(self):
         """Post-step processing."""
@@ -617,17 +692,37 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
         # self.robot_angular_velocity_in_robot_frame = rotate_by_quat_A_to_B(quat_conjugate(self.robot_quat_robot_to_world), self.robot_angular_velocity_in_world)
         # self.robot_linear_velocity_in_robot_frame = rotate_by_quat_A_to_B(quat_conjugate(self.robot_quat_robot_to_world), self.robot_linear_velocity_in_world)
 
-        self.pen_position_in_world = self.get_pen_pos_buf[:, 4:7]
-        self.pen_quat_pen_to_world = self.get_pen_pos_buf[:, 0:4]
-        self.pen_linear_velocity_in_world = self.get_pen_vel_buf[:, 3:6]
-        self.pen_angular_velocity_in_world = self.get_pen_vel_buf[:, :3]
+        # Read selected reward object state.
+        self.object_position_in_world = self.get_reward_object_pos_buf[:, 4:7]
+        self.object_quat_object_to_world = self.get_reward_object_pos_buf[:, 0:4]
+        self.object_linear_velocity_in_world = self.get_reward_object_vel_buf[:, 3:6]
+        self.object_angular_velocity_in_world = self.get_reward_object_vel_buf[:, :3]
 
-        self.pen_position_in_robot_frame = rotate_by_quat_A_to_B(quat_conjugate(self.robot_quat_robot_to_world), self.get_pen_pos_buf[:, 4:7] - self.robot_pos_in_world)
-        self.pen_orientation_in_robot_frame = quat_mul(quat_conjugate(self.robot_quat_robot_to_world), self.get_pen_pos_buf[:, 0:4])
-        self.pen_linear_velocity_in_robot_frame = rotate_by_quat_A_to_B(quat_conjugate(self.robot_quat_robot_to_world), self.get_pen_vel_buf[:, 3:6])
-        self.pen_angular_velocity_in_robot_frame = rotate_by_quat_A_to_B(quat_conjugate(self.robot_quat_robot_to_world), self.get_pen_vel_buf[:, :3])
+        self.object_position_in_robot_frame = rotate_by_quat_A_to_B(
+            quat_conjugate(self.robot_quat_robot_to_world), self.get_reward_object_pos_buf[:, 4:7] - self.robot_pos_in_world
+        )
+        self.object_orientation_in_robot_frame = quat_mul(
+            quat_conjugate(self.robot_quat_robot_to_world), self.get_reward_object_pos_buf[:, 0:4]
+        )
+        self.object_linear_velocity_in_robot_frame = rotate_by_quat_A_to_B(
+            quat_conjugate(self.robot_quat_robot_to_world), self.get_reward_object_vel_buf[:, 3:6]
+        )
+        self.object_angular_velocity_in_robot_frame = rotate_by_quat_A_to_B(
+            quat_conjugate(self.robot_quat_robot_to_world), self.get_reward_object_vel_buf[:, :3]
+        )
 
-        self.obs_buf[:] = torch.cat(
+        # Read all object states for logging/analysis/debugging.
+        self.object_position_in_world_by_name: Dict[str, torch.Tensor] = {}
+        self.object_quat_object_to_world_by_name: Dict[str, torch.Tensor] = {}
+        self.object_linear_velocity_in_world_by_name: Dict[str, torch.Tensor] = {}
+        self.object_angular_velocity_in_world_by_name: Dict[str, torch.Tensor] = {}
+        for object_name in self.object_creation_order:
+            self.object_position_in_world_by_name[object_name] = self.get_object_pos_bufs[object_name][:, 4:7]
+            self.object_quat_object_to_world_by_name[object_name] = self.get_object_pos_bufs[object_name][:, 0:4]
+            self.object_linear_velocity_in_world_by_name[object_name] = self.get_object_vel_bufs[object_name][:, 3:6]
+            self.object_angular_velocity_in_world_by_name[object_name] = self.get_object_vel_bufs[object_name][:, :3]
+
+        base_obs = torch.cat(
             [
                 self.robot_pos_in_world,  # robot_position in world frame
                 self.robot_quat_robot_to_world,  # robot orientation in world frame (quat)
@@ -637,77 +732,142 @@ class HandPenEnvironmentGpu(EnvironmentGpu):
                 self.get_joint_vel_buf,  # Joint velocities
                 self.act_buf,  # Current actions
                 self.last_act_buf,  # Last actions
-                self.pen_position_in_world,  # pen position in world frame
-                self.pen_quat_pen_to_world,  # Pen orientation in robot frame (quat)
-                self.pen_linear_velocity_in_world,  # Pen linear velocity in robot frame
-                self.pen_angular_velocity_in_world,  # Pen angular velocity in robot frame
-                self.pen_goal_quat_pen_to_world,
-                self.pen_goal_z,
+                self.object_position_in_world,
+                self.object_quat_object_to_world,
+                self.object_linear_velocity_in_world,
+                self.object_angular_velocity_in_world,
+                self.object_goal_quat_object_to_world,
+                self.object_goal_pos_in_world,
             ],
             dim=-1,
         )
 
+        self.object_hand_contact_buf[:] = self._compute_object_hand_contact()
+        self.obs_history.add(base_obs)
+
+        self.obs_buf[:] = self.obs_history.get().view(self.total_num_envs, -1)
+
+    def _compute_object_hand_contact(self) -> torch.Tensor:
+        contact = torch.zeros(self.total_num_envs, dtype=torch.float32, device=self.device)
+
+        num_contacts = self.gym.get_rigid_contacts(
+            v.wrap_gpu_buffer(self.contact_normals_buf),
+            v.wrap_gpu_buffer(self.contact_point_seps_buf),
+            v.wrap_gpu_buffer(self.contact_id_a_buf),
+            v.wrap_gpu_buffer(self.contact_id_b_buf),
+            self.max_contact_pairs_per_env * self.total_num_envs,
+        )
+        num_stored = min(num_contacts, self.max_contact_pairs_per_env * self.total_num_envs)
+        if num_stored <= 0:
+            return contact
+
+        id_a = self.contact_id_a_buf[:num_stored].to(torch.long)
+        id_b = self.contact_id_b_buf[:num_stored].to(torch.long)
+
+        env_a = self.contact_env_lookup[id_a[:, 1], id_a[:, 2]]
+        env_b = self.contact_env_lookup[id_b[:, 1], id_b[:, 2]]
+        same_env = env_a == env_b
+        valid_env = torch.logical_and(env_a >= 0, env_b >= 0)
+        valid_contact = torch.logical_and(same_env, valid_env)
+        if not torch.any(valid_contact):
+            return contact
+
+        env_indices = env_a.clamp_min(0)
+
+        object_indices = self.reward_object_transform_index_by_env[env_indices]
+        a_is_object = id_a[:, 3] == object_indices
+        b_is_object = id_b[:, 3] == object_indices
+
+        hand_indices = self.hand_transform_indices_by_env[env_indices]
+        a_is_hand = torch.any(id_a[:, 3].unsqueeze(1) == hand_indices, dim=1)
+        b_is_hand = torch.any(id_b[:, 3].unsqueeze(1) == hand_indices, dim=1)
+
+        object_hand_contact = torch.logical_and(
+            valid_contact,
+            torch.logical_or(
+                torch.logical_and(a_is_object, b_is_hand),
+                torch.logical_and(b_is_object, a_is_hand),
+            ),
+        )
+
+        if torch.any(object_hand_contact):
+            touched_envs = torch.unique(env_indices[object_hand_contact])
+            contact[touched_envs] = 1.0
+            # print(f"Envs with object-hand contact: {touched_envs.cpu().numpy()}")
+
+        return contact
+
     def compute_reward_termination_truncation(self):
         self.rew_buf[:] = 0.0
 
-        # Pen Height
-        pen_height_error = self.pen_goal_z.squeeze(-1) - self.pen_position_in_world[:, 2]
-        pen_height_error_normalized = pen_height_error / 0.1
-        height_reward = torch.exp(-2.0 * pen_height_error_normalized**2)
-        self.info["rewards"]["height_reward"] = height_reward.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 2.0 * height_reward
+        # Reward object position tracking.
+        object_pos_error = torch.norm(self.object_goal_pos_in_world - self.object_position_in_world, dim=-1)
+        object_error_normalized = object_pos_error / 0.2
+        object_pos_reward = 2.0 * torch.exp(-1.0 * object_error_normalized**2)
+        self.info["rewards"]["pos_reward"] = object_pos_reward.sum().item() / self.total_num_envs
+        self.rew_buf[:] += object_pos_reward
 
         # Reward pen upright orientation
-        quat_diff = quat_mul(quat_conjugate(self.pen_quat_pen_to_world), self.pen_goal_quat_pen_to_world)
-        pen_alignment = torch.abs(quat_diff[:, 3])  # alignment is the absolute value of the w component of the quat diff
-        pen_alignment_clipped = torch.clamp(pen_alignment, max=1.0)  # don't reward perfect alignment to allow for exploration
-        pen_alignment_reward = torch.exp(-2.0 * (1.0 - pen_alignment_clipped) ** 2)
-        self.info["rewards"]["rot_reward"] = pen_alignment_reward.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 2.0 * pen_alignment_reward
+        # quat_diff = quat_mul(quat_conjugate(self.object_quat_object_to_world), self.object_goal_quat_object_to_world)
+        # pen_alignment = torch.abs(quat_diff[:, 3])  # alignment is the absolute value of the w component of the quat diff
+        # pen_alignment_clipped = torch.clamp(pen_alignment, max=1.0)  # don't reward perfect alignment to allow for exploration
+        # pen_alignment_reward = torch.exp(-1.0 * (1.0 - pen_alignment_clipped) ** 2)
+        # self.info["rewards"]["rot_reward"] = pen_alignment_reward.sum().item() / self.total_num_envs
+        # self.rew_buf[:] += 2.0 * pen_alignment_reward
 
-        # Reward distance between pen and hand
-        dist = torch.norm(self.robot_pos_in_world - self.pen_position_in_world, dim=-1)
-        dist_clipped = torch.clamp(dist, min=0.0)  # don't reward getting too close to allow for exploration
+        # Reward distance between selected object and hand.
+        dist = torch.norm(self.robot_pos_in_world - self.object_position_in_world, dim=-1)
+        dist_clipped = torch.clamp(dist, min=0.05)  # don't reward getting too close to allow for exploration
         dist_clipped_normalized = dist_clipped / 0.2
-        dist_rew = torch.exp(-1.0 * dist_clipped_normalized**2)
+        dist_rew = 1.0 * torch.exp(-1.0 * dist_clipped_normalized**2)
         self.info["rewards"]["dist_reward"] = dist_rew.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 1.0 * dist_rew
+        self.rew_buf[:] += dist_rew
 
-        # Reward robot alignment of palm with direction to the pen
-        hand_to_pen_dir_in_world = torch.nn.functional.normalize(self.robot_pos_in_world - self.pen_position_in_world, dim=-1)
+        # Reward robot alignment of palm with direction to selected object.
+        hand_to_pen_dir_in_world = torch.nn.functional.normalize(self.object_position_in_world - self.robot_pos_in_world, dim=-1)
         palm_down_in_world = palm_down_in_world_frame_from_quat_robot_to_world(self.get_root_transform_buf[:, 0:4])
         alignment = torch.sum(hand_to_pen_dir_in_world * palm_down_in_world, dim=-1)
         alignment_clipped = torch.clamp(alignment, max=0.75)  # don't reward perfect alignment to allow for exploration
-        alignment_rew = torch.exp(-2.0 * (1 - alignment_clipped) ** 2)
+        alignment_rew = 1.0 * torch.exp(-1.0 * (1 - alignment_clipped) ** 2)
         self.info["rewards"]["alignment_reward"] = alignment_rew.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 1.0 * alignment_rew
+        self.rew_buf[:] += alignment_rew
+
+        # Reward hand-object contacts.
+        contact_reward = 0.5 * self.object_hand_contact_buf
+        self.info["rewards"]["contact_reward"] = contact_reward.sum().item() / self.total_num_envs
+        self.rew_buf[:] += contact_reward
 
         # Penalize large actions to encourage smooth control
-        action_penalty = torch.sum(torch.abs(self.act_buf), dim=-1)
+        action_penalty = torch.sum(self.act_buf**2, dim=-1)
         action_penalty_normalized = action_penalty / self.num_actions
-        action_penalty_reward = torch.exp(-1.0 * action_penalty_normalized**2)
+        # action_penalty_reward = torch.exp(-1.0 * action_penalty_normalized**2)
+        action_penalty_reward = -0.001 * action_penalty_normalized
         self.info["rewards"]["action_penalty"] = action_penalty_reward.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 0.01 * action_penalty_reward
+        self.rew_buf[:] += action_penalty_reward
 
         # Action smoothness
-        action_smoothness_penalty = torch.sum(torch.abs(self.act_buf - self.last_act_buf), dim=-1)
-        action_smoothness_penalty_normalized = action_smoothness_penalty / self.num_actions
-        action_smoothness_reward = torch.exp(-1.0 * action_smoothness_penalty_normalized**2)
+        action_smoothness_penalty = torch.sum((self.act_buf - self.last_act_buf)**2, dim=-1)
+        # action_smoothness_penalty_normalized = action_smoothness_penalty / self.num_actions
+        # action_smoothness_reward = torch.exp(-1.0 * action_smoothness_penalty_normalized**2)
+        action_smoothness_reward = -0.0001 * action_smoothness_penalty
         self.info["rewards"]["action_smoothness_penalty"] = action_smoothness_reward.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 0.001 * action_smoothness_reward
+        self.rew_buf[:] += action_smoothness_reward
 
         # Penalize object drops and end episode
-        drop_penalty = self.pen_position_in_world[:, 2] < -0.1
+        # drop_penalty = self.object_position_in_world[:, 2] < -0.1
+        drop_penalty = self.object_position_in_world[:, 2] < 0.05
         drop_reward = -1.0 * drop_penalty
         self.info["rewards"]["drop_penalty"] = drop_reward.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 1.0 * drop_reward
+        self.rew_buf[:] += drop_reward
 
         # Penalize hand out of table bounds
-        out_of_bounds = torch.logical_or(self.robot_pos_in_world < self.table_bounds[:, 0], self.robot_pos_in_world > self.table_bounds[:, 1])
+        out_of_bounds = torch.logical_or(
+            self.robot_pos_in_world < self.table_bounds[:, 0], self.robot_pos_in_world > self.table_bounds[:, 1]
+        )
         bounds_penalty = torch.any(out_of_bounds, dim=-1)
         bounds_reward = -1.0 * bounds_penalty
         self.info["rewards"]["bounds_penalty"] = bounds_reward.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 1.0 * bounds_reward
+        self.rew_buf[:] += bounds_reward
 
         # Terminations
         self.term_buf[:] = torch.logical_or(drop_penalty, bounds_penalty)
@@ -725,7 +885,7 @@ if __name__ == "__main__":
         "rendering": True,
         "with_window": get_VL_VISUAL_TESTS(),
         "max_episode_length": 10000000,
-        "pen_size": "big",  # 'small', 'mid', or 'big'
+        "reward_object": "pen",  # 'pen', 'tomato', 'knife', or 'mug'
         "fixed_hand": False,
     }
 
