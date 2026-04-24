@@ -421,3 +421,6 @@ FodyWeavers.xsd
 .venv/
 *egg*
 assets/
+data/
+imgui.ini
+build/
