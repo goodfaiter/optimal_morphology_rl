@@ -41,7 +41,8 @@ In your favorite terminal:
 export __GLX_VENDOR_LIBRARY_NAME=nvidia && docker exec -it optimal_morphology_rl-dev-gpu-1 bash
 cd /workspace/tools/vlearn/train
 uv run python /workspace/src/optimal_morphology_rl/envs/hand_envs/finger_ee_tracking.py
-uv run python3 rl_games_train.py finger train --headless False
+uv run python3 rl_games_train.py hand train --headless False
+uv run python3 rl_games_train.py hand train runs/hand_pen_18-20-35-35/nn/hand_pen.pth
 uv run python3 rl_games_train.py finger play <path>
 ```
 
@@ -78,3 +79,8 @@ Or a *better* way is to setup your `.vscode/launch.json`:
 ## Notes
 - Sometimes the X-host and GPU access gets wonky and the container needs to be restarted.
 - Check `glxgears` in vscode terminal to check if everything works.
+
+## URDF to Vsim
+```
+uv run generate_urdf.py /workspace/data/llm/cad_parameters_a_hand_can_pick_up_a_berry.json
+```

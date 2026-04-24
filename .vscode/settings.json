@@ -1,14 +1,17 @@
 {
+    "python.languageServer": "Pylance",
+    "python.analysis.stubPath": "/workspace/tools/vlearn/docs/stubs",
     "python.analysis.extraPaths": [
-        "/workspace/tools/vlearn/train/envs/environment.py",
         "/workspace/tools/vlearn/train/envs/",
         "/workspace/tools/vlearn/train/",
-        "/workspace/tools/vlearn/"
+        "/workspace/tools/vlearn/",
+        "/workspace/tools/vlearn/docs/stubs"
     ],
     "python.autoComplete.extraPaths": [
-        "/workspace/tools/vlearn/train/envs/environment.py",
         "/workspace/tools/vlearn/train/envs/",
         "/workspace/tools/vlearn/train/",
-        "/workspace/tools/vlearn/"
+        "/workspace/tools/vlearn/",
+        "/workspace/tools/vlearn/docs/stubs"
     ],
+    "python-envs.defaultEnvManager": "ms-python.python:venv",
 }
