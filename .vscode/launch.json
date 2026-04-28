@@ -71,8 +71,7 @@
             "name": "Test",
             "type": "debugpy",
             "request": "launch",
-            // "program": "/workspace/src/optimal_morphology_rl/test_hand.py",
-            "program": "/workspace/src/optimal_morphology_rl/envs/hand_envs/finger_ee_tracking.py",
+            "program": "/workspace/src/optimal_morphology_rl/envs/hand_envs/hand_object_env.py",
             "console": "integratedTerminal",
             "cwd": "/workspace/tools/vlearn/train",
             "env": {

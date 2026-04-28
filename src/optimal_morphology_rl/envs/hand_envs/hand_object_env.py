@@ -19,7 +19,7 @@ from optimal_morphology_rl.envs.hand_envs.helpers.hand_pen_helpers import (
     rotate_by_quat_A_to_B,
     pen_forward_in_world_frame_from_quat_pen_to_world,
 )
-from optimal_morphology_rl.envs.hand_envs.helpers.numpy_vlearn import (
+from optimal_morphology_rl.helpers.numpy_vlearn import (
     vec3_to_numpy,
     quat_to_numpy,
     numpy_to_vec3,
@@ -1172,7 +1172,7 @@ if __name__ == "__main__":
     device = torch.device("cuda:0")
 
     # Create environment
-    envs = HandPenEnvironmentGpu(device=device, **config)
+    envs = HandObjectEnvironmentGpu(device=device, **config)
     obs, _ = envs.reset()
 
     gym = v.get_gym()
