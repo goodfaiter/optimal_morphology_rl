@@ -1,5 +1,5 @@
 # Base python image
-FROM nvcr.io/nvidia/cuda:12.9.1-cudnn-devel-ubuntu24.04
+FROM nvcr.io/nvidia/cuda:13.0.3-cudnn-devel-ubuntu24.04
 
 RUN sed -i 's/htt[p|ps]:\/\/archive.ubuntu.com\/ubuntu\//mirror:\/\/mirrors.ubuntu.com\/mirrors.txt/g' /etc/apt/sources.list
 
