@@ -54,7 +54,7 @@ class Contacts:
         self.hand_transform_indices_by_env[:, :] = torch.arange(self.num_links, dtype=torch.long, device=self.device).unsqueeze(0)
         self.table_transform_index_by_env[:] = self.num_links
         reward_object_offset = self.env.object_creation_order.index(self.env.reward_object)
-        self.reward_object_transform_index_by_env[:] = self.num_links + 1 + reward_object_offset
+        self.reward_object_transform_index_by_env[:] = self.num_links + reward_object_offset
 
         env_flat_index = 0
         for set_index, env_set in enumerate(self.env.env_sets):

@@ -8,6 +8,7 @@ import os
 import sys
 from optimal_morphology_rl.modules.contacts import Contacts
 from optimal_morphology_rl.modules.force_sensors import ForceSensors
+from optimal_morphology_rl.modules.object_generator import ObjectGenerator
 
 # TODO: Refactor to avoid this hack to import from the vlearn repo.
 sys.path.append(os.path.join(os.path.dirname(__file__), "/workspace/vlearn/train/envs/"))
@@ -40,7 +41,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         device: torch.device,
         rendering: bool = False,
         enable_scene_query: bool = True,
-        max_episode_length: int = 6 * 60,  # 6 seconds at 60Hz control frequency
+        max_episode_length: int = 1 * 60,  # 6 seconds at 60Hz control frequency
         gravity: v.Vec3 = v.Vec3(0, 0, -9.81),
         timestep: float = 1 / 120,  # 120Hz sim frequency
         frame_skip: int = 2,  # 60Hz control step
@@ -78,7 +79,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.num_envs = [self.num_envs_per_set] * (self.num_envs // self.num_envs_per_set)
         self.device = device
         self.max_episode_length = max_episode_length
-        self.reward_object: str = "mug"
+        self.reward_object: str = "knife"
         self.force_mass_inertia_computation = force_mass_inertia_computation
         self.fixed_hand = fixed_hand
         self.max_contact_pairs_per_env = 64
@@ -87,30 +88,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.obs_history_length = 1 + (self.num_hist - 1) * self.hist_stride
         self._cube = None
 
-        # Generic object map for loading and canonical initial transforms.
-        # self.object_creation_order = ["pen", "tomato", "knife", "mug"]
-        self.object_creation_order = [self.reward_object]
-        self.object_asset_map: Dict[str, (str, bool)] = {
-            "pen": ("/workspace/optimal_morphology_rl/assets/objects/pen_big.vsim", False),
-            "tomato": ("/workspace/optimal_morphology_rl/assets/objects/tomato.vsim", False),
-            "knife": ("/workspace/optimal_morphology_rl/assets/objects/kitchen_knife.vsim", False),
-            "mug": ("/workspace/optimal_morphology_rl/assets/objects/mug.vsim", False),
-            "square_donut": ("/workspace/optimal_morphology_rl/assets/objects/square_donut.vsim", False),
-        }
-        self.object_visual_mesh_map: Dict[str, bool] = {
-            "pen": False,
-            "tomato": False,
-            "knife": True,
-            "mug": False,
-            "square_donut": False,
-        }
-        self.object_init_transform_map: Dict[str, np.ndarray] = {
-            "pen": np.array([0, 0, 0, 1, 0.0, 0.0, 0.1], dtype=np.float32),
-            "tomato": np.array([0, 0, 0, 1, 0.0, 0.1, 0.1], dtype=np.float32),
-            "knife": np.array([0, 0, 0, 1, 0.0, 0.0, 0.1], dtype=np.float32),
-            "mug": np.array([0, 0, 0, 1, 0.0, 0.2, 0.1], dtype=np.float32),
-            "square_donut": np.array([0, 0, 0, 1, -0.1, -0.1, 0.1], dtype=np.float32),
-        }
+        # Initialize ObjectGenerator with object names
+        self.objects = ObjectGenerator(object_names=[self.reward_object, "table"])
 
         # Create environments
         self.create_envs()
@@ -133,14 +112,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.contacts = Contacts(self, link_names=["distal"])
 
         if self.gym.get_render() is not None:
-            #  v.Vec3(-0.132636, 0.030610, 0.021915), v.Vec3(0.991742, 0.127220, -0.016226)
-            #  v.Vec3(-0.125011, -0.001044, 0.065207), v.Vec3(0.880567, 0.397776, -0.257634)
-            # Camera eye, dir: Vec3(-0.484404, -0.760840, 0.387874), Vec3(0.473463, 0.797717, -0.373469)
-            # self.gym_render.reset_camera(v.Vec3(-0.484404, -0.760840, 0.387874), v.Vec3(0.473463, 0.797717, -0.373469))
-            # Camera eye, dir: Vec3(-0.156717, -0.131831, 0.434795), Vec3(0.425524, 0.531329, -0.732543)
-            # self.gym_render.reset_camera(v.Vec3(-0.156717, -0.131831, 0.434795), v.Vec3(0.425524, 0.531329, -0.732543)) # for hand variants
-            # Camera eye, dir: Vec3(-0.671139, 0.073098, 0.726423), Vec3(0.755459, -0.009100, -0.655133)
-            self.gym_render.reset_camera(v.Vec3(-0.671139, 0.073098, 0.726423), v.Vec3(0.755459, -0.009100, -0.655133))  # for hand variants
+            self.gym_render.reset_camera(v.Vec3(-0.671139, 0.073098, 0.726423), v.Vec3(0.755459, -0.009100, -0.655133))
 
         self.info["rewards"] = {}
 
@@ -156,7 +128,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             expert_encoder.eval()
             self.student_encoder = torch.jit.load(student_encoder_path).to(device)
             self.student_encoder.eval()
-            self.expert_trajectory = torch.tensor(np.load(f"/workspace/data/transfer/trajectories/pick_up_example_41.npy"), dtype=torch.float32, device=device)
+            self.expert_trajectory = torch.tensor(
+                np.load(f"/workspace/data/transfer/trajectories/pick_up_example_41.npy"), dtype=torch.float32, device=device
+            )
             self.expert_latent_trajectory = expert_encoder(self.expert_trajectory)
             self.student_decoder = torch.jit.load(student_decoder_path).to(device)
             self.student_decoder.eval()
@@ -203,6 +177,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.num_joints = self.art_def.get_num_joint_dof_defs()
         self.num_links = self.art_def.get_num_link_defs()
         self.num_motors = self.art_def.get_num_motor_defs()
+        self.num_sensors = self.art_def.get_num_force_sensor_defs()
         self.link_masses = torch.zeros(self.num_links, dtype=torch.float32, device=self.device)
         for i in range(self.num_links):
             link_def = self.art_def.get_link_def(i)
@@ -214,18 +189,15 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         for i in range(self.num_links):
             link_def = self.art_def.get_link_def(i)
-            # print(link_def)
+            print(link_def)
 
-        self.thumb_motor_index = -1
         for i in range(self.num_joints):
             motor_def = self.art_def.get_motor_def(i)
             print(i, motor_def)
-            if motor_def.name == "thumb_0_proximal_abd_joint":
-                self.thumb_motor_index = i
 
-        for i in range(self.num_links):
-            link_def = self.art_def.get_link_def(i)
-            # print(i, link_def)
+        for i in range(self.num_sensors):
+            sensor_def = self.art_def.get_force_sensor_def(i)
+            print(i, sensor_def)
 
         # Rigid Material Frictions
         # Create rigid material
@@ -237,11 +209,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         for i in range(self.art_def.get_num_link_defs()):
             env_def.assign_rigid_material_to_articulation_link(self.def_handle, self.rigid_mat_handle, i)
 
-        # Create table
-        self._create_table(env_def)
-
-        # Load all supported objects through a generic loader.
-        self._create_objects(env_def)
+        # Load all objects through ObjectGenerator (includes table)
+        self.objects.load(env_def)
 
         env_set_offsets = []
         spacing = math.sqrt(self.num_envs_per_set)
@@ -267,6 +236,11 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=self.device)
         self.revolute_scale = torch.full((self.num_motors,), 0.1, device=self.device)
+
+    @property
+    def object_creation_order(self):
+        """Backward compatibility property for object names."""
+        return self.objects.object_names
 
     def _setup_observation_space(self):
         """Configure observation space dimensions."""
@@ -314,82 +288,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             dtype=np.float32,
         )
 
-    def _create_table(self, env_def):
-        """Create a table for the pen to interact with."""
-        rgb_mat = v.RGBMaterial()
-        rgb_mat.color = v.Vec3(1, 1, 0)
-        rgb_mat.specular = 40
-        rgb_mat.spec_intensity = 0.25
-        rgb_mat_handle = env_def.create_rgb_material(rgb_mat)
-
-        self.table_half_size = v.Vec3(0.2, 0.3, 0.01)
-        table_def_handle = env_def.create_box_def(
-            half_size=self.table_half_size, name="table", fixed=True, rgb_material_handle=rgb_mat_handle
-        )
-        self.table_handle = env_def.create_rigid_body(
-            table_def_handle, v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, -self.table_half_size.z)), "table"
-        )
-
-        self.table_bounds = torch.tensor(
-            [
-                [-self.table_half_size.x, self.table_half_size.x],
-                [-self.table_half_size.y, self.table_half_size.y],
-                [0.0, 0.35],
-            ],
-            device=self.device,
-            dtype=torch.float32,
-        )
-
-    def _create_objects(self, env_def):
-        """Load all supported objects with one generic loader."""
-        self.object_handles: Dict[str, int] = {}
-        self._init_object_transforms: Dict[str, np.ndarray] = {}
-
-        for object_name in self.object_creation_order:
-            self._create_object(
-                env_def=env_def,
-                object_name=object_name,
-                asset_file=self.object_asset_map[object_name][0],
-                init_transform=self.object_init_transform_map[object_name],
-                use_visual_mesh=self.object_visual_mesh_map[object_name],
-            )
-
-        self.reward_object_handle = self.object_handles[self.reward_object]
-        self._init_reward_object_transforms = self._init_object_transforms[self.reward_object]
-
-    def _create_object(
-        self, env_def, object_name: str, asset_file: str, init_transform: np.ndarray, use_visual_mesh: bool
-    ):
-        env_def.import_definitions(
-            asset_file,
-            fixed=False,
-            use_visual_mesh=use_visual_mesh,
-            force_mass_computation=False,
-            force_inertia_computation=False,
-        )
-
-        object_root_trans_init = v.Transform(numpy_to_quat(init_transform[:4]), numpy_to_vec3(init_transform[4:]))
-
-        object_def_handle = env_def.get_rigid_body_def_handle_by_name(object_name)
-        object_handle = env_def.create_rigid_body(object_def_handle, object_root_trans_init, object_name)
-
-        self.object_handles[object_name] = object_handle
-        self._init_object_transforms[object_name] = init_transform
-
-        # Keep legacy attributes to avoid breaking downstream code.
-        setattr(self, f"{object_name}_handle", object_handle)
-        setattr(self, f"_init_{object_name}_transforms", init_transform)
-
     def allocate_buffers(self):
         """Allocate GPU buffers for state and control."""
         super().allocate_buffers()
-
-        self._identity_quat_row = torch.tensor([[0.0, 0.0, 0.0, 1.0]], device=self.device, dtype=torch.float32)
-        self._palm_down_row = torch.tensor([[0.0, 1.0, 0.0]], device=self.device, dtype=torch.float32)
-        self._hand_reset_pos_row = torch.tensor([[-0.05, -0.1, 0.05]], device=self.device, dtype=torch.float32)
-        self._reward_object_reset_pos_row = torch.tensor([[0.0, 0.0, 0.025]], device=self.device, dtype=torch.float32)
-        self._object_down_pen_row = torch.tensor([[1.0, 0.0, 0.0]], device=self.device, dtype=torch.float32)
-        self._object_down_default_row = torch.tensor([[0.0, 0.0, 1.0]], device=self.device, dtype=torch.float32)
 
         ### Env Buffers
         self.inverse_reset_buf = torch.zeros(self.total_num_envs, device=self.device, dtype=torch.bool)
@@ -414,75 +315,38 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.robot_pos_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
         self.quat_robot_to_world = torch.zeros((self.total_num_envs, 4), device=self.device, dtype=torch.float32)
         self._6d_robot_to_world = torch.zeros((self.total_num_envs, 6), device=self.device, dtype=torch.float32)
-        self.robot_palm_down_in_robot = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.robot_palm_down_in_robot[:] = self._palm_down_row
-        self.robot_palm_down_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
         self.robot_linear_velocity_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
         self.robot_angular_velocity_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
 
-        # Per-object readback state buffers (all objects).
-        self.get_object_pos_bufs: Dict[str, torch.Tensor] = {}
-        self.get_object_vel_bufs: Dict[str, torch.Tensor] = {}
-        for object_name in self.object_creation_order:
-            self.get_object_pos_bufs[object_name] = torch.zeros((self.total_num_envs, 7), device=self.device, dtype=torch.float32)
-            self.get_object_vel_bufs[object_name] = torch.zeros((self.total_num_envs, 6), device=self.device, dtype=torch.float32)
+        # Allocate object buffers through ObjectGenerator
+        self.objects.allocate_buffers(self.total_num_envs, self.device)
 
         # Selected reward object read/write buffers.
-        self.get_reward_object_pos_buf = self.get_object_pos_bufs[self.reward_object]
-        self.get_reward_object_vel_buf = self.get_object_vel_bufs[self.reward_object]
-        self.set_reward_object_pos_buf = torch.zeros((self.total_num_envs, 7), device=self.device, dtype=torch.float32)
-        self.set_reward_object_vel_buf = torch.zeros((self.total_num_envs, 6), device=self.device, dtype=torch.float32)
+        reward_object = self.objects.get_object(self.reward_object)
+        self.set_reward_object_pos_buf = reward_object.set_pos_buf
+        self.set_reward_object_vel_buf = reward_object.set_vel_buf
 
-        self.gpu_init_reward_object_transforms = torch.tensor(self._init_reward_object_transforms, dtype=torch.float32, device=self.device)
-        self.gpu_init_reward_object_velocities = torch.zeros(6, dtype=torch.float32, device=self.device)
+        self.set_reward_object_pos_buf[:] = 0.0
+        self.set_reward_object_vel_buf[:] = 0.0
 
-        self.set_reward_object_pos_buf[:] = self.gpu_init_reward_object_transforms
-        self.set_reward_object_vel_buf[:] = self.gpu_init_reward_object_velocities
+        # Setup table bounds from table object
+        table_obj = self.objects.get_object("table")
+        self.table_half_size = table_obj.half_size
+        self.table_bounds = torch.tensor(
+            [
+                [-self.table_half_size.x, self.table_half_size.x],
+                [-self.table_half_size.y, self.table_half_size.y],
+                [0.0, 0.35],
+            ],
+            device=self.device,
+            dtype=torch.float32,
+        )
 
-        # Goal reward object rotation.
+        # Goal buffers remain env-owned.
         self.object_goal_pos_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
         self.quat_object_goal_to_world = torch.zeros((self.total_num_envs, 4), device=self.device, dtype=torch.float32)
-        self.quat_object_goal_to_world[:] = self._identity_quat_row
         self._6d_object_goal_to_world = quaternion_to_6d(self.quat_object_goal_to_world)
         self._6d_object_in_hand_goal_to_robot = quaternion_to_6d(self.quat_object_goal_to_world)
-        self.object_down_in_object = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        if self.reward_object == "pen":
-            self.object_down_in_object[:] = self._object_down_pen_row
-        else:
-            self.object_down_in_object[:] = self._object_down_default_row
-        self.object_position_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.quat_object_to_world = torch.zeros((self.total_num_envs, 4), device=self.device, dtype=torch.float32)
-        self._6d_object_to_world = torch.zeros((self.total_num_envs, 6), device=self.device, dtype=torch.float32)
-        self.object_down_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.object_down_in_robot = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.object_linear_velocity_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.object_angular_velocity_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.object_position_in_robot_frame = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.object_orientation_in_robot_frame = torch.zeros((self.total_num_envs, 4), device=self.device, dtype=torch.float32)
-        self.object_linear_velocity_in_robot_frame = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.object_angular_velocity_in_robot_frame = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-
-        self.object_position_in_world_by_name: Dict[str, torch.Tensor] = {}
-        self.quat_object_to_world_by_name: Dict[str, torch.Tensor] = {}
-        self.object_linear_velocity_in_world_by_name: Dict[str, torch.Tensor] = {}
-        self.object_angular_velocity_in_world_by_name: Dict[str, torch.Tensor] = {}
-        for object_name in self.object_creation_order:
-            self.object_position_in_world_by_name[object_name] = torch.zeros(
-                (self.total_num_envs, 3), device=self.device, dtype=torch.float32
-            )
-            self.quat_object_to_world_by_name[object_name] = torch.zeros(
-                (self.total_num_envs, 4), device=self.device, dtype=torch.float32
-            )
-            self.object_linear_velocity_in_world_by_name[object_name] = torch.zeros(
-                (self.total_num_envs, 3), device=self.device, dtype=torch.float32
-            )
-            self.object_angular_velocity_in_world_by_name[object_name] = torch.zeros(
-                (self.total_num_envs, 3), device=self.device, dtype=torch.float32
-            )
-
-        self.object_goal_down_in_world = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self._6d_object_goal_to_world = torch.zeros((self.total_num_envs, 6), device=self.device, dtype=torch.float32)
-        self.object_in_hand_goal_down_in_robot = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
 
         # Last action buffer
         self.last_act_buf = torch.zeros_like(self.act_buf)
@@ -498,28 +362,6 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # Rigid Material Buffers
         self.set_static_friction_buf = torch.zeros(len(self.num_envs), dtype=torch.float32, device=self.device)
         self.set_dynamic_friction_buf = torch.zeros(len(self.num_envs), dtype=torch.float32, device=self.device)
-
-        # Reward scratch buffers reused in compute_reward_termination_truncation.
-        self.reward_vec3_buf = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.reward_vec3_buf_2 = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.reward_action_buf = torch.zeros_like(self.act_buf)
-        self.reward_action_buf_2 = torch.zeros_like(self.act_buf)
-        self.reward_scalar_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
-        self.reward_scalar_buf_2 = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
-        self.reward_bool_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.bool)
-        self.reward_bool_buf_2 = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.bool)
-
-        # Scratch buffers for commented reward variants so enabling them does not require new allocations.
-        self.goal_alignment_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
-        self.hand_goal_alignment_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
-        self.dist_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
-        self.hand_to_object_dir_buf = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.palm_down_in_world_buf = torch.zeros((self.total_num_envs, 3), device=self.device, dtype=torch.float32)
-        self.alignment_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
-        self.object_linear_velocity_mag_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
-        self.object_angular_velocity_mag_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
-        self.drop_penalty_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.bool)
-        self.imitation_reward_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
 
         self.timestep_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.long)
 
@@ -568,30 +410,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         )
         self.gpu_set_motor_control_command_array = self.gym.create_gpu_array([set_motor_cmd])
 
-        ### Object commands
-        # Read state for all objects.
-        get_rigid_object_kin_cmds = []
-        for object_name in self.object_creation_order:
-            get_rigid_object_kin_cmds.append(
-                self.env_group.create_rigid_body_kinematic_state_command(
-                    v.wrap_gpu_buffer(self.get_object_pos_bufs[object_name]),
-                    v.wrap_gpu_buffer(self.get_object_vel_bufs[object_name]),
-                    self.object_handles[object_name],
-                )
-            )
-
-        self.gpu_get_rigid_object_kin_cmd_array = (
-            self.gym.create_gpu_array(get_rigid_object_kin_cmds) if len(get_rigid_object_kin_cmds) > 0 else None
-        )
-
-        # Set selected reward object state (for reset).
-        set_reward_object_kin_cmd = self.env_group.create_rigid_body_kinematic_state_command(
-            v.wrap_gpu_buffer(self.set_reward_object_pos_buf),
-            v.wrap_gpu_buffer(self.set_reward_object_vel_buf),
-            self.reward_object_handle,
-            masks_buffer=v.wrap_gpu_buffer(self.reset_buf),
-        )
-        self.gpu_set_reward_object_kin_cmd_array = self.gym.create_gpu_array([set_reward_object_kin_cmd])
+        ### Object commands - managed by ObjectGenerator
+        self.objects.create_gpu_commands(self.env_group, self.gym, self.reset_buf)
 
         ### Gravity Comp Commands
         # Create external force command
@@ -619,7 +439,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
     def visualize_goal(self):
         if self.gym.get_render() is None:
             return
-        
+
         # goal_pos = self.expert_trajectory[self.timestep_buf[0], 0:3] # Debug expert trajectory visualization
         # goal_quat = d6_to_quaternion(self.expert_trajectory[self.timestep_buf[0], 3:9].unsqueeze(0)) # Debug expert trajectory visualization
         goal_pos = self.object_goal_pos_in_world[0]
@@ -664,20 +484,6 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
                 ),
             ],
         ]
-
-        goal_transform = v.Transform(
-            v.Quat(
-                self.quat_object_goal_to_world[0, 0].item(),
-                self.quat_object_goal_to_world[0, 1].item(),
-                self.quat_object_goal_to_world[0, 2].item(),
-                self.quat_object_goal_to_world[0, 3].item(),
-            ),
-            v.Vec3(
-                self.object_goal_pos_in_world[0, 0].item(),
-                self.object_goal_pos_in_world[0, 1].item(),
-                self.object_goal_pos_in_world[0, 2].item(),
-            ),
-        )
 
         for attr_name in ("_goal_axis_x", "_goal_axis_y", "_goal_axis_z"):
             if getattr(self, attr_name, None) is not None:
@@ -730,9 +536,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.object_goal_pos_in_world[reset_idx, 2] = 0.2
 
         # Sample orientation in world
-        self.quat_object_goal_to_world[reset_idx, :] = random_uniform_quaternion(
-            num_reset, device=self.device, dtype=torch.float32
-        )
+        self.quat_object_goal_to_world[reset_idx, :] = random_uniform_quaternion(num_reset, device=self.device, dtype=torch.float32)
         self._6d_object_goal_to_world[reset_idx, :] = quaternion_to_6d(self.quat_object_goal_to_world[reset_idx, :])
         # self.object_goal_down_in_world[reset_idx, :] = rotate_by_quat_A_to_B(
         #     self.quat_object_goal_to_world[reset_idx, :], self.object_down_in_object[reset_idx, :]
@@ -741,14 +545,6 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # self.quat_object_goal_to_world[reset_idx, :] = self._identity_quat_row
         # self._6d_object_goal_to_world[reset_idx, :] = quaternion_to_6d(self.quat_object_goal_to_world[reset_idx, :])
 
-        # Sample orientation in robot frame.
-        # quat_object_in_hand_goal_to_robot = random_uniform_quaternion(num_reset, device=self.device, dtype=torch.float32)
-        quat_object_in_hand_goal_to_robot = self._identity_quat_row
-        self._6d_object_in_hand_goal_to_robot[reset_idx, :] = quaternion_to_6d(quat_object_in_hand_goal_to_robot)
-        # self.object_in_hand_goal_down_in_robot[reset_idx, :] = rotate_by_quat_A_to_B(
-        #     quat_object_in_hand_goal_to_robot, self.object_down_in_object[reset_idx, :]
-        # )
-        self.object_in_hand_goal_down_in_robot[reset_idx, :] = self._palm_down_row
         self.visualize_goal()
 
     def reset_idx(self):
@@ -767,8 +563,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # )
         self.reset_joint_pos_buf[self.reset_buf, :] = 0.0
         self.reset_joint_vel_buf[self.reset_buf, :] = 0.0
-        self.reset_root_transform_buf[self.reset_buf, :4] = self._identity_quat_row
-        self.reset_root_transform_buf[self.reset_buf, 4:] = self._hand_reset_pos_row
+        self.reset_root_transform_buf[self.reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=self.device)
+        self.reset_root_transform_buf[self.reset_buf, 4:] = torch.tensor([[-0.05, -0.1, 0.05]], device=self.device)
         # self.reset_root_transform_buf[self.reset_buf, :4] = random_uniform_quaternion(
         #     num_reset, device=self.device, dtype=torch.float32
         # )
@@ -793,10 +589,11 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # self.set_reward_object_pos_buf[self.reset_buf, 6] += (
         #     torch.rand((num_reset,), device=self.device) * 0.05 + 0.05
         # )  # ensure object is above the hand
-        self.set_reward_object_pos_buf[self.reset_buf, :4] = self._identity_quat_row
-        self.set_reward_object_pos_buf[self.reset_buf, 4:] = self._reward_object_reset_pos_row
-        self.set_reward_object_vel_buf[self.reset_buf, :] = 0.0
-        self.gym.set_rigid_body_kinematic_states(self.gpu_set_reward_object_kin_cmd_array)
+        reward_obj = self.objects.get_object(self.reward_object)
+        reward_obj.set_pos_buf[self.reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=self.device)
+        reward_obj.set_pos_buf[self.reset_buf, 4:] = torch.tensor([[0.0, 0.0, 0.025]], device=self.device)
+        reward_obj.set_vel_buf[self.reset_buf, :] = 0.0
+        self.gym.set_rigid_body_kinematic_states(reward_obj.gpu_set_object_kin_cmd_array)
 
         # Random goal
         # update_indx = torch.rand(self.total_num_envs, device=self.device) < 0.005
@@ -847,7 +644,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
     def refresh_buffers(self):
         """Refresh all state buffers from simulation."""
         self.gym.get_articulation_kinematic_states(self.gpu_get_kinematic_state_command_array)
-        self.gym.get_rigid_body_kinematic_states(self.gpu_get_rigid_object_kin_cmd_array)
+        self.gym.get_rigid_body_kinematic_states(self.objects.get_object(self.reward_object).gpu_get_object_kin_cmd_array)
 
     def post_physics_step(self):
         """Post-step processing."""
@@ -855,7 +652,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         # Update timestep for expert tracking
         self.timestep_buf[:] += 1
-        
+
         # Check for episode termination
         self.reset_buf[:] = torch.logical_or(self.term_buf, self.trunc_buf)
         self.inverse_reset_buf[:] = ~self.reset_buf
@@ -874,39 +671,12 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.robot_linear_velocity_in_world[:] = self.get_root_vel_buf[:, 3:6]
         self.robot_angular_velocity_in_world[:] = self.get_root_vel_buf[:, :3]
 
-        self.robot_palm_down_in_world[:] = rotate_by_quat_A_to_B(self.quat_robot_to_world, self.robot_palm_down_in_robot)
-
-        # self.robot_angular_velocity_in_robot_frame = rotate_by_quat_A_to_B(quat_conjugate(self.quat_robot_to_world), self.robot_angular_velocity_in_world)
-        # self.robot_linear_velocity_in_robot_frame = rotate_by_quat_A_to_B(quat_conjugate(self.quat_robot_to_world), self.robot_linear_velocity_in_world)
-
-        # Read selected reward object state.
-        self.object_position_in_world[:] = self.get_reward_object_pos_buf[:, 4:7]
-        self.quat_object_to_world[:] = self.get_reward_object_pos_buf[:, 0:4]
-        self.object_down_in_world[:] = rotate_by_quat_A_to_B(self.quat_object_to_world, self.object_down_in_object)
-        self.object_down_in_robot[:] = rotate_by_quat_A_to_B(quat_conjugate(self.quat_robot_to_world), self.object_down_in_world)
-        self._6d_object_to_world[:] = quaternion_to_6d(self.quat_object_to_world)
-        self.object_linear_velocity_in_world[:] = self.get_reward_object_vel_buf[:, 3:6]
-        self.object_angular_velocity_in_world[:] = self.get_reward_object_vel_buf[:, :3]
-
-        self.object_position_in_robot_frame[:] = rotate_by_quat_A_to_B(
-            quat_conjugate(self.quat_robot_to_world), self.get_reward_object_pos_buf[:, 4:7] - self.robot_pos_in_world
-        )
-        self.object_orientation_in_robot_frame[:] = quat_mul(
-            quat_conjugate(self.quat_robot_to_world), self.get_reward_object_pos_buf[:, 0:4]
-        )
-        self.object_linear_velocity_in_robot_frame[:] = rotate_by_quat_A_to_B(
-            quat_conjugate(self.quat_robot_to_world), self.get_reward_object_vel_buf[:, 3:6]
-        )
-        self.object_angular_velocity_in_robot_frame[:] = rotate_by_quat_A_to_B(
-            quat_conjugate(self.quat_robot_to_world), self.get_reward_object_vel_buf[:, :3]
-        )
-
-        # Read all object states for logging/analysis/debugging.
-        for object_name in self.object_creation_order:
-            self.object_position_in_world_by_name[object_name][:] = self.get_object_pos_bufs[object_name][:, 4:7]
-            self.quat_object_to_world_by_name[object_name][:] = self.get_object_pos_bufs[object_name][:, 0:4]
-            self.object_linear_velocity_in_world_by_name[object_name][:] = self.get_object_vel_bufs[object_name][:, 3:6]
-            self.object_angular_velocity_in_world_by_name[object_name][:] = self.get_object_vel_bufs[object_name][:, :3]
+        reward_object = self.objects.get_object(self.reward_object)
+        object_pos_world = reward_object.pos_in_world
+        object_quat_world = reward_object.quat_object_to_world
+        object_lin_vel_world = reward_object.linear_velocity_world
+        object_ang_vel_world = reward_object.angular_velocity_world
+        object_6d_to_world = quaternion_to_6d(object_quat_world)
 
         self.base_obs[:, self.base_obs_slices["robot_pos_in_world"]] = self.robot_pos_in_world
         self.base_obs[:, self.base_obs_slices["_6d_robot_to_world"]] = self._6d_robot_to_world
@@ -915,10 +685,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.base_obs[:, self.base_obs_slices["get_joint_pos_buf"]] = self.get_joint_pos_buf
         self.base_obs[:, self.base_obs_slices["get_joint_vel_buf"]] = self.get_joint_vel_buf
         self.base_obs[:, self.base_obs_slices["act_buf"]] = self.act_buf
-        self.base_obs[:, self.base_obs_slices["object_position_in_world"]] = self.object_position_in_world
-        self.base_obs[:, self.base_obs_slices["_6d_object_to_world"]] = self._6d_object_to_world
-        self.base_obs[:, self.base_obs_slices["object_linear_velocity_in_world"]] = self.object_linear_velocity_in_world
-        self.base_obs[:, self.base_obs_slices["object_angular_velocity_in_world"]] = self.object_angular_velocity_in_world
+        self.base_obs[:, self.base_obs_slices["object_position_in_world"]] = object_pos_world
+        self.base_obs[:, self.base_obs_slices["_6d_object_to_world"]] = object_6d_to_world
+        self.base_obs[:, self.base_obs_slices["object_linear_velocity_in_world"]] = object_lin_vel_world
+        self.base_obs[:, self.base_obs_slices["object_angular_velocity_in_world"]] = object_ang_vel_world
         self.base_obs[:, self.base_obs_slices["object_goal_pos_in_world"]] = self.object_goal_pos_in_world
         self.base_obs[:, self.base_obs_slices["_6d_object_goal_to_world"]] = self._6d_object_goal_to_world
         # self.base_obs[:, self.base_obs_slices["trajectory_timestep"]] = self.timestep_buf.view(-1, 1)
@@ -930,22 +700,27 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
     def compute_reward_termination_truncation(self):
         self.rew_buf[:] = 0.0
 
+        reward_object = self.objects.get_object(self.reward_object)
+        object_pos_in_world = reward_object.pos_in_world
+        quat_object_to_world = reward_object.quat_object_to_world
+        _6d_object_to_world = quaternion_to_6d(quat_object_to_world)
+
         # Reward for minimizing object-to-goal distance.
-        obj_goal_dist = torch.norm(self.object_goal_pos_in_world - self.object_position_in_world, dim=-1)
+        obj_goal_dist = torch.norm(self.object_goal_pos_in_world - object_pos_in_world, dim=-1)
         obj_goal_dist_normalized = obj_goal_dist / 0.2
-        obj_goal_reward = torch.exp(-1.0 * obj_goal_dist_normalized ** 2)
+        obj_goal_reward = torch.exp(-1.0 * obj_goal_dist_normalized**2)
         self.info["rewards"]["goal_position"] = obj_goal_reward.sum().item() / self.total_num_envs
         self.rew_buf[:] += 1.0 * obj_goal_reward
 
         # Reward upright orientation
-        goal_alignment = torch.sum(self._6d_object_goal_to_world * self._6d_object_to_world, dim=-1)
+        goal_alignment = torch.sum(self._6d_object_goal_to_world * _6d_object_to_world, dim=-1)
         goal_alignment_normalized = goal_alignment / 2.0
         goal_alignment_reward = goal_alignment_normalized
         self.info["rewards"]["goal_orientation"] = goal_alignment_reward.sum().item() / self.total_num_envs
         self.rew_buf[:] += 1.0 * goal_alignment_reward
 
         # Reward distance between selected object and hand.
-        dist = torch.norm(self.robot_pos_in_world - self.object_position_in_world, dim=-1)
+        dist = torch.norm(self.robot_pos_in_world - object_pos_in_world, dim=-1)
         dist_clipped = torch.clamp(dist, min=0.05)  # don't reward getting too close to allow for exploration
         dist_clipped_normalized = dist_clipped / 0.1
         dist_rew = torch.exp(-1.0 * dist_clipped_normalized**2)
@@ -953,7 +728,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.rew_buf[:] += 0.05 * dist_rew
 
         # Fingertip contact reward.
-        self.contacts.compute_object_hand_contact() # biggest computational slowdown
+        self.contacts.compute_object_hand_contact()  # biggest computational slowdown
         self.forces.update()
         forces = self.forces.force_sensor_buf.norm(dim=-1)
         contacts = self.contacts.env_link_touch[:, self.contacts.monitored_link_mask]
@@ -976,7 +751,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.rew_buf[:] += 0.01 * action_smoothness_reward
 
         # Penalize object drops and end episode
-        drop_penalty = self.object_position_in_world[:, 2] < -0.1
+        drop_penalty = object_pos_in_world[:, 2] < -0.1
         drop_reward = -1 * drop_penalty
         self.info["rewards"]["drop_penalty"] = drop_reward.sum().item() / self.total_num_envs
         self.rew_buf[:] += 10.0 * drop_reward
