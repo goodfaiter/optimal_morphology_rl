@@ -10,34 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "torch",
-    # "matplotlib",
     "pyyaml",
-    # "tensorboard",
-    # "h5py",
-    # "gymnasium>=1.2.2",
-    # "wandb>=0.23.1",
     "vlearn_train",
-    # "pandas",
-    # "mcap-ros2-support",
     "numpy",
-    # "yourdfpy",
     "AsynchronousPS4Controller",
     "time_series_buffer",
 ]
-
-# [tool.uv.sources]
-# vlearn_train = { workspace = true, editable = true }
-# torch = { index = "pytorch-cu130"}
-# torchvision = { index = "pytorch-cu130"}
-# torchaudio = { index = "pytorch-cu130"}
-# vlearn = { path = "./tools/vlearn/vlearn-0.3.7-cp310-cp310-linux_x86_64.whl" }
-# vlearn_train = { workspace = true, editable = true }
-
-# [[tool.uv.index]]
-# name = "pytorch-cu130"
-# url = "https://download.pytorch.org/whl/cu130"
-
-# [tool.uv.workspace]
-# members = [
-#    "tools/vlearn",
-# ]

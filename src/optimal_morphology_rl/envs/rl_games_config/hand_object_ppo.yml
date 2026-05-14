@@ -23,8 +23,8 @@ params:
         fixed_sigma: True
 
     mlp:
-      units: [512, 256, 128, 64]
-      activation: elu
+      units: [256, 128, 64]
+      activation: tanh
       d2rl: False
 
       initializer:
@@ -51,7 +51,7 @@ params:
     kl_threshold: 0.016
     score_to_win: 20000000
     max_epochs: 5000
-    save_best_after: 200
+    save_best_after: 50
     save_frequency: 100
     print_stats: True
     grad_norm: 1.0
