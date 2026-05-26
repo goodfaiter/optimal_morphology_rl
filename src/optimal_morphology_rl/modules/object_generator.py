@@ -7,17 +7,17 @@ import vlearn as v
 
 class ObjectBase(ABC):
     """Abstract base class for objects in the environment."""
-    
+
     def __init__(self, name: str):
         self.name = name
         self.handle = None
-        
+
         # State buffers
         self.get_pos_buf: torch.Tensor = None  # Read: quat(4) + pos(3)
         self.get_vel_buf: torch.Tensor = None  # Read: angular(3) + linear(3)
         self.set_pos_buf: torch.Tensor = None  # Write: quat(4) + pos(3)
         self.set_vel_buf: torch.Tensor = None  # Write: angular(3) + linear(3)
-        
+
         # GPU command
         self.get_kin_cmd = None
         self.set_kin_cmd = None
@@ -72,34 +72,27 @@ class ObjectBase(ABC):
 
 class LoadedObject(ObjectBase):
     """Object loaded from a file (URDF/VSIM)."""
-    
-    def __init__(self, name: str, asset_path: str, use_visual_mesh: bool):
+
+    def __init__(self, name: str, asset_path: str, use_visual_mesh: bool, fixed: bool = False):
         super().__init__(name)
         self.asset_path = asset_path
         self.use_visual_mesh = use_visual_mesh
+        self.fixed = fixed
 
     def load(self, env_def):
         """Load object from file into environment definition."""
         env_def.import_definitions(
             self.asset_path,
-            fixed=False,
+            fixed=self.fixed,
             use_visual_mesh=self.use_visual_mesh,
             force_mass_computation=False,
             force_inertia_computation=False,
         )
-                
-        object_root_trans_init = v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, 0.1))
-        
+
+        object_root_trans_init = v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, 0))
+
         object_def_handle = env_def.get_rigid_body_def_handle_by_name(self.name)
         self.handle = env_def.create_rigid_body(object_def_handle, object_root_trans_init, self.name)
-
-
-class CreatedObject(ObjectBase):
-    """Object created programmatically (e.g., table)."""
-    
-    def __init__(self, name: str):
-        super().__init__(name)
-        self.rgb_material_handle = None
 
 
 class Pen(LoadedObject):
@@ -147,43 +140,47 @@ class SquareDonut(LoadedObject):
         )
 
 
-class Table(CreatedObject):
-    """Table created as a box primitive."""
-    
+class Table(LoadedObject):
     def __init__(self):
-        super().__init__(name="table")
-        self.half_size = v.Vec3(0.2, 0.3, 0.01)
-
-    def load(self, env_def):
-        """Create table in environment definition."""
-        # Create RGB material
-        rgb_mat = v.RGBMaterial()
-        rgb_mat.color = v.Vec3(1, 1, 0)
-        rgb_mat.specular = 40
-        rgb_mat.spec_intensity = 0.25
-        self.rgb_material_handle = env_def.create_rgb_material(rgb_mat)
-
-        # Create box
-        table_def_handle = env_def.create_box_def(
-            half_size=self.half_size, 
-            name="table", 
-            fixed=True, 
-            rgb_material_handle=self.rgb_material_handle
-        )
-        self.handle = env_def.create_rigid_body(
-            table_def_handle, 
-            v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, -self.half_size.z)), 
-            "table"
+        super().__init__(
+            name="table",
+            asset_path="/workspace/optimal_morphology_rl/assets/objects/table.vsim",
+            use_visual_mesh=False,
+            fixed=True,
         )
 
+    # TODO(VY): hacky but we keep for now
     @property
     def half_size_tensor(self) -> torch.Tensor:
-        return torch.tensor([self.half_size.x, self.half_size.y, self.half_size.z], device=self.device, dtype=torch.float32)
+        return torch.tensor([0.2, 0.3, 0.01], device=self.get_pos_buf.device, dtype=torch.float32)
+
+    @property
+    def half_size(self) -> torch.Tensor:
+        return v.Vec3(0.2, 0.3, 0.01)
+
+
+class TableWithCamera(LoadedObject):
+    def __init__(self):
+        super().__init__(
+            name="table_with_camera",
+            asset_path="/workspace/optimal_morphology_rl/assets/objects/table_with_camera.vsim",
+            use_visual_mesh=False,
+            fixed=True,
+        )
+
+    # TODO(VY): hacky but we keep for now
+    @property
+    def half_size_tensor(self) -> torch.Tensor:
+        return torch.tensor([0.2, 0.3, 0.01], device=self.get_pos_buf.device, dtype=torch.float32)
+
+    @property
+    def half_size(self) -> torch.Tensor:
+        return v.Vec3(0.2, 0.3, 0.01)
 
 
 class ObjectGenerator:
     """Container for all objects in the environment."""
-    
+
     OBJECT_REGISTRY: Dict[str, type] = {
         "pen": Pen,
         "tomato": Tomato,
@@ -191,17 +188,18 @@ class ObjectGenerator:
         "mug": Mug,
         "square_donut": SquareDonut,
         "table": Table,
+        "table_with_camera": TableWithCamera,
     }
 
     def __init__(self, object_names: List[str]):
         """
         Initialize ObjectGenerator.
-        
+
         Args:
             object_names: List of object names to create (e.g., ["knife", "table"])
         """
         self.object_names = object_names
-        
+
         # Create object instances
         self.objects: Dict[str, ObjectBase] = {}
         for obj_name in object_names:
