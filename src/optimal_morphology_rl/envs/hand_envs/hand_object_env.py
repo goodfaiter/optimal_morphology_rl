@@ -9,6 +9,9 @@ import sys
 from optimal_morphology_rl.modules.contacts import Contacts
 from optimal_morphology_rl.modules.force_sensors import ForceSensors
 from optimal_morphology_rl.modules.object_generator import ObjectGenerator
+from optimal_morphology_rl.modules.object_camera_recorder import ObjectCameraRecorder
+
+from pathlib import Path
 
 # TODO: Refactor to avoid this hack to import from the vlearn repo.
 sys.path.append(os.path.join(os.path.dirname(__file__), "/workspace/vlearn/train/envs/"))
@@ -41,7 +44,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         device: torch.device,
         rendering: bool = False,
         enable_scene_query: bool = True,
-        max_episode_length: int = 1 * 60,  # 6 seconds at 60Hz control frequency
+        max_episode_length: int = 6 * 60,  # 6 seconds at 60Hz control frequency
         gravity: v.Vec3 = v.Vec3(0, 0, -9.81),
         timestep: float = 1 / 120,  # 120Hz sim frequency
         frame_skip: int = 2,  # 60Hz control step
@@ -52,6 +55,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         force_mass_inertia_computation: bool = False,
         with_window: bool = True,
         fixed_hand: bool = False,
+        vsim_path: str = None,
+        record_output_path: str = None,
     ):
 
         super().__init__(
@@ -79,20 +84,20 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.num_envs = [self.num_envs_per_set] * (self.num_envs // self.num_envs_per_set)
         self.device = device
         self.max_episode_length = max_episode_length
-        self.reward_object: str = "knife"
+        self.reward_object: str = "tomato"
         self.force_mass_inertia_computation = force_mass_inertia_computation
         self.fixed_hand = fixed_hand
         self.max_contact_pairs_per_env = 64
         self.num_hist = 3
         self.hist_stride = 10
         self.obs_history_length = 1 + (self.num_hist - 1) * self.hist_stride
-        self._cube = None
 
         # Initialize ObjectGenerator with object names
-        self.objects = ObjectGenerator(object_names=[self.reward_object, "table"])
+        self.objects = ObjectGenerator(object_names=[self.reward_object, "table" if record_output_path is None else "table_with_camera"])
+        self.camera = ObjectCameraRecorder(record_output_path) if record_output_path is not None else None
 
         # Create environments
-        self.create_envs()
+        self.create_envs(vsim_path)
 
         # Setup action and observation spaces
         self._setup_action_space()
@@ -116,26 +121,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         self.info["rewards"] = {}
 
-        # Load transfer models
-        expert_dim = 41
-        student_dim = 41
-        latent_dim = 32
-        expert_encoder_path = f"/workspace/data/transfer/models/{expert_dim}_{latent_dim}_encoder.pt"
-        student_encoder_path = f"/workspace/data/transfer/models/{student_dim}_{latent_dim}_encoder.pt"
-        student_decoder_path = f"/workspace/data/transfer/models/{latent_dim}_{student_dim}_decoder.pt"
-        with torch.no_grad():
-            expert_encoder = torch.jit.load(expert_encoder_path).to(device)
-            expert_encoder.eval()
-            self.student_encoder = torch.jit.load(student_encoder_path).to(device)
-            self.student_encoder.eval()
-            self.expert_trajectory = torch.tensor(
-                np.load(f"/workspace/data/transfer/trajectories/pick_up_example_41.npy"), dtype=torch.float32, device=device
-            )
-            self.expert_latent_trajectory = expert_encoder(self.expert_trajectory)
-            self.student_decoder = torch.jit.load(student_decoder_path).to(device)
-            self.student_decoder.eval()
-
-    def create_envs(self):
+    def create_envs(self, vsim_path):
         """Create simulation environments."""
         # Create environment definition
         self.env_def_handle = self.gym.create_environment_def("hand_env")
@@ -152,7 +138,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         # hand_file = "/workspace/optimal_morphology_rl/data/llm/iteration_02/variant_2_upgrade_0_hand.vsim"
         # hand_file = "/workspace/optimal_morphology_rl/data/llm/iteration_02/variant_2_upgrade_1_hand.vsim"
-        hand_file = "/workspace/optimal_morphology_rl/data/llm/variant_2_urdf_params/variant_2_urdf_params.vsim"
+        # hand_file = "/workspace/optimal_morphology_rl/data/llm/variant_2_urdf_params/variant_2_urdf_params.vsim"
+        hand_file = vsim_path
+
+        print(f"Loading hand model from {hand_file}")
 
         env_def.import_definitions(
             hand_file,
@@ -161,6 +150,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             merge_fixed_joints=True,
             force_mass_computation=False,
             force_inertia_computation=False,
+            query_mode=v.QueryMode.USE_COLLISIONS,
         )
 
         # Configure articulation
@@ -221,8 +211,14 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             y = (i // grid_size) * spacing
             env_set_offsets.append(v.Vec3(x, y, 0))
 
+        if self.camera is not None:
+            self.camera.build_specs(self.objects, env_def)
+
         env_def.finalize()
         super().create_envs(self.env_def_handle, env_set_offsets=env_set_offsets)
+
+        if self.camera is not None:
+            self.camera.build_cameras(env_def, self.env_group, self.gym, self.num_envs, self.device)
 
     def _setup_action_space(self):
         """Configure action space dimensions."""
@@ -330,7 +326,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.set_reward_object_vel_buf[:] = 0.0
 
         # Setup table bounds from table object
-        table_obj = self.objects.get_object("table")
+        table_obj = self.objects.get_object("table") if self.objects.get_object("table") is not None else self.objects.get_object("table_with_camera")
         self.table_half_size = table_obj.half_size
         self.table_bounds = torch.tensor(
             [
@@ -548,8 +544,6 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.visualize_goal()
 
     def reset_idx(self):
-        num_reset = int(self.reset_buf.sum().item())
-
         self.act_buf[self.reset_buf, :] = 0.0
         self.last_act_buf[self.reset_buf, :] = 0.0
 
@@ -645,6 +639,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         """Refresh all state buffers from simulation."""
         self.gym.get_articulation_kinematic_states(self.gpu_get_kinematic_state_command_array)
         self.gym.get_rigid_body_kinematic_states(self.objects.get_object(self.reward_object).gpu_get_object_kin_cmd_array)
+        if self.camera is not None:
+            self.camera.update(self.gym)
+            self.camera.save(self.timestep_buf[0].cpu().item())
 
     def post_physics_step(self):
         """Post-step processing."""
@@ -728,7 +725,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.rew_buf[:] += 0.05 * dist_rew
 
         # Fingertip contact reward.
-        self.contacts.compute_object_hand_contact()  # biggest computational slowdown
+        self.contacts.update()  # biggest computational slowdown
         self.forces.update()
         forces = self.forces.force_sensor_buf.norm(dim=-1)
         contacts = self.contacts.env_link_touch[:, self.contacts.monitored_link_mask]
@@ -807,7 +804,6 @@ async def main():
 
     # Setup interactive control
     if render is not None:
-        # render.reset_camera(v.Vec3(0.0, 0.2, 0.2), v.Vec3(0.023272, -0.929027, -0.369280))
         render.capped_step = True
         render.set_paused(False)
 
