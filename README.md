@@ -39,9 +39,9 @@ In your favorite terminal:
 
 ```
 export __GLX_VENDOR_LIBRARY_NAME=nvidia && docker exec -it optimal_morphology_rl-dev-gpu-1 bash
-cd /workspace/tools/vlearn/train
+cd /workspace/
 uv run python /workspace/src/optimal_morphology_rl/envs/hand_envs/finger_ee_tracking.py
-uv run python3 rl_games_train.py hand train --headless False
+uv run python3 vlearn/train/rl_games_train.py hand train --headless False
 uv run python3 rl_games_train.py hand train runs/hand_pen_18-20-35-35/nn/hand_pen.pth
 uv run python3 rl_games_train.py finger play <path>
 ```
