@@ -15,4 +15,8 @@ dependencies = [
     "numpy",
     "AsynchronousPS4Controller",
     "time_series_buffer",
+    "optimal_morphology_rl_assets",
 ]
+
+[tool.uv.sources]
+optimal_morphology_rl_assets = { git = "https://github.com/goodfaiter/optimal_morphology_rl_assets.git", branch = "main" }
