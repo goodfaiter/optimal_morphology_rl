@@ -3,6 +3,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 import torch
 import vlearn as v
+from importlib import resources
 
 
 class ObjectBase(ABC):
@@ -99,7 +100,7 @@ class Pen(LoadedObject):
     def __init__(self):
         super().__init__(
             name="pen",
-            asset_path="/workspace/optimal_morphology_rl_assets/assets/objects/pen_big.vsim",
+            asset_path=resources.files("optimal_morphology_rl_assets.assets") / "objects/pen_big.vsim",
             use_visual_mesh=False,
         )
 
@@ -108,7 +109,7 @@ class Tomato(LoadedObject):
     def __init__(self):
         super().__init__(
             name="tomato",
-            asset_path="/workspace/optimal_morphology_rl_assets/assets/objects/tomato.vsim",
+            asset_path=resources.files("optimal_morphology_rl_assets.assets") / "objects/tomato.vsim",
             use_visual_mesh=False,
         )
 
@@ -117,7 +118,7 @@ class Knife(LoadedObject):
     def __init__(self):
         super().__init__(
             name="knife",
-            asset_path="/workspace/optimal_morphology_rl_assets/assets/objects/kitchen_knife.vsim",
+            asset_path=resources.files("optimal_morphology_rl_assets.assets") / "objects/kitchen_knife.vsim",
             use_visual_mesh=True,
         )
 
@@ -126,7 +127,7 @@ class Mug(LoadedObject):
     def __init__(self):
         super().__init__(
             name="mug",
-            asset_path="/workspace/optimal_morphology_rl_assets/assets/objects/mug.vsim",
+            asset_path=resources.files("optimal_morphology_rl_assets.assets") / "objects/mug.vsim",
             use_visual_mesh=False,
         )
 
@@ -135,7 +136,7 @@ class SquareDonut(LoadedObject):
     def __init__(self):
         super().__init__(
             name="square_donut",
-            asset_path="/workspace/optimal_morphology_rl_assets/assets/objects/square_donut.vsim",
+            asset_path=resources.files("optimal_morphology_rl_assets.assets") / "objects/square_donut.vsim",
             use_visual_mesh=False,
         )
 
@@ -144,7 +145,7 @@ class Table(LoadedObject):
     def __init__(self):
         super().__init__(
             name="table",
-            asset_path="/workspace/optimal_morphology_rl_assets/assets/objects/table.vsim",
+            asset_path=resources.files("optimal_morphology_rl_assets.assets") / "objects/table.vsim",
             use_visual_mesh=False,
             fixed=True,
         )
@@ -163,7 +164,7 @@ class TableWithCamera(LoadedObject):
     def __init__(self):
         super().__init__(
             name="table_with_camera",
-            asset_path="/workspace/optimal_morphology_rl_assets/assets/objects/table_with_camera.vsim",
+            asset_path=resources.files("optimal_morphology_rl_assets.assets") / "objects/table_with_camera.vsim",
             use_visual_mesh=False,
             fixed=True,
         )
