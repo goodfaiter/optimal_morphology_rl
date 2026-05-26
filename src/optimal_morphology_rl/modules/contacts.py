@@ -86,7 +86,7 @@ class Contacts:
         # Mask of touched links per env to deduplicate contacts without calling torch.unique
         self.env_link_touch = torch.zeros((self.total_num_envs, self.num_links), dtype=torch.bool, device=self.device)
 
-    def compute_object_hand_contact(self):
+    def update(self):
         contact = self.object_hand_contact_buf
         contact_count = self.object_hand_contact_count_buf
         contact.zero_()
