@@ -11,12 +11,13 @@ requires-python = ">=3.11"
 dependencies = [
     "torch",
     "pyyaml",
-    "vlearn_train",
     "numpy",
-    "AsynchronousPS4Controller",
     "time_series_buffer",
+    "vlearn_train",
     "optimal_morphology_rl_assets",
 ]
 
 [tool.uv.sources]
+vlearn_train = { workspace = true, editable = true }
 optimal_morphology_rl_assets = { git = "https://github.com/goodfaiter/optimal_morphology_rl_assets.git", branch = "main" }
+time_series_buffer = { git = "https://github.com/goodfaiter/time_series_buffer.git", branch = "main" }
