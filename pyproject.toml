@@ -18,6 +18,6 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-# vlearn_train = { workspace = true, editable = true }
+vlearn_train = { workspace = true, editable = true }
 optimal_morphology_rl_assets = { git = "ssh://git@github.com/goodfaiter/optimal_morphology_rl_assets.git", branch = "main" }
 time_series_buffer = { git = "https://github.com/goodfaiter/time_series_buffer.git", branch = "main" }
