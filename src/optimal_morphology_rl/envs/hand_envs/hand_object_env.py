@@ -128,17 +128,6 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         env_def = self.gym.get_environment_def(self.env_def_handle)
 
         # Load appropriate hand model
-        # hand_file = "/workspace/optimal_morphology_rl/data/llm/cad_parameters_a_hand_can_pick_up_a_berry.vsim"
-        # hand_file = "/workspace/optimal_morphology_rl/data/llm/cad_parameters_a_hand_can_pick_up_a_berry_copy.vsim"
-        # hand_file = "/workspace/optimal_morphology_rl/data/llm/cad_parameters_a_hand_can_pick_up_a_berry_converted.vsim"
-
-        # hand_file = "/workspace/optimal_morphology_rl/data/llm/variant_0_urdf_params/variant_0_urdf_params.vsim"
-        # hand_file = "/workspace/optimal_morphology_rl/data/llm/variant_1_urdf_params/variant_1_urdf_params.vsim"
-        # hand_file = "/workspace/optimal_morphology_rl/data/llm/variant_2_urdf_params/variant_2_urdf_params.vsim"
-
-        # hand_file = "/workspace/optimal_morphology_rl/data/llm/iteration_02/variant_2_upgrade_0_hand.vsim"
-        # hand_file = "/workspace/optimal_morphology_rl/data/llm/iteration_02/variant_2_upgrade_1_hand.vsim"
-        # hand_file = "/workspace/optimal_morphology_rl/data/llm/variant_2_urdf_params/variant_2_urdf_params.vsim"
         hand_file = vsim_path
 
         print(f"Loading hand model from {hand_file}")
@@ -326,7 +315,11 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.set_reward_object_vel_buf[:] = 0.0
 
         # Setup table bounds from table object
-        table_obj = self.objects.get_object("table") if self.objects.get_object("table") is not None else self.objects.get_object("table_with_camera")
+        table_obj = (
+            self.objects.get_object("table")
+            if self.objects.get_object("table") is not None
+            else self.objects.get_object("table_with_camera")
+        )
         self.table_half_size = table_obj.half_size
         self.table_bounds = torch.tensor(
             [
@@ -515,23 +508,24 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         num_reset = int(reset_idx.sum().item())
 
         # Sample position in world
-        self.object_goal_pos_in_world[reset_idx, 0] = self.table_bounds[0, 0] + torch.rand(num_reset, device=self.device) * (
-            self.table_bounds[0, 1] - self.table_bounds[0, 0]
-        )
-        self.object_goal_pos_in_world[reset_idx, 1] = self.table_bounds[1, 0] + torch.rand(num_reset, device=self.device) * (
-            self.table_bounds[1, 1] - self.table_bounds[1, 0]
-        )
-        self.object_goal_pos_in_world[reset_idx, 2] = (
-            self.table_bounds[2, 0]
-            + 0.3
-            + torch.rand(num_reset, device=self.device) * (self.table_bounds[2, 1] - self.table_bounds[2, 0] - 0.3)
-        )
+        # self.object_goal_pos_in_world[reset_idx, 0] = self.table_bounds[0, 0] + torch.rand(num_reset, device=self.device) * (
+        #     self.table_bounds[0, 1] - self.table_bounds[0, 0]
+        # )
+        # self.object_goal_pos_in_world[reset_idx, 1] = self.table_bounds[1, 0] + torch.rand(num_reset, device=self.device) * (
+        #     self.table_bounds[1, 1] - self.table_bounds[1, 0]
+        # )
+        # self.object_goal_pos_in_world[reset_idx, 2] = (
+        #     self.table_bounds[2, 0]
+        #     + 0.3
+        #     + torch.rand(num_reset, device=self.device) * (self.table_bounds[2, 1] - self.table_bounds[2, 0] - 0.3)
+        # )
 
         self.object_goal_pos_in_world[reset_idx, 0] = 0.0
         self.object_goal_pos_in_world[reset_idx, 1] = 0.0
         self.object_goal_pos_in_world[reset_idx, 2] = 0.2
 
         # Sample orientation in world
+        # self.quat_object_goal_to_world[reset_idx, :] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=self.device, dtype=torch.float32).unsqueeze(0).repeat(num_reset, 1)
         self.quat_object_goal_to_world[reset_idx, :] = random_uniform_quaternion(num_reset, device=self.device, dtype=torch.float32)
         self._6d_object_goal_to_world[reset_idx, :] = quaternion_to_6d(self.quat_object_goal_to_world[reset_idx, :])
         # self.object_goal_down_in_world[reset_idx, :] = rotate_by_quat_A_to_B(
@@ -544,6 +538,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.visualize_goal()
 
     def reset_idx(self):
+        num_reset = int(self.reset_buf.sum().item())
         self.act_buf[self.reset_buf, :] = 0.0
         self.last_act_buf[self.reset_buf, :] = 0.0
 
@@ -557,11 +552,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # )
         self.reset_joint_pos_buf[self.reset_buf, :] = 0.0
         self.reset_joint_vel_buf[self.reset_buf, :] = 0.0
+        # self.reset_root_transform_buf[self.reset_buf, :4] = random_uniform_quaternion(num_reset, device=self.device, dtype=torch.float32)
         self.reset_root_transform_buf[self.reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=self.device)
-        self.reset_root_transform_buf[self.reset_buf, 4:] = torch.tensor([[-0.05, -0.1, 0.05]], device=self.device)
-        # self.reset_root_transform_buf[self.reset_buf, :4] = random_uniform_quaternion(
-        #     num_reset, device=self.device, dtype=torch.float32
-        # )
+        self.reset_root_transform_buf[self.reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.1]], device=self.device)
         # self.reset_root_transform_buf[self.reset_buf, 4:] = (
         #     self.table_bounds[:, 0]
         #     + 0.1
@@ -612,7 +605,6 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
     def reset(self):
         obs, _ = super().reset()
         self.refresh_buffers()
-        self.resample_object_goal(torch.ones_like(self.reset_buf, dtype=torch.bool))
         return obs, {}
 
     def pre_physics_step(self, actions: torch.Tensor):
@@ -719,10 +711,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # Reward distance between selected object and hand.
         dist = torch.norm(self.robot_pos_in_world - object_pos_in_world, dim=-1)
         dist_clipped = torch.clamp(dist, min=0.05)  # don't reward getting too close to allow for exploration
-        dist_clipped_normalized = dist_clipped / 0.1
+        dist_clipped_normalized = dist_clipped / 0.2
         dist_rew = torch.exp(-1.0 * dist_clipped_normalized**2)
         self.info["rewards"]["hand_to_object_distance"] = dist_rew.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 0.05 * dist_rew
+        self.rew_buf[:] += 0.1 * dist_rew
 
         # Fingertip contact reward.
         self.contacts.update()  # biggest computational slowdown
@@ -731,9 +723,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         contacts = self.contacts.env_link_touch[:, self.contacts.monitored_link_mask]
         force_against_object = forces * contacts
         force_against_object.clamp_(0.0, 1.0)
-        fingertip_contact_reward = torch.clamp(force_against_object.sum(dim=-1), min=0.0, max=2.0) / 2.0
+        fingertip_contact_reward = torch.clamp(force_against_object.sum(dim=-1), min=0.0, max=3.0) / 3.0
         self.info["rewards"]["fingertip_contact_reward"] = fingertip_contact_reward.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 0.5 * fingertip_contact_reward
+        self.rew_buf[:] += 2.0 * fingertip_contact_reward
 
         # Penalize large actions to encourage smooth control
         action_penalty = torch.sum(self.act_buf**2, dim=-1)
