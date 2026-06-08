@@ -6,6 +6,7 @@ import vlearn as v
 import os
 import sys
 from optimal_morphology_rl.modules.contacts import Contacts
+from optimal_morphology_rl.modules.kinematic_sensor import KinematicSensor
 from optimal_morphology_rl.modules.force_sensors import ForceSensors
 from optimal_morphology_rl.modules.robot import Robot
 from optimal_morphology_rl.modules.object_generator import ObjectGenerator
@@ -114,6 +115,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.gym.finalize()
         self.gym.update_scene_dependent_components()
 
+        self.kinematic_sensor = KinematicSensor(self, self.reward_object.handle)
         self.forces = ForceSensors(self, link_names=["distal"])
         reward_object_link_offset = self.objects.get_object_link_offset(self.reward_object.name)
         self.contacts = Contacts(self, reward_object_link_offset, link_names=["distal"])
@@ -517,13 +519,14 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
     def compute_observations(self):
         """Construct observation vector."""
-        robot_state = self.robot.get_observation_state()
+        self.kinematic_sensor.update()
 
-        reward_object = self.objects.get_object(self.reward_object)
-        object_pos_world = reward_object.pos_in_world
-        object_quat_world = reward_object.quat_object_to_world
-        object_lin_vel_world = reward_object.linear_velocity_world
-        object_ang_vel_world = reward_object.angular_velocity_world
+        robot_state = self.robot.get_state()
+
+        object_pos_world = self.kinematic_sensor.pos_in_world
+        object_quat_world = self.kinematic_sensor.quat_sensor_to_world
+        object_lin_vel_world = self.kinematic_sensor.linear_velocity_world
+        object_ang_vel_world = self.kinematic_sensor.angular_velocity_world
         object_6d_to_world = quaternion_to_6d(object_quat_world)
 
         self.base_obs[:, self.base_obs_slices["robot_pos_in_world"]] = robot_state["robot_pos_in_world"]
@@ -547,10 +550,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
     def compute_reward_termination_truncation(self):
         self.rew_buf[:] = 0.0
 
-        reward_object = self.objects.get_object(self.reward_object)
-        object_pos_in_world = reward_object.pos_in_world
-        quat_object_to_world = reward_object.quat_object_to_world
-        _6d_object_to_world = quaternion_to_6d(quat_object_to_world)
+        object_pos_in_world = self.kinematic_sensor.pos_in_world
+        object_quat_world = self.kinematic_sensor.quat_sensor_to_world
+        _6d_object_to_world = quaternion_to_6d(object_quat_world)
 
         # Reward for minimizing object-to-goal distance.
         obj_goal_dist = torch.norm(self.object_goal_pos_in_world - object_pos_in_world, dim=-1)
