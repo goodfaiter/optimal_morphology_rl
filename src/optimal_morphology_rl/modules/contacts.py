@@ -20,7 +20,7 @@ class Contacts:
     lookup tables that were previously computed on the environment.
     """
 
-    def __init__(self, env: EnvironmentGpu, link_names: List[str] | None = None) -> None:
+    def __init__(self, env: EnvironmentGpu, reward_object_link_offset: int, link_names: List[str] | None = None) -> None:
         self.env: EnvironmentGpu = env
         self.device = self.env.device
         self.gym: gym.Gym = self.env.gym
@@ -53,8 +53,7 @@ class Contacts:
 
         self.hand_transform_indices_by_env[:, :] = torch.arange(self.num_links, dtype=torch.long, device=self.device).unsqueeze(0)
         self.table_transform_index_by_env[:] = self.num_links
-        reward_object_offset = self.env.object_creation_order.index(self.env.reward_object)
-        self.reward_object_transform_index_by_env[:] = self.num_links + reward_object_offset
+        self.reward_object_transform_index_by_env[:] = self.num_links + reward_object_link_offset - 1
 
         env_flat_index = 0
         for set_index, env_set in enumerate(self.env.env_sets):

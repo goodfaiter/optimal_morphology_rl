@@ -101,12 +101,11 @@ class Robot:
         )
         self.gpu_set_motor_control_command_array = self.gym.create_gpu_array([set_motor_cmd])
 
-    def refresh_buffers(self) -> None:
+    def refresh_buffers(self, gym: v.Gym) -> None:
         """Refresh robot kinematic state from simulation."""
+        gym.get_articulation_kinematic_states(self.gpu_get_kinematic_state_command_array)
 
-        self.gym.get_articulation_kinematic_states(self.gpu_get_kinematic_state_command_array)
-
-    def get_observation_state(self) -> dict[str, torch.Tensor]:
+    def get_state(self) -> dict[str, torch.Tensor]:
         """Update and return the robot-derived observation tensors."""
 
         self.robot_pos_in_world[:] = self.get_root_transform_buf[:, 4:7]

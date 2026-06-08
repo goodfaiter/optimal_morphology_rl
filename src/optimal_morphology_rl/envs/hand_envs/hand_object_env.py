@@ -93,7 +93,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.obs_history_length = 1 + (self.num_hist - 1) * self.hist_stride
 
         # Initialize ObjectGenerator with object names
-        self.objects = ObjectGenerator(object_names=[self.reward_object, "table" if record_output_path is None else "table_with_camera"])
+        self.objects = ObjectGenerator(object_names=[self.reward_object_name, "table" if record_output_path is None else "table_with_camera"])
+        self.reward_object = self.objects.get_object(self.reward_object_name)
         self.camera = ObjectCameraRecorder(record_output_path) if record_output_path is not None else None
 
         # Create environments
@@ -114,7 +115,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.gym.update_scene_dependent_components()
 
         self.forces = ForceSensors(self, link_names=["distal"])
-        self.contacts = Contacts(self, link_names=["distal"])
+        reward_object_link_offset = self.objects.get_object_link_offset(self.reward_object.name)
+        self.contacts = Contacts(self, reward_object_link_offset, link_names=["distal"])
 
         if self.gym.get_render() is not None:
             self.gym_render.reset_camera(v.Vec3(-0.671139, 0.073098, 0.726423), v.Vec3(0.755459, -0.009100, -0.655133))
@@ -222,11 +224,6 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=self.device)
         self.revolute_scale = torch.full((self.num_motors,), 0.1, device=self.device)
 
-    @property
-    def object_creation_order(self):
-        """Backward compatibility property for object names."""
-        return self.objects.object_names
-
     def _setup_observation_space(self):
         """Configure observation space dimensions."""
         self.base_obs_slices = {}
@@ -285,14 +282,6 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         # Allocate object buffers through ObjectGenerator
         self.objects.allocate_buffers(self.total_num_envs, self.device)
-
-        # Selected reward object read/write buffers.
-        reward_object = self.objects.get_object(self.reward_object)
-        self.set_reward_object_pos_buf = reward_object.set_pos_buf
-        self.set_reward_object_vel_buf = reward_object.set_vel_buf
-
-        self.set_reward_object_pos_buf[:] = 0.0
-        self.set_reward_object_vel_buf[:] = 0.0
 
         # Setup table bounds from table object
         table_obj = (
@@ -470,31 +459,15 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.visualize_goal()
 
     def reset_idx(self):
-        # Reset selected reward object state with noise.
-        # self.set_reward_object_pos_buf[self.reset_buf, :4] = random_uniform_quaternion(
-        #     num_reset, device=self.device, dtype=torch.float32
-        # )
-        # self.set_reward_object_pos_buf[self.reset_buf, 4:] = (
-        #     self.table_bounds[:, 0]
-        #     + 0.1
-        #     + torch.rand((num_reset, 3), device=self.device) * (self.table_bounds[:, 1] - self.table_bounds[:, 0] - 0.1)
-        # )
-        # self.set_reward_object_pos_buf[self.reset_buf, 4:6] = self.robot.reset_root_transform_buf[self.reset_buf, 4:6]
-        # self.set_reward_object_pos_buf[self.reset_buf, 6] += (
-        #     torch.rand((num_reset,), device=self.device) * 0.05 + 0.05
-        # )  # ensure object is above the hand
-        reward_obj = self.objects.get_object(self.reward_object)
-        reward_obj.set_pos_buf[self.reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=self.device)
-        reward_obj.set_pos_buf[self.reset_buf, 4:] = torch.tensor([[0.0, 0.0, 0.025]], device=self.device)
-        reward_obj.set_vel_buf[self.reset_buf, :] = 0.0
-        self.gym.set_rigid_body_kinematic_states(reward_obj.gpu_set_object_kin_cmd_array)
-
-        self.resample_object_goal(self.reset_buf)
         self.robot.reset(self.reset_buf)
+        self.reward_object.reset_idx(self.gym, self.reset_buf)
+        self.resample_object_goal(self.reset_buf)
 
     def reset(self):
         obs, _ = super().reset()
         self.refresh_buffers()
+        if self.total_num_envs > 10: # when testing we prefer to start from 0
+            self.progress_buf[:] = torch.randint(0, self.max_episode_length, (self.total_num_envs,), device=self.device)
         return obs, {}
 
     def pre_physics_step(self, actions: torch.Tensor):
@@ -519,8 +492,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
     def refresh_buffers(self):
         """Refresh all state buffers from simulation."""
-        self.robot.refresh_buffers()
-        self.gym.get_rigid_body_kinematic_states(self.objects.get_object(self.reward_object).gpu_get_object_kin_cmd_array)
+        self.robot.refresh_buffers(self.gym)
+        self.objects.refresh_buffers(self.gym)
         if self.camera is not None:
             self.camera.update(self.gym)
             self.camera.save(self.timestep_buf[0].cpu().item())
