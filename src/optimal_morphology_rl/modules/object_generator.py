@@ -5,6 +5,8 @@ import torch
 import vlearn as v
 from importlib import resources
 
+from optimal_morphology_rl.helpers.numpy_vlearn import random_uniform_quaternion
+
 
 class ObjectBase(ABC):
     """Abstract base class for objects in the environment."""
@@ -27,6 +29,10 @@ class ObjectBase(ABC):
         self.gpu_get_object_kin_cmd_array = None
         self.gpu_set_object_kin_cmd_array = None
 
+        # Goals
+        self.goal_pos_in_world: torch.Tensor = None
+        self.goal_quat_object_to_world: torch.Tensor = None
+
     @abstractmethod
     def load(self, env_def):
         """Load object into environment definition and return handle."""
@@ -36,12 +42,12 @@ class ObjectBase(ABC):
     def allocate_buffers(self, total_num_envs: int, device: torch.device):
         """Allocate GPU buffers for state."""
         raise NotImplementedError
-    
+
     @abstractmethod
     def refresh_buffers(self, gym: v.Gym):
         """Refresh state buffers from simulation."""
         raise NotImplementedError
-    
+
     @abstractmethod
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
         """Reset any object-specific buffers based on reset indices."""
@@ -83,11 +89,11 @@ class ObjectBase(ABC):
     @property
     def angular_velocity_world(self) -> torch.Tensor:
         return self.get_vel_in_world_buf[:, :3]
-    
+
     @property
     def set_trans_robot_to_world(self) -> torch.Tensor:
         return self.set_trans_robot_to_world_buf
-    
+
     @property
     def set_vel_in_world(self) -> torch.Tensor:
         return self.set_vel_in_world_buf
@@ -125,6 +131,8 @@ class LoadedRigidObject(ObjectBase):
         self.get_vel_in_world_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
         self.set_trans_robot_to_world_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
         self.set_vel_in_world_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
+        self.goal_pos_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
+        self.goal_quat_object_to_world = torch.zeros((total_num_envs, 4), device=device, dtype=torch.float32)
 
     def refresh_buffers(self, gym: v.Gym):
         """Refresh state buffers from simulation."""
@@ -132,6 +140,7 @@ class LoadedRigidObject(ObjectBase):
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
         """Reset any object-specific buffers based on reset indices."""
+        num_reset = reset_buf.sum().item()
 
         # self.set_reward_object_pos_buf[self.reset_buf, :4] = random_uniform_quaternion(
         #     num_reset, device=self.device, dtype=torch.float32
@@ -149,6 +158,11 @@ class LoadedRigidObject(ObjectBase):
         self.set_trans_robot_to_world_buf[reset_buf, 4:] = torch.tensor([[0.0, 0.0, 0.025]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
+
+        self.goal_pos_in_world[reset_buf, 0] = 0.0
+        self.goal_pos_in_world[reset_buf, 1] = 0.0
+        self.goal_pos_in_world[reset_buf, 2] = 0.2
+        self.goal_quat_object_to_world[reset_buf, :] = random_uniform_quaternion(num_reset, device=self.device, dtype=torch.float32)
 
     def get_link_offset(self) -> int:
         return 1
@@ -204,6 +218,9 @@ class LoadedArticulatedObject(ObjectBase):
         self.get_joint_vel_buf = torch.zeros((total_num_envs, self.num_joints), device=device, dtype=torch.float32)
         self.set_joint_pos_buf = torch.zeros((total_num_envs, self.num_joints), device=device, dtype=torch.float32)
         self.set_joint_vel_buf = torch.zeros((total_num_envs, self.num_joints), device=device, dtype=torch.float32)
+        
+        self.goal_pos_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
+        self.goal_quat_object_to_world = torch.zeros((total_num_envs, 4), device=device, dtype=torch.float32)
 
     def refresh_buffers(self, gym: v.Gym):
         """Refresh state buffers from simulation."""
@@ -214,8 +231,13 @@ class LoadedArticulatedObject(ObjectBase):
         self.set_trans_robot_to_world_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=reset_buf.device)
         self.set_trans_robot_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
-        
+
         gym.set_articulation_kinematic_states(self.gpu_set_object_kin_cmd_array)
+
+        self.goal_pos_in_world[reset_buf, 0] = 0.0
+        self.goal_pos_in_world[reset_buf, 1] = 0.0
+        self.goal_pos_in_world[reset_buf, 2] = 0.1
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=reset_buf.device)
 
     def create_gpu_command(self, env_group, gym, reset_buf):
         """Create GPU command for reading articulated state."""

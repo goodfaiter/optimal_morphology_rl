@@ -29,7 +29,10 @@ class KinematicSensor:
         source = None
 
         # Prefer rigid body when a handle could refer to multiple source types.
-        source = env_def.get_rigid_body(handle)
+        try:
+            source = env_def.get_rigid_body(handle)
+        except Exception:
+            source = None
         
         if source is None:
             source = env_def.get_articulation(handle)
