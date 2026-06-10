@@ -355,7 +355,7 @@ class Drawer(LoadedArticulatedObject):
     def __init__(self):
         super().__init__(
             name="drawer",
-            asset_path="/workspace/optimal_morphology_rl_assets/optimal_morphology_rl_assets/assets/objects/drawer.vsim",
+            asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/drawer.vsim"),
             use_visual_mesh=False,
             fixed=True,
         )
