@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from optimal_morphology_rl.modules.object_generator import LoadedRigidObject
 import torch
 from PIL import Image
 
@@ -55,7 +56,8 @@ class ObjectCameraRecorder:
 
     def build_specs(self, object_generator, env_def) -> None:
         for obj in object_generator.objects.values():
-            self._build_spec(obj, env_def=env_def)
+            if isinstance(obj, LoadedRigidObject): # check if class of rigid body
+                self._build_spec(obj, env_def=env_def)
 
     def build_cameras(self, env_def, env_group, gym, num_envs: int, device: torch.device) -> None:
         for spec in self._specs:
