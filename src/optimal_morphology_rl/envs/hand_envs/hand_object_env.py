@@ -234,6 +234,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         )
 
         self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=self.device)
+        self.max_velocity = self.velocity_scale * 2.0
         self.revolute_scale = torch.full((self.num_motors,), 0.1, device=self.device)
 
     def _setup_observation_space(self):
@@ -462,7 +463,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         # Apply wrist velocity commands
         self.robot.set_root_transform_buf[:] = self.robot.get_root_transform_buf
-        self.robot.set_root_vel_buf[:] = torch.clamp(self.scaled_act_buf[:, :6], -self.velocity_scale, self.velocity_scale)  # note that vel is first 3 angular, last 3 linear
+        self.robot.set_root_vel_buf[:] = torch.clamp(self.scaled_act_buf[:, :6], -self.max_velocity, self.max_velocity)  # note that vel is first 3 angular, last 3 linear
         self.gym.set_articulation_kinematic_states(self.robot.gpu_set_kinematic_state_command_array)
 
         # Apply joint motor commands and anatgonistic spring
