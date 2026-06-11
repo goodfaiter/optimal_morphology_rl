@@ -129,10 +129,6 @@ class Robot:
 
     def reset(self, reset_buf: torch.Tensor) -> None:
         """Reset robot, object, goal, and episode bookkeeping state."""
-
-        self.env.act_buf[reset_buf, :] = 0.0
-        self.env.last_act_buf[reset_buf, :] = 0.0
-
         # Reset Hand Kinematics
         # grasp = torch.rand((num_reset, 1), device=self.device) * 0.5 * torch.pi
         # per_finger = torch.ones((num_reset, self.num_joints), device=self.device)
@@ -154,17 +150,12 @@ class Robot:
         self.reset_root_vel_buf[reset_buf, :] = 0.0
         self.gym.set_articulation_kinematic_states(self.gpu_reset_kinematic_state_command_array)
 
-        # Reset progress
-        self.env.progress_buf[reset_buf] = 0
-        self.env.timestep_buf[reset_buf] = 0
-
-        # reset history
-        self.env.obs_history.reset(reset_buf)
-
         # Randomize rigid body material
         # Write to buffers
-        # friction = torch.rand(len(self.env.num_envs), device=self.device) * 0.5 + 0.25  # [0.25, 0.75]
-        friction = 1.0
+        if self.env.total_num_envs > 10: # only randomize if training (more than 10 envs); keep fixed during evaluation for consistency
+            friction = torch.rand(len(self.env.num_envs), device=self.device) * 0.95 + 0.05  # [0.05, 1.0]
+        else:
+            friction = 0.5
         self.env.set_static_friction_buf[:] = friction
         self.env.set_dynamic_friction_buf[:] = friction
         self.gym.set_rigid_material_properties(self.env.gpu_set_friction_cmd)

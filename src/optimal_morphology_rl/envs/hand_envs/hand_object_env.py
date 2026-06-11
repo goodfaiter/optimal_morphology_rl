@@ -11,6 +11,7 @@ from optimal_morphology_rl.modules.force_sensors import ForceSensors
 from optimal_morphology_rl.modules.robot import Robot
 from optimal_morphology_rl.modules.object_generator import ObjectGenerator
 from optimal_morphology_rl.modules.object_camera_recorder import ObjectCameraRecorder
+from optimal_morphology_rl.modules.external_force import ExternalForceConfig, ExternalForceModule
 
 from pathlib import Path
 
@@ -120,6 +121,14 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.forces = ForceSensors(self, link_names=["distal"])
         reward_object_link_offset = self.objects.get_object_link_offset(self.reward_object.name)
         self.contacts = Contacts(self, reward_object_link_offset, link_names=["distal"])
+        self.force_module = ExternalForceModule(
+            body_handles={object: self.reward_object.handle},
+            total_num_envs=num_envs,
+            device=device,
+            env_group=self.env_group,
+            gym=self.gym,
+            config=ExternalForceConfig(),
+        )
 
         if self.gym.get_render() is not None:
             self.gym_render.reset_camera(v.Vec3(-0.671139, 0.073098, 0.726423), v.Vec3(0.755459, -0.009100, -0.655133))
@@ -426,6 +435,14 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.gym.get_render().register_line_shape(self._goal_axis_z)
 
     def reset_idx(self):
+        # Reset environment buffers
+        self.act_buf[self.reset_buf, :] = 0.0
+        self.last_act_buf[self.reset_buf, :] = 0.0
+        self.progress_buf[self.reset_buf] = 0
+        self.timestep_buf[self.reset_buf] = 0
+        self.obs_history.reset(self.reset_buf)
+
+        # Reset modules
         self.robot.reset(self.reset_buf)
         self.reward_object.reset_idx(self.gym, self.reset_buf)
         self.visualize_goal()
@@ -445,17 +462,20 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         # Apply wrist velocity commands
         self.robot.set_root_transform_buf[:] = self.robot.get_root_transform_buf
-        self.robot.set_root_vel_buf[:] = self.scaled_act_buf[:, :6]  # note that vel is first 3 angular, last 3 linear
+        self.robot.set_root_vel_buf[:] = torch.clamp(self.scaled_act_buf[:, :6], -self.velocity_scale, self.velocity_scale)  # note that vel is first 3 angular, last 3 linear
         self.gym.set_articulation_kinematic_states(self.robot.gpu_set_kinematic_state_command_array)
 
         # Apply joint motor commands and anatgonistic spring
-        self.robot.set_motor_cmd_buf[:] = self.scaled_act_buf[:, 6:]
+        self.robot.set_motor_cmd_buf[:] = torch.clamp(self.scaled_act_buf[:, 6:], 0.0, None)
         self.robot.set_motor_cmd_buf[:] += -0.1 * self.robot.get_joint_pos_buf
         self.gym.set_motor_forces(self.robot.gpu_set_motor_control_command_array)
 
         # Gravity compensation on base link
         self.set_force_torque_buf[:, :, 2] = 9.81 * self.link_masses
         self.gym.set_link_external_forces(self.set_force_torque_cmd_arr)
+
+        # Apply extral force
+        self.force_module.step(self.gym)
 
     def refresh_buffers(self):
         """Refresh all state buffers from simulation."""
@@ -481,6 +501,11 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.refresh_buffers()
         self.compute_observations()
         self.compute_reward_termination_truncation()
+
+        # Resample goal
+        sample_new_goal = torch.rand(self.total_num_envs, device=self.device) < 0.01
+        if sample_new_goal.any():
+            self.reward_object._update_goal(sample_new_goal)
 
     def compute_observations(self):
         """Construct observation vector."""
