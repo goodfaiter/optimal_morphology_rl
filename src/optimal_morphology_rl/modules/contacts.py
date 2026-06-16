@@ -28,7 +28,7 @@ class Contacts:
         # Metadata
         self.max_contact_pairs_per_env = self.env.max_contact_pairs_per_env
         self.total_num_envs = self.env.total_num_envs
-        self.num_links = self.env.num_links
+        self.num_links = self.env.robot.num_links
 
         # Contact query buffers (owned by helper)
         self.contact_normals_buf = torch.zeros(
@@ -71,7 +71,7 @@ class Contacts:
 
         for name in link_name_set:
             for i in range(self.num_links):
-                link_def = self.env.art_def.get_link_def(i)
+                link_def = self.env.robot.art_def.get_link_def(i)
                 if name in link_def.name.lower():
                     self.monitored_link_mask[i] = True
 

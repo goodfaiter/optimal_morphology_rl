@@ -1,11 +1,14 @@
-from typing import Dict, List
-import numpy as np
-from abc import ABC, abstractmethod
+from typing import Dict, List, Optional
 import torch
+from abc import ABC, abstractmethod
 import vlearn as v
-from importlib import resources
 
 from optimal_morphology_rl.helpers.numpy_vlearn import random_uniform_quaternion
+
+import importlib.resources as resources
+
+_IDENTITY_QUAT = (0.0, 0.0, 0.0, 1.0)
+_ASSET_ROOT = "/workspace/optimal_morphology_rl_assets/optimal_morphology_rl_assets/assets/objects"
 
 
 class ObjectBase(ABC):
@@ -14,14 +17,12 @@ class ObjectBase(ABC):
     def __init__(self, name: str):
         self.name = name
         self.handle = None
-        self.device: torch.device | None = None
-        self.total_num_envs: int | None = None
 
         # State buffer dictionaries (rigid: len=1, articulated: len=N)
-        self.get_trans_robot_to_world_buf: torch.Tensor = None
-        self.get_vel_in_world_buf: torch.Tensor = None
-        self.set_trans_robot_to_world_buf: torch.Tensor = None
-        self.set_vel_in_world_buf: torch.Tensor = None
+        self.get_trans_object_to_world_buf: Optional[torch.Tensor] = None
+        self.get_vel_in_world_buf: Optional[torch.Tensor] = None
+        self.set_trans_object_to_world_buf: Optional[torch.Tensor] = None
+        self.set_vel_in_world_buf: Optional[torch.Tensor] = None
 
         # GPU command
         self.get_kin_cmd = None
@@ -30,22 +31,31 @@ class ObjectBase(ABC):
         self.gpu_set_object_kin_cmd_array = None
 
         # Goals
-        self.goal_pos_in_world: torch.Tensor = None
-        self.goal_quat_object_to_world: torch.Tensor = None
+        self.goal_pos_in_world: Optional[torch.Tensor] = None
+        self.goal_quat_object_to_world: Optional[torch.Tensor] = None
 
     @abstractmethod
     def load(self, env_def):
         """Load object into environment definition and return handle."""
         raise NotImplementedError
 
-    @abstractmethod
     def allocate_buffers(self, total_num_envs: int, device: torch.device):
-        """Allocate GPU buffers for state."""
-        raise NotImplementedError
+        """Allocate GPU buffers shared by all object types (trans/vel/goal). Subclasses call super() then add their own."""
+        self.get_trans_object_to_world_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
+        self.get_vel_in_world_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
+        self.set_trans_object_to_world_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
+        self.set_vel_in_world_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
+        self.goal_pos_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
+        self.goal_quat_object_to_world = torch.zeros((total_num_envs, 4), device=device, dtype=torch.float32)
 
     @abstractmethod
     def refresh_buffers(self, gym: v.Gym):
         """Refresh state buffers from simulation."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def update_goal(self, reset_buf: torch.Tensor):
+        """Update goal position and orientation for the object based on reset indices."""
         raise NotImplementedError
 
     @abstractmethod
@@ -56,31 +66,20 @@ class ObjectBase(ABC):
     @abstractmethod
     def get_link_offset(self) -> int:
         """Return offset of links contributed to the contact transform table."""
+        raise NotImplementedError
 
+    @abstractmethod
     def create_gpu_command(self, env_group, gym, reset_buf):
         """Create GPU command for reading object state."""
-        self.get_kin_cmd = env_group.create_rigid_body_kinematic_state_command(
-            v.wrap_gpu_buffer(self.get_trans_robot_to_world_buf),
-            v.wrap_gpu_buffer(self.get_vel_in_world_buf),
-            self.handle,
-        )
-        self.gpu_get_object_kin_cmd_array = gym.create_gpu_array([self.get_kin_cmd])
-
-        self.set_kin_cmd = env_group.create_rigid_body_kinematic_state_command(
-            v.wrap_gpu_buffer(self.set_trans_robot_to_world_buf),
-            v.wrap_gpu_buffer(self.set_vel_in_world_buf),
-            self.handle,
-            masks_buffer=v.wrap_gpu_buffer(reset_buf),
-        )
-        self.gpu_set_object_kin_cmd_array = gym.create_gpu_array([self.set_kin_cmd])
+        raise NotImplementedError
 
     @property
     def pos_in_world(self) -> torch.Tensor:
-        return self.get_trans_robot_to_world_buf[:, 4:7]
+        return self.get_trans_object_to_world_buf[:, 4:7]
 
     @property
     def quat_object_to_world(self) -> torch.Tensor:
-        return self.get_trans_robot_to_world_buf[:, 0:4]
+        return self.get_trans_object_to_world_buf[:, 0:4]
 
     @property
     def linear_velocity_world(self) -> torch.Tensor:
@@ -91,8 +90,8 @@ class ObjectBase(ABC):
         return self.get_vel_in_world_buf[:, :3]
 
     @property
-    def set_trans_robot_to_world(self) -> torch.Tensor:
-        return self.set_trans_robot_to_world_buf
+    def set_trans_object_to_world(self) -> torch.Tensor:
+        return self.set_trans_object_to_world_buf
 
     @property
     def set_vel_in_world(self) -> torch.Tensor:
@@ -102,10 +101,9 @@ class ObjectBase(ABC):
 class LoadedRigidObject(ObjectBase):
     """Object loaded from a file (URDF/VSIM)."""
 
-    def __init__(self, name: str, asset_path: str, use_visual_mesh: bool, fixed: bool = False):
+    def __init__(self, name: str, asset_path: str, fixed: bool = False):
         super().__init__(name)
         self.asset_path = asset_path
-        self.use_visual_mesh = use_visual_mesh
         self.fixed = fixed
 
     def load(self, env_def):
@@ -113,7 +111,7 @@ class LoadedRigidObject(ObjectBase):
         env_def.import_definitions(
             self.asset_path,
             fixed=self.fixed,
-            use_visual_mesh=self.use_visual_mesh,
+            use_visual_mesh=False,
             force_mass_computation=False,
             force_inertia_computation=False,
         )
@@ -123,49 +121,43 @@ class LoadedRigidObject(ObjectBase):
         object_def_handle = env_def.get_rigid_body_def_handle_by_name(self.name)
         self.handle = env_def.create_rigid_body(object_def_handle, object_root_trans_init, self.name)
 
-    def allocate_buffers(self, total_num_envs: int, device: torch.device):
-        """Allocate GPU buffers for rigid state."""
-        self.total_num_envs = total_num_envs
-        self.device = device
-        self.get_trans_robot_to_world_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
-        self.get_vel_in_world_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
-        self.set_trans_robot_to_world_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
-        self.set_vel_in_world_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
-        self.goal_pos_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
-        self.goal_quat_object_to_world = torch.zeros((total_num_envs, 4), device=device, dtype=torch.float32)
+    def create_gpu_command(self, env_group, gym, reset_buf):
+        """Create GPU command for reading object state."""
+        self.get_kin_cmd = env_group.create_rigid_body_kinematic_state_command(
+            v.wrap_gpu_buffer(self.get_trans_object_to_world_buf),
+            v.wrap_gpu_buffer(self.get_vel_in_world_buf),
+            self.handle,
+        )
+        self.gpu_get_object_kin_cmd_array = gym.create_gpu_array([self.get_kin_cmd])
+
+        self.set_kin_cmd = env_group.create_rigid_body_kinematic_state_command(
+            v.wrap_gpu_buffer(self.set_trans_object_to_world_buf),
+            v.wrap_gpu_buffer(self.set_vel_in_world_buf),
+            self.handle,
+            masks_buffer=v.wrap_gpu_buffer(reset_buf),
+        )
+        self.gpu_set_object_kin_cmd_array = gym.create_gpu_array([self.set_kin_cmd])
 
     def refresh_buffers(self, gym: v.Gym):
         """Refresh state buffers from simulation."""
         gym.get_rigid_body_kinematic_states(self.gpu_get_object_kin_cmd_array)
 
-    def _update_goal(self, reset_buf: torch.Tensor):
+    def update_goal(self, reset_buf: torch.Tensor):
         self.goal_pos_in_world[reset_buf, 0] = 0.0
         self.goal_pos_in_world[reset_buf, 1] = 0.0
         self.goal_pos_in_world[reset_buf, 2] = 0.2
         self.goal_quat_object_to_world[reset_buf, :] = random_uniform_quaternion(
-            reset_buf.sum().item(), device=self.device, dtype=torch.float32
+            reset_buf.sum().item(), device=reset_buf.device, dtype=torch.float32
         )
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
         """Reset any object-specific buffers based on reset indices."""
-        # self.set_reward_object_pos_buf[self.reset_buf, :4] = random_uniform_quaternion(
-        #     num_reset, device=self.device, dtype=torch.float32
-        # )
-        # self.set_reward_object_pos_buf[self.reset_buf, 4:] = (
-        #     self.table_bounds[:, 0]
-        #     + 0.1
-        #     + torch.rand((num_reset, 3), device=self.device) * (self.table_bounds[:, 1] - self.table_bounds[:, 0] - 0.1)
-        # )
-        # self.set_reward_object_pos_buf[self.reset_buf, 4:6] = self.robot.reset_root_transform_buf[self.reset_buf, 4:6]
-        # self.set_reward_object_pos_buf[self.reset_buf, 6] += (
-        #     torch.rand((num_reset,), device=self.device) * 0.05 + 0.05
-        # )  # ensure object is above the hand
-        self.set_trans_robot_to_world_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=reset_buf.device)
-        self.set_trans_robot_to_world_buf[reset_buf, 4:] = torch.tensor([[0.0, 0.0, 0.025]], device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.0, 0.0, 0.025]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
 
-        self._update_goal(reset_buf)
+        self.update_goal(reset_buf)
 
     def get_link_offset(self) -> int:
         return 1
@@ -174,19 +166,18 @@ class LoadedRigidObject(ObjectBase):
 class LoadedArticulatedObject(ObjectBase):
     """Object loaded from a file (URDF/VSIM)."""
 
-    def __init__(self, name: str, asset_path: str, use_visual_mesh: bool, fixed: bool = False):
+    def __init__(self, name: str, asset_path: str, fixed: bool = False):
         super().__init__(name)
         self.asset_path = asset_path
-        self.use_visual_mesh = use_visual_mesh
         self.fixed = fixed
         self.num_joints = 0
         self.num_links = 0
         self.link_names: List[str] = []
 
-        self.get_joint_pos_buf: torch.Tensor = None
-        self.get_joint_vel_buf: torch.Tensor = None
-        self.set_joint_pos_buf: torch.Tensor = None
-        self.set_joint_vel_buf: torch.Tensor = None
+        self.get_joint_pos_buf: Optional[torch.Tensor] = None
+        self.get_joint_vel_buf: Optional[torch.Tensor] = None
+        self.set_joint_pos_buf: Optional[torch.Tensor] = None
+        self.set_joint_vel_buf: Optional[torch.Tensor] = None
 
     def load(self, env_def):
         """Load articulated object from file into environment definition."""
@@ -194,7 +185,7 @@ class LoadedArticulatedObject(ObjectBase):
             self.asset_path,
             fixed=self.fixed,
             merge_fixed_joints=False,
-            use_visual_mesh=self.use_visual_mesh,
+            use_visual_mesh=False,
             force_mass_computation=False,
             force_inertia_computation=False,
         )
@@ -210,46 +201,23 @@ class LoadedArticulatedObject(ObjectBase):
 
     def allocate_buffers(self, total_num_envs: int, device: torch.device):
         """Allocate GPU buffers for articulated state."""
-        self.total_num_envs = total_num_envs
-        self.device = device
-        self.get_trans_robot_to_world_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
-        self.get_vel_in_world_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
-        self.set_trans_robot_to_world_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
-        self.set_vel_in_world_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
+        super().allocate_buffers(total_num_envs, device)
 
         self.get_joint_pos_buf = torch.zeros((total_num_envs, self.num_joints), device=device, dtype=torch.float32)
         self.get_joint_vel_buf = torch.zeros((total_num_envs, self.num_joints), device=device, dtype=torch.float32)
         self.set_joint_pos_buf = torch.zeros((total_num_envs, self.num_joints), device=device, dtype=torch.float32)
         self.set_joint_vel_buf = torch.zeros((total_num_envs, self.num_joints), device=device, dtype=torch.float32)
 
-        self.goal_pos_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
-        self.goal_quat_object_to_world = torch.zeros((total_num_envs, 4), device=device, dtype=torch.float32)
-
     def refresh_buffers(self, gym: v.Gym):
         """Refresh state buffers from simulation."""
         gym.get_articulation_kinematic_states(self.gpu_get_object_kin_cmd_array)
-
-    def _update_goal(self, reset_buf: torch.Tensor):
-
-        self.goal_pos_in_world[reset_buf, 0] = 0.0
-        self.goal_pos_in_world[reset_buf, 1] = 0.0
-        self.goal_pos_in_world[reset_buf, 2] = 0.1
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=reset_buf.device)
-
-    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
-        """Reset any object-specific buffers based on reset indices."""
-        self.set_trans_robot_to_world_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=reset_buf.device)
-        self.set_trans_robot_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
-        self.set_vel_in_world_buf[reset_buf, :] = 0.0
-
-        gym.set_articulation_kinematic_states(self.gpu_set_object_kin_cmd_array)
 
     def create_gpu_command(self, env_group, gym, reset_buf):
         """Create GPU command for reading articulated state."""
         get_kin_cmd = env_group.create_articulation_kinematic_state_command(
             v.wrap_gpu_buffer(self.get_joint_pos_buf),
             v.wrap_gpu_buffer(self.get_joint_vel_buf),
-            v.wrap_gpu_buffer(self.get_trans_robot_to_world_buf),
+            v.wrap_gpu_buffer(self.get_trans_object_to_world_buf),
             v.wrap_gpu_buffer(self.get_vel_in_world_buf),
             self.handle,
             (0, self.num_joints),
@@ -260,7 +228,7 @@ class LoadedArticulatedObject(ObjectBase):
         set_kin_cmd = env_group.create_articulation_kinematic_state_command(
             v.wrap_gpu_buffer(self.set_joint_pos_buf),
             v.wrap_gpu_buffer(self.set_joint_vel_buf),
-            v.wrap_gpu_buffer(self.set_trans_robot_to_world_buf),
+            v.wrap_gpu_buffer(self.set_trans_object_to_world_buf),
             v.wrap_gpu_buffer(self.set_vel_in_world_buf),
             self.handle,
             (0, self.num_joints),
@@ -275,62 +243,31 @@ class LoadedArticulatedObject(ObjectBase):
 
 class Pen(LoadedRigidObject):
     def __init__(self):
-        super().__init__(
-            name="pen",
-            asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/pen_big.vsim"),
-            use_visual_mesh=False,
-        )
+        super().__init__(name="pen", asset_path=f"{_ASSET_ROOT}/pen_big.vsim")
 
 
 class Tomato(LoadedRigidObject):
     def __init__(self):
-        super().__init__(
-            name="tomato",
-            asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/tomato.vsim"),
-            use_visual_mesh=False,
-        )
+        super().__init__(name="tomato", asset_path=f"{_ASSET_ROOT}/tomato.vsim")
 
 
 class Knife(LoadedRigidObject):
     def __init__(self):
-        super().__init__(
-            name="knife",
-            asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/kitchen_knife.vsim"),
-            use_visual_mesh=True,
-        )
+        super().__init__(name="knife", asset_path=f"{_ASSET_ROOT}/kitchen_knife.vsim")
 
 
 class Mug(LoadedRigidObject):
     def __init__(self):
-        super().__init__(
-            name="mug",
-            asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/mug.vsim"),
-            use_visual_mesh=False,
-        )
-
-
-class SquareDonut(LoadedRigidObject):
-    def __init__(self):
-        super().__init__(
-            name="square_donut",
-            asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/square_donut.vsim"),
-            use_visual_mesh=False,
-        )
+        super().__init__(name="mug", asset_path=f"{_ASSET_ROOT}/mug.vsim")
 
 
 class Table(LoadedRigidObject):
     def __init__(self):
-        super().__init__(
-            name="table",
-            asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/table.vsim"),
-            use_visual_mesh=False,
-            fixed=True,
-        )
+        super().__init__(name="table", asset_path=f"{_ASSET_ROOT}/table.vsim", fixed=True)
 
-    # TODO(VY): hacky but we keep for now
     @property
     def half_size_tensor(self) -> torch.Tensor:
-        return torch.tensor([0.2, 0.3, 0.01], device=self.get_trans_robot_to_world_buf.device, dtype=torch.float32)
+        return torch.tensor([0.2, 0.3, 0.01], device=self.get_trans_object_to_world_buf.device, dtype=torch.float32)
 
     @property
     def half_size(self) -> torch.Tensor:
@@ -339,17 +276,11 @@ class Table(LoadedRigidObject):
 
 class TableWithCamera(LoadedRigidObject):
     def __init__(self):
-        super().__init__(
-            name="table_with_camera",
-            asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/table_with_camera.vsim"),
-            use_visual_mesh=False,
-            fixed=True,
-        )
+        super().__init__(name="table_with_camera", asset_path=f"{_ASSET_ROOT}/table_with_camera.vsim", fixed=False)
 
-    # TODO(VY): hacky but we keep for now
     @property
     def half_size_tensor(self) -> torch.Tensor:
-        return torch.tensor([0.2, 0.3, 0.01], device=self.get_trans_robot_to_world_buf.device, dtype=torch.float32)
+        return torch.tensor([0.2, 0.3, 0.01], device=self.get_trans_object_to_world_buf.device, dtype=torch.float32)
 
     @property
     def half_size(self) -> torch.Tensor:
@@ -358,12 +289,45 @@ class TableWithCamera(LoadedRigidObject):
 
 class Drawer(LoadedArticulatedObject):
     def __init__(self):
-        super().__init__(
-            name="drawer",
-            asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/drawer.vsim"),
-            use_visual_mesh=False,
-            fixed=True,
-        )
+        super().__init__(name="drawer", asset_path=f"{_ASSET_ROOT}/drawer.vsim", fixed=True)
+
+    def update_goal(self, reset_buf: torch.Tensor):
+        self.goal_pos_in_world[reset_buf, 0] = 0.0
+        self.goal_pos_in_world[reset_buf, 1] = 0.0
+        self.goal_pos_in_world[reset_buf, 2] = 0.1
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+
+    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
+        """Reset any object-specific buffers based on reset indices."""
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
+        self.set_vel_in_world_buf[reset_buf, :] = 0.0
+
+        gym.set_articulation_kinematic_states(self.gpu_set_object_kin_cmd_array)
+
+        self.update_goal(reset_buf)
+
+
+class Button(LoadedArticulatedObject):
+    def __init__(self):
+        super().__init__(name="button", asset_path=f"{_ASSET_ROOT}/button.vsim", fixed=True)
+
+    def update_goal(self, reset_buf: torch.Tensor):
+        self.goal_pos_in_world[reset_buf, 0] = 0.3
+        self.goal_pos_in_world[reset_buf, 1] = 0.0
+        self.goal_pos_in_world[reset_buf, 2] = 0.1
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+
+    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
+        """Reset any object-specific buffers based on reset indices."""
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
+        self.set_vel_in_world_buf[reset_buf, :] = 0.0
+        gym.set_articulation_kinematic_states(self.gpu_set_object_kin_cmd_array)
+
+        self.update_goal(reset_buf)
+
+    
 
 
 class ObjectGenerator:
@@ -374,10 +338,10 @@ class ObjectGenerator:
         "tomato": Tomato,
         "knife": Knife,
         "mug": Mug,
-        "square_donut": SquareDonut,
         "table": Table,
         "table_with_camera": TableWithCamera,
         "drawer": Drawer,
+        "button": Button,
     }
 
     def __init__(self, object_names: List[str]):

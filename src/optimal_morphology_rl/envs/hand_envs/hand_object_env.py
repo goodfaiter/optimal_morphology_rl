@@ -9,7 +9,7 @@ from optimal_morphology_rl.modules.contacts import Contacts
 from optimal_morphology_rl.modules.kinematic_sensor import KinematicSensor
 from optimal_morphology_rl.modules.force_sensors import ForceSensors
 from optimal_morphology_rl.modules.robot import Robot
-from optimal_morphology_rl.modules.object_generator import ObjectGenerator
+from optimal_morphology_rl.modules.object_generator import ObjectGenerator, LoadedRigidObject
 from optimal_morphology_rl.modules.object_camera_recorder import ObjectCameraRecorder
 from optimal_morphology_rl.modules.external_force import ExternalForceConfig, ExternalForceModule
 
@@ -23,15 +23,9 @@ from time_series_buffer.time_series_buffer import TimeSeriesBuffer
 from optimal_morphology_rl.envs.hand_envs.helpers.hand_pen_helpers import (
     rotate_by_quat_A_to_B,
 )
-from optimal_morphology_rl.helpers.numpy_vlearn import (
-    numpy_to_vec3,
-    numpy_to_quat,
-    quaternion_to_6d,
-    d6_to_quaternion,
-    random_uniform_quaternion,
-)
+from optimal_morphology_rl.helpers.numpy_vlearn import quaternion_to_6d
 
-from vlearn.torch_utils.torch_jit_utils import scale, quat_mul, quat_conjugate
+from vlearn.torch_utils.torch_jit_utils import scale
 
 
 class HandObjectEnvironmentGpu(EnvironmentGpu):
@@ -96,7 +90,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.obs_history_length = 1 + (self.num_hist - 1) * self.hist_stride
 
         # Initialize ObjectGenerator with object names
-        self.objects = ObjectGenerator(object_names=[self.reward_object_name, "table" if record_output_path is None else "table_with_camera"])
+        self.objects = ObjectGenerator(
+            object_names=[self.reward_object_name, "table" if record_output_path is None else "table_with_camera"]
+        )
         self.reward_object = self.objects.get_object(self.reward_object_name)
         self.camera = ObjectCameraRecorder(record_output_path) if record_output_path is not None else None
 
@@ -121,14 +117,17 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.forces = ForceSensors(self, link_names=["distal"])
         reward_object_link_offset = self.objects.get_object_link_offset(self.reward_object.name)
         self.contacts = Contacts(self, reward_object_link_offset, link_names=["distal"])
-        self.force_module = ExternalForceModule(
-            body_handles={object: self.reward_object.handle},
-            total_num_envs=num_envs,
-            device=device,
-            env_group=self.env_group,
-            gym=self.gym,
-            config=ExternalForceConfig(),
-        )
+        if isinstance(self.reward_object, LoadedRigidObject):
+            self.force_module = ExternalForceModule(
+                body_handles={object: self.reward_object.handle},
+                total_num_envs=num_envs,
+                device=device,
+                env_group=self.env_group,
+                gym=self.gym,
+                config=ExternalForceConfig(),
+            )
+        else:
+            self.force_module = None
 
         if self.gym.get_render() is not None:
             self.gym_render.reset_camera(v.Vec3(-0.671139, 0.073098, 0.726423), v.Vec3(0.755459, -0.009100, -0.655133))
@@ -141,66 +140,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.env_def_handle = self.gym.create_environment_def("hand_env")
         env_def = self.gym.get_environment_def(self.env_def_handle)
 
-        # Load appropriate hand model
-        hand_file = vsim_path
-
-        print(f"Loading hand model from {hand_file}")
-
-        env_def.import_definitions(
-            hand_file,
-            fixed=self.fixed_hand,
-            use_visual_mesh=False,
-            merge_fixed_joints=True,
-            force_mass_computation=False,
-            force_inertia_computation=False,
-            query_mode=v.QueryMode.USE_COLLISIONS,
-        )
-
-        # Configure articulation
-        self.def_handle = env_def.get_articulation_def_handle(0)
-        self.art_def = env_def.get_articulation_def(self.def_handle)
-        self.art_def.has_self_collisions = False
-
-        self.art_def.enable_control_type(v.ArticulationControlType.MOTOR, True)
-
-        # Create articulation
-        self.arti_handle = env_def.create_articulation(self.def_handle, v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, 0)), "hand")
-
-        # Validate dimensions
-        self.num_joints = self.art_def.get_num_joint_dof_defs()
-        self.num_links = self.art_def.get_num_link_defs()
-        self.num_motors = self.art_def.get_num_motor_defs()
-        self.num_sensors = self.art_def.get_num_force_sensor_defs()
-        self.link_masses = torch.zeros(self.num_links, dtype=torch.float32, device=self.device)
-        for i in range(self.num_links):
-            link_def = self.art_def.get_link_def(i)
-            self.link_masses[i] = link_def.mass
-
-        for i in range(self.num_joints):
-            joint_def = self.art_def.get_joint_def(i)
-            print(joint_def)
-
-        for i in range(self.num_links):
-            link_def = self.art_def.get_link_def(i)
-            print(link_def)
-
-        for i in range(self.num_joints):
-            motor_def = self.art_def.get_motor_def(i)
-            print(i, motor_def)
-
-        for i in range(self.num_sensors):
-            sensor_def = self.art_def.get_force_sensor_def(i)
-            print(i, sensor_def)
-
-        # Rigid Material Frictions
-        # Create rigid material
-        rigid_mat = v.RigidMaterial()
-        rigid_mat.dynamic_friction = 0.5
-        rigid_mat.static_friction = 0.5
-        rigid_mat.restitution = 0.0
-        self.rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
-        for i in range(self.art_def.get_num_link_defs()):
-            env_def.assign_rigid_material_to_articulation_link(self.def_handle, self.rigid_mat_handle, i)
+        self.robot = Robot()
+        self.robot.create_envs(env_def, self.fixed_hand, vsim_path, self.device)
 
         # Load all objects through ObjectGenerator (includes table)
         self.objects.load(env_def)
@@ -227,7 +168,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         """Configure action space dimensions."""
         # self.num_actions = self.num_joints + 6  # Revolute joints + base link velocity
         # self.num_actions = 6 + 1 + 1  # wrist velocities (6) + 1 grasp command + 1 thumb command
-        self.num_actions = 6 + self.num_motors  # wrist velocities (6) + motor commands
+        self.num_actions = 6 + self.robot.num_motors  # wrist velocities (6) + motor commands
 
         self.action_space = Box(
             low=np.full(self.num_actions, -1.0, dtype=np.float32), high=np.full(self.num_actions, 1.0, dtype=np.float32), dtype=np.float32
@@ -235,7 +176,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=self.device)
         self.max_velocity = self.velocity_scale * 2.0
-        self.revolute_scale = torch.full((self.num_motors,), 0.1, device=self.device)
+        self.revolute_scale = torch.full((self.robot.num_motors,), 0.1, device=self.device)
 
     def _setup_observation_space(self):
         """Configure observation space dimensions."""
@@ -246,8 +187,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             ("_6d_robot_to_world", 6),
             ("robot_linear_velocity_in_world", 3),
             ("robot_angular_velocity_in_world", 3),
-            ("get_joint_pos_buf", self.num_joints),
-            ("get_joint_vel_buf", self.num_joints),
+            ("get_joint_pos_buf", self.robot.num_joints),
+            ("get_joint_vel_buf", self.robot.num_joints),
             ("act_buf", self.num_actions),
             ("object_position_in_world", 3),
             ("_6d_object_to_world", 6),
@@ -290,8 +231,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         ### Env Buffers
         self.inverse_reset_buf = torch.zeros(self.total_num_envs, device=self.device, dtype=torch.bool)
 
-        self.robot = Robot(self)
-        self.robot.allocate_buffers()
+        self.robot.allocate_buffers(self.total_num_envs, self.device)
 
         # Allocate object buffers through ObjectGenerator
         self.objects.allocate_buffers(self.total_num_envs, self.device)
@@ -320,43 +260,14 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.last_act_buf = torch.zeros_like(self.act_buf)
         self.scaled_act_buf = torch.zeros_like(self.act_buf)
 
-        self.set_force_torque_buf = torch.zeros((self.total_num_envs, self.num_links, 6), dtype=torch.float32, device=self.device)
-
-        # Rigid Material Buffers
-        self.set_static_friction_buf = torch.zeros(len(self.num_envs), dtype=torch.float32, device=self.device)
-        self.set_dynamic_friction_buf = torch.zeros(len(self.num_envs), dtype=torch.float32, device=self.device)
-
         self.timestep_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.long)
 
     def create_gpu_commands(self):
         """Create GPU command arrays for efficient state queries and control."""
-        self.robot.create_gpu_commands(self.env_group, self.reset_buf, self.inverse_reset_buf)
+        self.robot.create_gpu_commands(self.env_group, self.gym, self.reset_buf, self.inverse_reset_buf)
 
         ### Object commands - managed by ObjectGenerator
         self.objects.create_gpu_commands(self.env_group, self.gym, self.reset_buf)
-
-        ### Gravity Comp Commands
-        # Create external force command
-        set_force_torque_cmd = self.env_group.create_link_external_force_command(
-            v.wrap_gpu_buffer(self.set_force_torque_buf), self.arti_handle, [0, self.num_links], force_type=v.ForceType.FORCE_TORQUE
-        )
-
-        self.set_force_torque_cmd_arr = self.gym.create_gpu_array([set_force_torque_cmd])
-
-        ### Rigid Material Commands
-        set_static_friction_cmd = self.env_group.create_rigid_material_property_command(
-            v.RigidMaterialProperty.STATIC_FRICTION,
-            v.wrap_gpu_buffer(self.set_static_friction_buf),
-            self.rigid_mat_handle,
-            v.wrap_gpu_buffer(self.reset_buf),
-        )
-        set_dynamic_friction_cmd = self.env_group.create_rigid_material_property_command(
-            v.RigidMaterialProperty.DYNAMIC_FRICTION,
-            v.wrap_gpu_buffer(self.set_dynamic_friction_buf),
-            self.rigid_mat_handle,
-            v.wrap_gpu_buffer(self.reset_buf),
-        )
-        self.gpu_set_friction_cmd = self.gym.create_gpu_array([set_static_friction_cmd, set_dynamic_friction_cmd])
 
     def visualize_goal(self):
         if self.gym.get_render() is None:
@@ -441,17 +352,17 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.last_act_buf[self.reset_buf, :] = 0.0
         self.progress_buf[self.reset_buf] = 0
         self.timestep_buf[self.reset_buf] = 0
-        self.obs_history.reset(self.reset_buf)
+        self.obs_history.reset_idx(self.reset_buf)
 
         # Reset modules
-        self.robot.reset(self.reset_buf)
+        self.robot.reset_idx(self.gym, self.reset_buf, self.device)
         self.reward_object.reset_idx(self.gym, self.reset_buf)
         self.visualize_goal()
 
     def reset(self):
         obs, _ = super().reset()
         self.refresh_buffers()
-        if self.total_num_envs > 10: # when testing we prefer to start from 0
+        if self.total_num_envs > 10:  # when testing we prefer to start from 0
             self.progress_buf[:] = torch.randint(0, self.max_episode_length, (self.total_num_envs,), device=self.device)
         return obs, {}
 
@@ -461,22 +372,11 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.scaled_act_buf[:, :6] = scale(self.act_buf[:, :6], -self.velocity_scale, self.velocity_scale)
         self.scaled_act_buf[:, 6:] = scale(self.act_buf[:, 6:], -self.revolute_scale, self.revolute_scale)
 
-        # Apply wrist velocity commands
-        self.robot.set_root_transform_buf[:] = self.robot.get_root_transform_buf
-        self.robot.set_root_vel_buf[:] = torch.clamp(self.scaled_act_buf[:, :6], -self.max_velocity, self.max_velocity)  # note that vel is first 3 angular, last 3 linear
-        self.gym.set_articulation_kinematic_states(self.robot.gpu_set_kinematic_state_command_array)
-
-        # Apply joint motor commands and anatgonistic spring
-        self.robot.set_motor_cmd_buf[:] = torch.clamp(self.scaled_act_buf[:, 6:], 0.0, None)
-        self.robot.set_motor_cmd_buf[:] += -0.1 * self.robot.get_joint_pos_buf
-        self.gym.set_motor_forces(self.robot.gpu_set_motor_control_command_array)
-
-        # Gravity compensation on base link
-        self.set_force_torque_buf[:, :, 2] = 9.81 * self.link_masses
-        self.gym.set_link_external_forces(self.set_force_torque_cmd_arr)
+        self.robot.pre_physics_step(self.gym, self.scaled_act_buf, self.max_velocity)
 
         # Apply extral force
-        self.force_module.step(self.gym)
+        if self.force_module is not None:
+            self.force_module.step(self.gym)
 
     def refresh_buffers(self):
         """Refresh all state buffers from simulation."""
@@ -506,7 +406,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # Resample goal
         sample_new_goal = torch.rand(self.total_num_envs, device=self.device) < 0.01
         if sample_new_goal.any():
-            self.reward_object._update_goal(sample_new_goal)
+            self.reward_object.update_goal(sample_new_goal)
 
     def compute_observations(self):
         """Construct observation vector."""

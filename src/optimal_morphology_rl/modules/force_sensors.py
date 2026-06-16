@@ -24,15 +24,15 @@ class ForceSensors:
         self.total_num_envs = self.env.total_num_envs
 
         env_def = self.gym.get_environment_def(self.env.env_def_handle)
-        articulation = env_def.get_articulation(self.env.arti_handle)
+        articulation = env_def.get_articulation(self.env.robot.arti_handle)
 
         link_name_set = None if link_names is None else {name.lower() for name in link_names}
 
         self.force_sensor_handles = []
         self.force_sensor_link_names = []
 
-        for sensor_index in range(self.env.art_def.get_num_force_sensor_defs()):
-            sensor_def = self.env.art_def.get_force_sensor_def(sensor_index)
+        for sensor_index in range(self.env.robot.art_def.get_num_force_sensor_defs()):
+            sensor_def = self.env.robot.art_def.get_force_sensor_def(sensor_index)
             sensor_link_name = sensor_def.link_name
 
             for name in link_name_set:
