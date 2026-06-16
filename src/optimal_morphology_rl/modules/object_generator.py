@@ -243,27 +243,27 @@ class LoadedArticulatedObject(ObjectBase):
 
 class Pen(LoadedRigidObject):
     def __init__(self):
-        super().__init__(name="pen", asset_path=f"{_ASSET_ROOT}/pen_big.vsim")
+        super().__init__(name="pen", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/pen.vsim"))
 
 
 class Tomato(LoadedRigidObject):
     def __init__(self):
-        super().__init__(name="tomato", asset_path=f"{_ASSET_ROOT}/tomato.vsim")
+        super().__init__(name="tomato", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/tomato.vsim"))
 
 
 class Knife(LoadedRigidObject):
     def __init__(self):
-        super().__init__(name="knife", asset_path=f"{_ASSET_ROOT}/kitchen_knife.vsim")
+        super().__init__(name="knife", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/kitchen_knife.vsim"))
 
 
 class Mug(LoadedRigidObject):
     def __init__(self):
-        super().__init__(name="mug", asset_path=f"{_ASSET_ROOT}/mug.vsim")
+        super().__init__(name="mug", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/mug.vsim"))
 
 
 class Table(LoadedRigidObject):
     def __init__(self):
-        super().__init__(name="table", asset_path=f"{_ASSET_ROOT}/table.vsim", fixed=True)
+        super().__init__(name="table", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/table.vsim"), fixed=True)
 
     @property
     def half_size_tensor(self) -> torch.Tensor:
@@ -276,7 +276,7 @@ class Table(LoadedRigidObject):
 
 class TableWithCamera(LoadedRigidObject):
     def __init__(self):
-        super().__init__(name="table_with_camera", asset_path=f"{_ASSET_ROOT}/table_with_camera.vsim", fixed=False)
+        super().__init__(name="table_with_camera", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/table_with_camera.vsim"), fixed=False)
 
     @property
     def half_size_tensor(self) -> torch.Tensor:
@@ -289,7 +289,7 @@ class TableWithCamera(LoadedRigidObject):
 
 class Drawer(LoadedArticulatedObject):
     def __init__(self):
-        super().__init__(name="drawer", asset_path=f"{_ASSET_ROOT}/drawer.vsim", fixed=True)
+        super().__init__(name="drawer", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/drawer.vsim"), fixed=True)
 
     def update_goal(self, reset_buf: torch.Tensor):
         self.goal_pos_in_world[reset_buf, 0] = 0.0
@@ -310,7 +310,7 @@ class Drawer(LoadedArticulatedObject):
 
 class Button(LoadedArticulatedObject):
     def __init__(self):
-        super().__init__(name="button", asset_path=f"{_ASSET_ROOT}/button.vsim", fixed=True)
+        super().__init__(name="button", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/button.vsim"), fixed=True)
 
     def update_goal(self, reset_buf: torch.Tensor):
         self.goal_pos_in_world[reset_buf, 0] = 0.3
