@@ -1,31 +1,31 @@
 from __future__ import annotations
 
-import os
-import sys
-
 import torch
 import vlearn as v
-from vlearn import gym
-
-# TODO: Refactor to avoid this hack to import from the vlearn repo.
-sys.path.append(os.path.join(os.path.dirname(__file__), "/workspace/vlearn/train/envs/"))
-from environment import EnvironmentGpu
 
 
 class KinematicSensor:
-    """Helper for reading a kinematic sensor by handle.
+    """Helper that owns kinematic sensor buffers and GPU commands. Stateless w.r.t. env; callers pass in what's needed.
 
-    The handle is resolved automatically by trying rigid body first and then
-    articulation.
+    The source handle is resolved automatically by trying rigid body first and then articulation.
     """
 
-    def __init__(self, env: EnvironmentGpu, handle: int, sensor_index: int = 0):
-        self.env: EnvironmentGpu = env
-        self.device = self.env.device
-        self.gym: gym.Gym = self.env.gym
-        self.total_num_envs = self.env.total_num_envs
+    def __init__(self):
+        self.kinematic_sensor_handle = None
+        self.pose_buf = None
+        self.velocity_buf = None
+        self.get_kinematic_sensor_cmd = None
+        self.get_kinematic_sensor_cmd_arr = None
 
-        env_def = self.gym.get_environment_def(self.env.env_def_handle)
+    def allocate_buffers(
+        self,
+        env_def,
+        handle: int,
+        total_num_envs: int,
+        device: torch.device,
+        sensor_index: int = 0,
+    ) -> None:
+        """Resolve the sensor handle and allocate state buffers."""
         source = None
 
         # Prefer rigid body when a handle could refer to multiple source types.
@@ -33,7 +33,7 @@ class KinematicSensor:
             source = env_def.get_rigid_body(handle)
         except Exception:
             source = None
-        
+
         if source is None:
             source = env_def.get_articulation(handle)
 
@@ -42,20 +42,22 @@ class KinematicSensor:
 
         self.kinematic_sensor_handle = source.get_kinematic_sensor_handle(sensor_index)
 
-        self.pose_buf = torch.zeros((self.total_num_envs, 7), dtype=torch.float32, device=self.device)
-        self.velocity_buf = torch.zeros((self.total_num_envs, 6), dtype=torch.float32, device=self.device)
+        self.pose_buf = torch.zeros((total_num_envs, 7), dtype=torch.float32, device=device)
+        self.velocity_buf = torch.zeros((total_num_envs, 6), dtype=torch.float32, device=device)
 
-        self.get_kinematic_sensor_cmd = self.env.env_group.create_kinematic_sensor_state_command(
+    def create_gpu_commands(self, env_group, gym: v.Gym) -> None:
+        """Create GPU commands for reading kinematic sensor state."""
+        self.get_kinematic_sensor_cmd = env_group.create_kinematic_sensor_state_command(
             v.wrap_gpu_buffer(self.pose_buf),
             v.wrap_gpu_buffer(self.velocity_buf),
             self.kinematic_sensor_handle,
             frame_type=v.FrameType.ENVIRONMENT,
         )
-        self.get_kinematic_sensor_cmd_arr = self.gym.create_gpu_array([self.get_kinematic_sensor_cmd])
+        self.get_kinematic_sensor_cmd_arr = gym.create_gpu_array([self.get_kinematic_sensor_cmd])
 
-    def update(self) -> None:
+    def update(self, gym: v.Gym) -> None:
         """Read the latest kinematic sensor data into the dense buffers."""
-        self.gym.get_kinematic_sensor_states(self.get_kinematic_sensor_cmd_arr)
+        gym.get_kinematic_sensor_states(self.get_kinematic_sensor_cmd_arr)
 
     @property
     def pose(self) -> torch.Tensor:

@@ -95,6 +95,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         )
         self.reward_object = self.objects.get_object(self.reward_object_name)
         self.camera = ObjectCameraRecorder(record_output_path) if record_output_path is not None else None
+        self.forces = ForceSensors()
+        self.kinematic_sensor = KinematicSensor()
 
         # Create environments
         self.create_envs(vsim_path)
@@ -113,8 +115,6 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.gym.finalize()
         self.gym.update_scene_dependent_components()
 
-        self.kinematic_sensor = KinematicSensor(self, self.reward_object.handle)
-        self.forces = ForceSensors(self, link_names=["distal"])
         reward_object_link_offset = self.objects.get_object_link_offset(self.reward_object.name)
         self.contacts = Contacts(self, reward_object_link_offset, link_names=["distal"])
         if isinstance(self.reward_object, LoadedRigidObject):
@@ -236,6 +236,11 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # Allocate object buffers through ObjectGenerator
         self.objects.allocate_buffers(self.total_num_envs, self.device)
 
+        env_def = self.gym.get_environment_def(self.env_def_handle)
+        articulation = env_def.get_articulation(self.robot.arti_handle)
+        self.kinematic_sensor.allocate_buffers(env_def, self.reward_object.handle, self.total_num_envs, self.device)
+        self.forces.allocate_buffers(self.robot.art_def, articulation, self.total_num_envs, self.device, link_names=["distal"])
+
         # Setup table bounds from table object
         table_obj = (
             self.objects.get_object("table")
@@ -268,6 +273,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         ### Object commands - managed by ObjectGenerator
         self.objects.create_gpu_commands(self.env_group, self.gym, self.reset_buf)
+
+        self.kinematic_sensor.create_gpu_commands(self.env_group, self.gym)
+        self.forces.create_gpu_commands(self.env_group, self.gym)
 
     def visualize_goal(self):
         if self.gym.get_render() is None:
@@ -410,7 +418,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
     def compute_observations(self):
         """Construct observation vector."""
-        self.kinematic_sensor.update()
+        self.kinematic_sensor.update(self.gym)
 
         robot_state = self.robot.get_state()
 
@@ -472,7 +480,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         # Fingertip contact reward.
         self.contacts.update()  # biggest computational slowdown
-        self.forces.update()
+        self.forces.update(self.gym)
         forces = self.forces.force_sensor_buf.norm(dim=-1)
         contacts = self.contacts.env_link_touch[:, self.contacts.monitored_link_mask]
         force_against_object = forces * contacts
