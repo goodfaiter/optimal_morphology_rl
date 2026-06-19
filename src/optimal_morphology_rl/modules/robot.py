@@ -214,11 +214,13 @@ class Robot:
         total_num_envs = reset_buf.shape[0]
         total_resets = reset_buf.sum().item()
         if total_num_envs > 10 and total_num_envs == total_resets: # only reset friction if all envs are being reset, otherwise it will cause
-            friction = torch.rand(total_num_envs, device=device) * 0.95 + 0.05
+            static_friction = torch.rand(total_num_envs, device=device) * 0.95 + 0.05
+            dynamic_friction = static_friction * 0.75
         else:
-            friction = 0.5
+            static_friction = 0.1
+            dynamic_friction = 0.075
 
-        self.set_static_friction_buf[:] = friction
+        self.set_static_friction_buf[:] = static_friction
         self.set_dynamic_friction_buf[:] = friction
         gym.set_rigid_material_properties(self.gpu_set_friction_cmd)
 
