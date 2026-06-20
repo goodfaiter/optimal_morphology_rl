@@ -221,7 +221,7 @@ class Robot:
             dynamic_friction = 0.075
 
         self.set_static_friction_buf[:] = static_friction
-        self.set_dynamic_friction_buf[:] = friction
+        self.set_dynamic_friction_buf[:] = dynamic_friction
         gym.set_rigid_material_properties(self.gpu_set_friction_cmd)
 
     def pre_physics_step(

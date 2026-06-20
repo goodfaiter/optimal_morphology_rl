@@ -276,7 +276,7 @@ class Table(LoadedRigidObject):
 
 class TableWithCamera(LoadedRigidObject):
     def __init__(self):
-        super().__init__(name="table_with_camera", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/table_with_camera.vsim"), fixed=False)
+        super().__init__(name="table_with_camera", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/table_with_camera.vsim"), fixed=True)
 
     @property
     def half_size_tensor(self) -> torch.Tensor:
