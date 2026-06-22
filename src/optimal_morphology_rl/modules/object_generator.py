@@ -121,14 +121,16 @@ class LoadedRigidObject(ObjectBase):
         object_def_handle = env_def.get_rigid_body_def_handle_by_name(self.name)
         self.handle = env_def.create_rigid_body(object_def_handle, object_root_trans_init, self.name)
 
-        rigid_mat = v.RigidMaterial()
-        rigid_mat.static_friction = 0.8
-        rigid_mat.dynamic_friction = 0.6
-        rigid_mat.restitution = 0.0
-        rigid_mat.damping = 0.0
-        rigid_mat.roughness = 0.0
-        rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
-        env_def.assign_rigid_material_to_rigid_body(object_def_handle, rigid_mat_handle)
+        # The friction is average between two objects. So we set this one to 0 and the robot hand to desired * 2
+        if self.name not in ["table", "table_with_camera"]:
+            rigid_mat = v.RigidMaterial()
+            rigid_mat.static_friction = 0.0
+            rigid_mat.dynamic_friction = 0.0
+            rigid_mat.restitution = 0.0
+            rigid_mat.damping = 0.0
+            rigid_mat.roughness = 0.0
+            rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
+            env_def.assign_rigid_material_to_rigid_body(object_def_handle, rigid_mat_handle)
 
     def create_gpu_command(self, env_group, gym, reset_buf):
         """Create GPU command for reading object state."""

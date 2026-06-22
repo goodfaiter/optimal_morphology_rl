@@ -56,6 +56,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         object: str = "drawer",
     ):
 
+        self.max_contact_pairs_per_env = 64
+        self.max_contact_patches_per_env = -1
+        self.max_contact_points_per_patch = 4
+
         super().__init__(
             num_envs,
             device,
@@ -73,6 +77,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             up_axis=v.Vec3(0, 0, 1),
             print_hash=print_hash,
             with_window=with_window,
+            max_contact_pairs_per_env=self.max_contact_pairs_per_env,
+            max_contact_patches_per_env=self.max_contact_patches_per_env,
+            max_contact_points_per_patch=self.max_contact_points_per_patch,
+            treat_warning_as_error=True,
         )
 
         self.num_envs_per_set = 1
@@ -82,9 +90,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.device = device
         self.max_episode_length = max_episode_length
         self.reward_object_name: str = object
-        self.force_mass_inertia_computation = force_mass_inertia_computation
-        self.fixed_hand = fixed_hand
-        self.max_contact_pairs_per_env = 64
+        self.fixed_hand = True if object == "cube" else False
         self.num_hist = 3
         self.hist_stride = 10
         self.obs_history_length = 1 + (self.num_hist - 1) * self.hist_stride
@@ -140,8 +146,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.env_def_handle = self.gym.create_environment_def("hand_env")
         env_def = self.gym.get_environment_def(self.env_def_handle)
 
-        self.robot = Robot()
-        self.robot.create_envs(env_def, self.fixed_hand, vsim_path, self.device)
+        self.robot = Robot(fixed_hand = self.fixed_hand, use_tendon=True)
+        self.robot.create_envs(env_def, vsim_path, self.device)
 
         # Load all objects through ObjectGenerator (includes table)
         self.objects.load(env_def)
@@ -166,9 +172,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
     def _setup_action_space(self):
         """Configure action space dimensions."""
-        # self.num_actions = self.num_joints + 6  # Revolute joints + base link velocity
-        # self.num_actions = 6 + 1 + 1  # wrist velocities (6) + 1 grasp command + 1 thumb command
-        self.num_actions = 6 + self.robot.num_motors  # wrist velocities (6) + motor commands
+        self.num_actions = 6 + self.robot.get_num_dofs()  # wrist velocities (6) + motor commands
 
         self.action_space = Box(
             low=np.full(self.num_actions, -1.0, dtype=np.float32), high=np.full(self.num_actions, 1.0, dtype=np.float32), dtype=np.float32
@@ -176,7 +180,15 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=self.device)
         self.max_velocity = self.velocity_scale * 2.0
-        self.revolute_scale = torch.full((self.robot.num_motors,), 0.1, device=self.device)
+
+        min_scale = -1.0 * self.robot.max_torque
+        max_scale = 1.0 * self.robot.max_torque
+        if self.robot.use_tendon:
+            min_scale = -0.25 * self.robot.tendon_max_force
+            max_scale = 1.0 * self.robot.tendon_max_force
+
+        self.min_revolute_scale = torch.full((self.robot.get_num_dofs(),), min_scale, device=self.device)
+        self.max_revolute_scale = torch.full((self.robot.get_num_dofs(),), max_scale, device=self.device)
 
     def _setup_observation_space(self):
         """Configure observation space dimensions."""
@@ -373,7 +385,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
     def reset(self):
         obs, _ = super().reset()
         self.refresh_buffers()
-        if self.total_num_envs > 10:  # when testing we prefer to start from 0
+        if self.total_num_envs != 1:  # when testing we prefer to start from 0
             self.progress_buf[:] = torch.randint(0, self.max_episode_length, (self.total_num_envs,), device=self.device)
         return obs, {}
 
@@ -381,7 +393,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.last_act_buf[:] = self.act_buf[:]
         self.act_buf[:] = actions
         self.scaled_act_buf[:, :6] = scale(self.act_buf[:, :6], -self.velocity_scale, self.velocity_scale)
-        self.scaled_act_buf[:, 6:] = scale(self.act_buf[:, 6:], -self.revolute_scale, self.revolute_scale)
+        self.scaled_act_buf[:, 6:] = scale(self.act_buf[:, 6:], self.min_revolute_scale, self.max_revolute_scale)
 
         self.robot.pre_physics_step(self.gym, self.scaled_act_buf, self.max_velocity)
 
@@ -415,7 +427,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.compute_reward_termination_truncation()
 
         # Resample goal
-        sample_new_goal = torch.rand(self.total_num_envs, device=self.device) < 0.01
+        sample_new_goal = torch.rand(self.total_num_envs, device=self.device) < 0.005
         if sample_new_goal.any():
             self.reward_object.update_goal(sample_new_goal)
 
@@ -465,7 +477,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         obj_goal_reward = torch.exp(-1.0 * obj_goal_dist_normalized**2)
         self.info["rewards"]["goal_position_reward"] = obj_goal_reward.sum().item() / self.total_num_envs
         self.info["rewards"]["goal_position_error_l2_norm_mm"] = obj_goal_dist.sum().item() / self.total_num_envs * 1000
-        self.rew_buf[:] += 1.0 * obj_goal_reward
+        self.rew_buf[:] += 1.5 * obj_goal_reward
 
         # Reward upright orientation
         goal_alignment = torch.sum(self._6d_object_goal_to_world * _6d_object_to_world, dim=-1)

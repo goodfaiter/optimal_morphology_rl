@@ -29,7 +29,7 @@ class Robot:
         self.gpu_set_motor_control_command_array = None
 
         self.num_tendons = None
-        self.tendon_max_force = 5.0
+        self.tendon_max_force = 10.0
         self.gpu_set_tendon_control_command_array = None
         self.gpu_get_tendon_lengths_command_array = None
         self.gpu_get_tendon_velocities_command_array = None
@@ -217,7 +217,7 @@ class Robot:
 
     def get_num_dofs(self) -> int:
         """Return the number of degrees of freedom (joints) in the robot."""
-        return self.num_tendons if self.use_tendon else self.num_joints
+        return self.num_tendons if self.use_tendon else self.num_motors
 
     def get_state(self) -> dict[str, torch.Tensor]:
         """Update and return the robot-derived observation tensors."""
@@ -253,22 +253,25 @@ class Robot:
           self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.7, 0.0, 0.0, 0.7], device=device)  
         else:
             self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=device)
-            self.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.1]], device=device)
+        self.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.1]], device=device)
         self.reset_root_vel_buf[reset_buf, :] = 0.0
         gym.set_articulation_kinematic_states(self.gpu_reset_kinematic_state_command_array)
 
         # Randomize rigid body material
         total_num_envs = reset_buf.shape[0]
-        total_resets = reset_buf.sum().item()
-        if total_num_envs > 10 and total_num_envs == total_resets: # only reset friction if all envs are being reset, otherwise it will cause
-            static_friction = torch.rand(total_num_envs, device=device) * 0.95 + 0.05
+        if total_num_envs != 1:
+            static_friction = torch.rand(reset_buf.sum().item(), device=device) * 0.9 + 0.1
             dynamic_friction = static_friction * 0.75
         else:
             static_friction = 0.1
-            dynamic_friction = 0.075
+            dynamic_friction = static_friction * 0.75
 
-        self.set_static_friction_buf[:] = static_friction
-        self.set_dynamic_friction_buf[:] = dynamic_friction
+        # The friction is average between two objects. So we set object friction to 0 and the robot hand to desired * 2
+        static_friction = static_friction * 2.0
+        dynamic_friction = dynamic_friction * 2.0
+        
+        self.set_static_friction_buf[reset_buf] = static_friction
+        self.set_dynamic_friction_buf[reset_buf] = dynamic_friction
         gym.set_rigid_material_properties(self.gpu_set_friction_cmd)
 
     def pre_physics_step(
@@ -294,7 +297,7 @@ class Robot:
             self.set_motor_cmd_buf[:] = torch.clamp(scaled_act_buf[:, 6:], 0.0, None)
 
         # Apply anatgonistic spring to all joints
-        self.set_motor_cmd_buf[:] += -0.05 * self.get_joint_pos_buf
+        self.set_motor_cmd_buf[:] += -0.1 * self.get_joint_pos_buf
             
         gym.set_motor_forces(self.gpu_set_motor_control_command_array)
 

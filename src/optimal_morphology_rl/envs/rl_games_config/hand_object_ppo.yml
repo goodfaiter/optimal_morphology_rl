@@ -20,6 +20,9 @@ params:
         sigma_init:
           name: const_initializer
           val: 0
+          # name: random_uniform_initializer
+          # a: -0.1
+          # b: 0.1
         fixed_sigma: True
 
     mlp:
