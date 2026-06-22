@@ -7,13 +7,13 @@ from optimal_morphology_rl.helpers.numpy_vlearn import quaternion_to_6d
 
 
 class Robot:
-    """Helper that owns the hand articulation buffers and GPU commands. Stateless w.r.t. env; callers pass in what's needed."""
+    def __init__(self, fixed_hand: bool = False, use_tendon: bool = False):
+        self.use_tendon = use_tendon
+        self.fixed_hand = fixed_hand
 
-    def __init__(self):
         self.gpu_reset_kinematic_state_command_array = None
         self.gpu_set_kinematic_state_command_array = None
         self.gpu_get_kinematic_state_command_array = None
-        self.gpu_set_motor_control_command_array = None
 
         self.def_handle = None
         self.art_def = None
@@ -24,6 +24,15 @@ class Robot:
         self.num_sensors = None
         self.link_masses = None
         self.rigid_mat_handle = None
+
+        self.max_torque = 0.1
+        self.gpu_set_motor_control_command_array = None
+
+        self.num_tendons = None
+        self.tendon_max_force = 5.0
+        self.gpu_set_tendon_control_command_array = None
+        self.gpu_get_tendon_lengths_command_array = None
+        self.gpu_get_tendon_velocities_command_array = None
 
     def allocate_buffers(self, total_num_envs: int, device: torch.device) -> None:
         """Allocate robot state and control buffers."""
@@ -37,7 +46,7 @@ class Robot:
         self.set_root_transform_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
         self.set_root_vel_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
 
-        self.set_motor_cmd_buf = torch.zeros((total_num_envs, self.num_joints), device=device, dtype=torch.float32)
+        self.set_motor_cmd_buf = torch.zeros((total_num_envs, self.num_motors), device=device, dtype=torch.float32)
 
         self.get_joint_pos_buf = torch.zeros((total_num_envs, self.num_joints), device=device, dtype=torch.float32)
         self.get_joint_vel_buf = torch.zeros((total_num_envs, self.num_joints), device=device, dtype=torch.float32)
@@ -56,13 +65,18 @@ class Robot:
         self.set_static_friction_buf = torch.zeros(total_num_envs, dtype=torch.float32, device=device)
         self.set_dynamic_friction_buf = torch.zeros(total_num_envs, dtype=torch.float32, device=device)
 
-    def create_envs(self, env_def, fixed_hand: bool, vsim_path: str, device: torch.device):
+        if self.use_tendon:
+            self.set_tendon_controls_buf = torch.zeros((total_num_envs, self.num_tendons), dtype=torch.float32, device=device)
+            self.get_tendon_lengths_buf = torch.zeros((total_num_envs, self.num_tendons), dtype=torch.float32, device=device)
+            self.get_tendon_vel_buf = torch.zeros((total_num_envs, self.num_tendons), dtype=torch.float32, device=device)
+
+    def create_envs(self, env_def, vsim_path: str, device: torch.device):
         """Load the hand model into the environment definition and create its articulation."""
         print(f"Loading hand model from {vsim_path}")
 
         env_def.import_definitions(
             vsim_path,
-            fixed=fixed_hand,
+            fixed=self.fixed_hand,
             use_visual_mesh=False,
             merge_fixed_joints=True,
             force_mass_computation=False,
@@ -81,6 +95,8 @@ class Robot:
         self.num_links = self.art_def.get_num_link_defs()
         self.num_motors = self.art_def.get_num_motor_defs()
         self.num_sensors = self.art_def.get_num_force_sensor_defs()
+        if self.use_tendon:
+            self.num_tendons = self.art_def.get_num_spatial_tendon_defs()
         self.link_masses = torch.zeros(self.num_links, dtype=torch.float32, device=device)
         for i in range(self.num_links):
             link_def = self.art_def.get_link_def(i)
@@ -102,6 +118,7 @@ class Robot:
         rigid_mat.dynamic_friction = 0.5
         rigid_mat.static_friction = 0.5
         rigid_mat.restitution = 0.0
+        rigid_mat.damping = 0.0
         rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
         for i in range(self.art_def.get_num_link_defs()):
             env_def.assign_rigid_material_to_articulation_link(self.def_handle, rigid_mat_handle, i)
@@ -152,6 +169,22 @@ class Robot:
         )
         self.gpu_set_motor_control_command_array = gym.create_gpu_array([set_motor_cmd])
 
+        if self.use_tendon:
+            set_tendon_cmd = env_group.create_spatial_tendon_control_command(
+                v.wrap_gpu_buffer(self.set_tendon_controls_buf), self.arti_handle
+            )
+            self.gpu_set_tendon_control_command_array = gym.create_gpu_array([set_tendon_cmd])
+
+            get_tendon_lengths_cmd = env_group.create_spatial_tendon_state_command(
+                v.SpatialTendonState.LENGTH, v.wrap_gpu_buffer(self.get_tendon_lengths_buf), self.arti_handle, (0, self.num_tendons)
+            )
+            self.gpu_get_tendon_lengths_command_array = gym.create_gpu_array([get_tendon_lengths_cmd])
+
+            get_tendon_vel_cmd = env_group.create_spatial_tendon_state_command(
+                v.SpatialTendonState.VELOCITY, v.wrap_gpu_buffer(self.get_tendon_vel_buf), self.arti_handle, (0, self.num_tendons)
+            )
+            self.gpu_get_tendon_velocities_command_array = gym.create_gpu_array([get_tendon_vel_cmd])
+
         ### Gravity Comp Commands
         # Create external force command
         set_force_torque_cmd = env_group.create_link_external_force_command(
@@ -178,6 +211,13 @@ class Robot:
     def refresh_buffers(self, gym: v.Gym) -> None:
         """Refresh robot kinematic state from simulation."""
         gym.get_articulation_kinematic_states(self.gpu_get_kinematic_state_command_array)
+        if self.use_tendon:
+            gym.get_spatial_tendon_states(self.gpu_get_tendon_lengths_command_array)
+            gym.get_spatial_tendon_states(self.gpu_get_tendon_velocities_command_array)
+
+    def get_num_dofs(self) -> int:
+        """Return the number of degrees of freedom (joints) in the robot."""
+        return self.num_tendons if self.use_tendon else self.num_joints
 
     def get_state(self) -> dict[str, torch.Tensor]:
         """Update and return the robot-derived observation tensors."""
@@ -188,7 +228,7 @@ class Robot:
         self.robot_linear_velocity_in_world[:] = self.get_root_vel_buf[:, 3:6]
         self.robot_angular_velocity_in_world[:] = self.get_root_vel_buf[:, :3]
 
-        return {
+        state = {
             "robot_pos_in_world": self.robot_pos_in_world,
             "quat_robot_to_world": self.quat_robot_to_world,
             "_6d_robot_to_world": self._6d_robot_to_world,
@@ -200,13 +240,20 @@ class Robot:
             "get_root_vel_buf": self.get_root_vel_buf,
             "set_motor_cmd_buf": self.set_motor_cmd_buf,
         }
+        if self.use_tendon:
+            state["get_tendon_lengths_buf"] = self.get_tendon_lengths_buf
+            state["get_tendon_vel_buf"] = self.get_tendon_vel_buf
+        return state
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor, device: torch.device) -> None:
         """Reset robot kinematic state for the given reset indices."""
         self.reset_joint_pos_buf[reset_buf, :] = 0.0
         self.reset_joint_vel_buf[reset_buf, :] = 0.0
-        self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=device)
-        self.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.1]], device=device)
+        if self.fixed_hand:
+          self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.7, 0.0, 0.0, 0.7], device=device)  
+        else:
+            self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=device)
+            self.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.1]], device=device)
         self.reset_root_vel_buf[reset_buf, :] = 0.0
         gym.set_articulation_kinematic_states(self.gpu_reset_kinematic_state_command_array)
 
@@ -236,9 +283,19 @@ class Robot:
         self.set_root_vel_buf[:] = torch.clamp(scaled_act_buf[:, :6], -max_velocity, max_velocity)
         gym.set_articulation_kinematic_states(self.gpu_set_kinematic_state_command_array)
 
-        # Apply joint motor commands and antagonistic spring
-        self.set_motor_cmd_buf[:] = torch.clamp(scaled_act_buf[:, 6:], 0.0, None)
-        self.set_motor_cmd_buf[:] += -0.1 * self.get_joint_pos_buf
+        self.set_motor_cmd_buf[:] = 0.0
+
+        if self.use_tendon:
+            # Apply tendon forces directly from the action
+            self.set_tendon_controls_buf[:] = torch.clamp(scaled_act_buf[:, 6:], 0.0, None)
+            gym.set_spatial_tendon_forces(self.gpu_set_tendon_control_command_array)
+        else:
+            # Apply joint motor commands
+            self.set_motor_cmd_buf[:] = torch.clamp(scaled_act_buf[:, 6:], 0.0, None)
+
+        # Apply anatgonistic spring to all joints
+        self.set_motor_cmd_buf[:] += -0.05 * self.get_joint_pos_buf
+            
         gym.set_motor_forces(self.gpu_set_motor_control_command_array)
 
         # Gravity compensation on base link
