@@ -477,7 +477,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         obj_goal_reward = torch.exp(-1.0 * obj_goal_dist_normalized**2)
         self.info["rewards"]["goal_position_reward"] = obj_goal_reward.sum().item() / self.total_num_envs
         self.info["rewards"]["goal_position_error_l2_norm_mm"] = obj_goal_dist.sum().item() / self.total_num_envs * 1000
-        self.rew_buf[:] += 1.5 * obj_goal_reward
+        self.rew_buf[:] += 1.0 * obj_goal_reward
 
         # Reward upright orientation
         goal_alignment = torch.sum(self._6d_object_goal_to_world * _6d_object_to_world, dim=-1)
