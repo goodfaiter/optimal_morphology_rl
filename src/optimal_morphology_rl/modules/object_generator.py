@@ -121,6 +121,15 @@ class LoadedRigidObject(ObjectBase):
         object_def_handle = env_def.get_rigid_body_def_handle_by_name(self.name)
         self.handle = env_def.create_rigid_body(object_def_handle, object_root_trans_init, self.name)
 
+        rigid_mat = v.RigidMaterial()
+        rigid_mat.static_friction = 0.8
+        rigid_mat.dynamic_friction = 0.6
+        rigid_mat.restitution = 0.0
+        rigid_mat.damping = 0.0
+        rigid_mat.roughness = 0.0
+        rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
+        env_def.assign_rigid_material_to_rigid_body(object_def_handle, rigid_mat_handle)
+
     def create_gpu_command(self, env_group, gym, reset_buf):
         """Create GPU command for reading object state."""
         self.get_kin_cmd = env_group.create_rigid_body_kinematic_state_command(
@@ -196,6 +205,9 @@ class LoadedArticulatedObject(ObjectBase):
         art_def = env_def.get_articulation_def(object_def_handle)
         self.num_joints = art_def.get_num_joint_dof_defs()
         self.num_links = art_def.get_num_link_defs()
+        for i in range(self.num_links):
+            link_def = art_def.get_link_def(i)
+            print(link_def)
         self.link_names = [art_def.get_link_def(i).name for i in range(self.num_links)]
         self.handle = env_def.create_articulation(object_def_handle, object_root_trans_init, self.name)
 
@@ -241,9 +253,27 @@ class LoadedArticulatedObject(ObjectBase):
         return self.num_links
 
 
-class Pen(LoadedRigidObject):
+class Cube(LoadedRigidObject):
     def __init__(self):
-        super().__init__(name="pen", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/pen.vsim"))
+        super().__init__(name="cube", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/cube_mid.vsim"))
+
+    def update_goal(self, reset_buf: torch.Tensor):
+        self.goal_pos_in_world[reset_buf, 0] = 0.05
+        self.goal_pos_in_world[reset_buf, 1] = -0.1
+        self.goal_pos_in_world[reset_buf, 2] = 0.15
+        self.goal_quat_object_to_world[reset_buf, :] = random_uniform_quaternion(
+            reset_buf.sum().item(), device=reset_buf.device, dtype=torch.float32
+        )
+
+    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
+        """Reset any object-specific buffers based on reset indices."""
+        self.set_trans_object_to_world_buf[reset_buf, :4] = random_uniform_quaternion(
+            reset_buf.sum().item(), device=reset_buf.device, dtype=torch.float32
+        )
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.05, -0.1, 0.6]], device=reset_buf.device)
+        self.set_vel_in_world_buf[reset_buf, :] = 0.0
+        gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
+        self.update_goal(reset_buf)
 
 
 class Tomato(LoadedRigidObject):
@@ -334,7 +364,7 @@ class ObjectGenerator:
     """Container for all objects in the environment."""
 
     OBJECT_REGISTRY: Dict[str, type] = {
-        "pen": Pen,
+        "cube": Cube,
         "tomato": Tomato,
         "knife": Knife,
         "mug": Mug,
