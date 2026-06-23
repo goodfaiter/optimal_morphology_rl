@@ -376,6 +376,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.progress_buf[self.reset_buf] = 0
         self.timestep_buf[self.reset_buf] = 0
         self.obs_history.reset_idx(self.reset_buf)
+        self.term_buf[self.reset_buf] = False
+        self.trunc_buf[self.reset_buf] = False
 
         # Reset modules
         self.robot.reset_idx(self.gym, self.reset_buf, self.device)
