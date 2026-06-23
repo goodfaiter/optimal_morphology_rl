@@ -213,6 +213,17 @@ class LoadedArticulatedObject(ObjectBase):
         self.link_names = [art_def.get_link_def(i).name for i in range(self.num_links)]
         self.handle = env_def.create_articulation(object_def_handle, object_root_trans_init, self.name)
 
+        # The friction is average between two objects. So we set this one to 0 and the robot hand to desired * 2
+        rigid_mat = v.RigidMaterial()
+        rigid_mat.static_friction = 0.0
+        rigid_mat.dynamic_friction = 0.0
+        rigid_mat.restitution = 0.0
+        rigid_mat.damping = 0.0
+        rigid_mat.roughness = 0.0
+        rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
+        for i in range(art_def.get_num_link_defs()):
+            env_def.assign_rigid_material_to_articulation_link(object_def_handle, rigid_mat_handle, i)
+
     def allocate_buffers(self, total_num_envs: int, device: torch.device):
         """Allocate GPU buffers for articulated state."""
         super().allocate_buffers(total_num_envs, device)
