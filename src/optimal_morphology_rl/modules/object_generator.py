@@ -270,9 +270,9 @@ class Cube(LoadedRigidObject):
         super().__init__(name="cube", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/cube_mid.vsim"))
 
     def update_goal(self, reset_buf: torch.Tensor):
-        self.goal_pos_in_world[reset_buf, 0] = 0.05
-        self.goal_pos_in_world[reset_buf, 1] = -0.1
-        self.goal_pos_in_world[reset_buf, 2] = 0.15
+        self.goal_pos_in_world[reset_buf, 0] = 0.0
+        self.goal_pos_in_world[reset_buf, 1] = -0.15
+        self.goal_pos_in_world[reset_buf, 2] = 0.25
         self.goal_quat_object_to_world[reset_buf, :] = random_uniform_quaternion(
             reset_buf.sum().item(), device=reset_buf.device, dtype=torch.float32
         )
@@ -282,7 +282,7 @@ class Cube(LoadedRigidObject):
         self.set_trans_object_to_world_buf[reset_buf, :4] = random_uniform_quaternion(
             reset_buf.sum().item(), device=reset_buf.device, dtype=torch.float32
         )
-        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.05, -0.1, 0.6]], device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.0, -0.15, 0.2]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
         self.update_goal(reset_buf)
