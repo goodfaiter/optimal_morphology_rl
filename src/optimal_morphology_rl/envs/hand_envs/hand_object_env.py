@@ -123,7 +123,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         reward_object_link_offset = self.objects.get_object_link_offset(self.reward_object.name)
         self.contacts = Contacts(self, reward_object_link_offset, link_names=["distal"])
-        if isinstance(self.reward_object, LoadedRigidObject):
+        if isinstance(self.reward_object, LoadedRigidObject) and self.reward_object_name != "cube":
             self.force_module = ExternalForceModule(
                 body_handles={object: self.reward_object.handle},
                 total_num_envs=num_envs,
@@ -392,6 +392,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         return obs, {}
 
     def pre_physics_step(self, actions: torch.Tensor):
+        if self.fixed_hand:
+            actions[:, :6] = 0.0
         self.last_act_buf[:] = self.act_buf[:]
         self.act_buf[:] = actions
         self.scaled_act_buf[:, :6] = scale(self.act_buf[:, :6], -self.velocity_scale, self.velocity_scale)
@@ -474,12 +476,13 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         _6d_object_to_world = quaternion_to_6d(object_quat_world)
 
         # Reward for minimizing object-to-goal distance.
-        obj_goal_dist = torch.norm(self.reward_object.goal_pos_in_world - object_pos_in_world, dim=-1)
-        obj_goal_dist_normalized = obj_goal_dist / 0.2
-        obj_goal_reward = torch.exp(-1.0 * obj_goal_dist_normalized**2)
-        self.info["rewards"]["goal_position_reward"] = obj_goal_reward.sum().item() / self.total_num_envs
-        self.info["rewards"]["goal_position_error_l2_norm_mm"] = obj_goal_dist.sum().item() / self.total_num_envs * 1000
-        self.rew_buf[:] += 1.5 * obj_goal_reward
+        if self.reward_object_name != "cube":
+            obj_goal_dist = torch.norm(self.reward_object.goal_pos_in_world - object_pos_in_world, dim=-1)
+            obj_goal_dist_normalized = obj_goal_dist / 0.2
+            obj_goal_reward = torch.exp(-1.0 * obj_goal_dist_normalized**2)
+            self.info["rewards"]["goal_position_reward"] = obj_goal_reward.sum().item() / self.total_num_envs
+            self.info["rewards"]["goal_position_error_l2_norm_mm"] = obj_goal_dist.sum().item() / self.total_num_envs * 1000
+            self.rew_buf[:] += 1.5 * obj_goal_reward
 
         # Reward upright orientation
         goal_alignment = torch.sum(self._6d_object_goal_to_world * _6d_object_to_world, dim=-1)
@@ -489,23 +492,25 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.rew_buf[:] += 1.0 * goal_alignment_reward
 
         # Reward distance between selected object and hand.
-        dist = torch.norm(self.robot.robot_pos_in_world - object_pos_in_world, dim=-1)
-        dist_clipped = torch.clamp(dist, min=0.05)  # don't reward getting too close to allow for exploration
-        dist_clipped_normalized = dist_clipped / 0.2
-        dist_rew = torch.exp(-1.0 * dist_clipped_normalized**2)
-        self.info["rewards"]["hand_to_object_distance"] = dist_rew.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 0.1 * dist_rew
+        if self.reward_object_name != "cube":
+            dist = torch.norm(self.robot.robot_pos_in_world - object_pos_in_world, dim=-1)
+            dist_clipped = torch.clamp(dist, min=0.05)  # don't reward getting too close to allow for exploration
+            dist_clipped_normalized = dist_clipped / 0.2
+            dist_rew = torch.exp(-1.0 * dist_clipped_normalized**2)
+            self.info["rewards"]["hand_to_object_distance"] = dist_rew.sum().item() / self.total_num_envs
+            self.rew_buf[:] += 0.1 * dist_rew
 
         # Fingertip contact reward.
-        self.contacts.update()  # biggest computational slowdown
-        self.forces.update(self.gym)
-        forces = self.forces.force_sensor_buf.norm(dim=-1)
-        contacts = self.contacts.env_link_touch[:, self.contacts.monitored_link_mask]
-        force_against_object = forces * contacts
-        force_against_object.clamp_(0.0, 1.0)
-        fingertip_contact_reward = torch.clamp(force_against_object.sum(dim=-1), min=0.0, max=3.0) / 3.0
-        self.info["rewards"]["fingertip_contact_reward"] = fingertip_contact_reward.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 2.0 * fingertip_contact_reward
+        if self.reward_object_name != "cube":
+            self.contacts.update()  # biggest computational slowdown
+            self.forces.update(self.gym)
+            forces = self.forces.force_sensor_buf.norm(dim=-1)
+            contacts = self.contacts.env_link_touch[:, self.contacts.monitored_link_mask]
+            force_against_object = forces * contacts
+            force_against_object.clamp_(0.0, 1.0)
+            fingertip_contact_reward = torch.clamp(force_against_object.sum(dim=-1), min=0.0, max=3.0) / 3.0
+            self.info["rewards"]["fingertip_contact_reward"] = fingertip_contact_reward.sum().item() / self.total_num_envs
+            self.rew_buf[:] += 2.0 * fingertip_contact_reward
 
         # Penalize large actions to encourage smooth control
         action_penalty = torch.sum(self.act_buf**2, dim=-1)
@@ -520,7 +525,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.rew_buf[:] += 0.01 * action_smoothness_reward
 
         # Penalize object drops and end episode
-        drop_penalty = object_pos_in_world[:, 2] < -0.1
+        if self.reward_object_name != "cube":
+            drop_penalty = object_pos_in_world[:, 2] < 0.09
+        else:
+            drop_penalty = object_pos_in_world[:, 2] < -0.1
         drop_reward = -1 * drop_penalty
         self.info["rewards"]["drop_penalty"] = drop_reward.sum().item() / self.total_num_envs
         self.rew_buf[:] += 10.0 * drop_reward
