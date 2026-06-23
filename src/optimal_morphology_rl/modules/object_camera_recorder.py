@@ -42,7 +42,7 @@ class ObjectCameraRecorder:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._specs: list[CameraSpec] = []
         self._bindings: list[CameraBinding] = []
-    
+
     def update(self, gym) -> None:
         """Refresh camera buffers from simulation."""
         rgb_bindings = [binding for binding in self._bindings if binding.spec.kind == "rgb"]
@@ -56,7 +56,7 @@ class ObjectCameraRecorder:
 
     def build_specs(self, object_generator, env_def) -> None:
         for obj in object_generator.objects.values():
-            if isinstance(obj, LoadedRigidObject): # check if class of rigid body
+            if isinstance(obj, LoadedRigidObject):  # check if class of rigid body
                 self._build_spec(obj, env_def=env_def)
 
     def build_cameras(self, env_def, env_group, gym, num_envs: int, device: torch.device) -> None:
@@ -67,17 +67,20 @@ class ObjectCameraRecorder:
 
         rigid_body_def = env_def.get_rigid_body_def_by_name(loaded_object.name)
 
-        for index in range(rigid_body_def.get_num_rgb_camera_defs()):
-            self._specs.append(self._build_rgb_spec(rigid_body_def, loaded_object.name, index))
+        num_camera_defs = rigid_body_def.get_num_rgb_camera_defs()
+        num_camera_instances = rigid_body_def.get_num_rgb_cameras()
+        for def_index in range(num_camera_defs):
+            for instance_index in range(num_camera_instances):
+                self._specs.append(self._build_rgb_spec(rigid_body_def, loaded_object.name, def_index, instance_index))
 
     def _build_camera(self, spec: CameraSpec, env_def, env_group, gym, num_envs: int, device: torch.device) -> CameraBinding:
-            rigid_body_handle = env_def.get_rigid_body_handle_by_name(spec.object_name)
-            rigid_body = env_def.get_rigid_body(rigid_body_handle)
-            return self._bind_rgb_camera(spec, rigid_body, env_group, gym, num_envs, device)
+        rigid_body_handle = env_def.get_rigid_body_handle_by_name(spec.object_name)
+        rigid_body = env_def.get_rigid_body(rigid_body_handle)
+        return self._bind_rgb_camera(spec, rigid_body, env_group, gym, num_envs, device)
 
-    def _build_rgb_spec(self, rigid_body_def, object_name: str, index: int) -> CameraSpec:
-        def_name = rigid_body_def.get_rgb_camera_def_name(index)
-        instance_name = rigid_body_def.get_rgb_camera_name(index)
+    def _build_rgb_spec(self, rigid_body_def, object_name: str, def_index: int, instance_index: int) -> CameraSpec:
+        def_name = rigid_body_def.get_rgb_camera_def_name(def_index)
+        instance_name = rigid_body_def.get_rgb_camera_name(instance_index)
         camera_def = rigid_body_def.get_rgb_camera_def_by_name(def_name)
         camera = rigid_body_def.get_rgb_camera_by_name(instance_name)
         camera.render_relative_transform = camera.relative_transform
