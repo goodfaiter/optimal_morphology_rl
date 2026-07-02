@@ -424,6 +424,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         sample_new_goal = torch.rand(self.total_num_envs, device=self.device) < 0.005
         if sample_new_goal.any():
             self.reward_object.update_goal(sample_new_goal)
+            self.visualize_goal()
 
     def compute_observations(self):
         """Construct observation vector."""
