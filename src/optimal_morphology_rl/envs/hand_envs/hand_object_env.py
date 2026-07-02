@@ -522,7 +522,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             drop_penalty = object_pos_in_world[:, 2] < 0.09
         drop_reward = -1 * drop_penalty
         self.info["rewards"]["drop_penalty"] = drop_reward.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 10.0 * drop_reward
+        self.rew_buf[:] += 20.0 * drop_reward
 
         # Penalize hand out of table bounds
         out_of_bounds = torch.logical_or(
