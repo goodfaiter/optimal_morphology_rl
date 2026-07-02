@@ -299,7 +299,7 @@ class Robot:
             static_friction = torch.rand(reset_buf.sum().item(), device=device) * 0.9 + 0.1
             dynamic_friction = static_friction * 0.75
         else:
-            static_friction = 0.001
+            static_friction = 0.1
             dynamic_friction = static_friction * 0.75
 
         # The friction is average between two objects. So we set object friction to 0 and the robot hand to desired * 2
