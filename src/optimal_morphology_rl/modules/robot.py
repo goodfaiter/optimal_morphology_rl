@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 import vlearn as v
 
-from vlearn.torch_utils.torch_jit_utils import scale
+from vlearn.torch_utils.torch_jit_utils import scale, quat_rotate, quat_rotate_inverse
 
 from optimal_morphology_rl.helpers.numpy_vlearn import quaternion_to_6d
 
@@ -60,6 +60,11 @@ class Robot:
         self._6d_robot_to_world = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
         self.robot_linear_velocity_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
         self.robot_angular_velocity_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
+
+        self.gravity_direction_world = torch.tensor([0.0, 0.0, -1.0], device=device, dtype=torch.float32).repeat(total_num_envs, 1)
+        self.gravity_vector_in_robot_frame = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
+        self.robot_linear_velocity_in_robot_frame = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
+        self.robot_angular_velocity_in_robot_frame = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
 
         self.set_force_torque_buf = torch.zeros((total_num_envs, self.num_links, 6), dtype=torch.float32, device=device)
 
@@ -249,12 +254,21 @@ class Robot:
         self.robot_linear_velocity_in_world[:] = self.get_root_vel_buf[:, 3:6]
         self.robot_angular_velocity_in_world[:] = self.get_root_vel_buf[:, :3]
 
+        self.gravity_vector_in_robot_frame[:] = quat_rotate_inverse(self.quat_robot_to_world, self.gravity_direction_world)
+        self.robot_linear_velocity_in_robot_frame[:] = quat_rotate_inverse(self.quat_robot_to_world, self.robot_linear_velocity_in_world)
+        self.robot_angular_velocity_in_robot_frame[:] = quat_rotate_inverse(
+            self.quat_robot_to_world, self.robot_angular_velocity_in_world
+        )
+
         state = {
             "robot_pos_in_world": self.robot_pos_in_world,
             "quat_robot_to_world": self.quat_robot_to_world,
             "_6d_robot_to_world": self._6d_robot_to_world,
             "robot_linear_velocity_in_world": self.robot_linear_velocity_in_world,
             "robot_angular_velocity_in_world": self.robot_angular_velocity_in_world,
+            "gravity_vector_in_robot_frame": self.gravity_vector_in_robot_frame,
+            "robot_linear_velocity_in_robot_frame": self.robot_linear_velocity_in_robot_frame,
+            "robot_angular_velocity_in_robot_frame": self.robot_angular_velocity_in_robot_frame,
             "get_root_transform_buf": self.get_root_transform_buf,
             "get_root_vel_buf": self.get_root_vel_buf,
             "set_motor_cmd_buf": self.set_motor_cmd_buf,
@@ -285,7 +299,7 @@ class Robot:
             static_friction = torch.rand(reset_buf.sum().item(), device=device) * 0.9 + 0.1
             dynamic_friction = static_friction * 0.75
         else:
-            static_friction = 0.1
+            static_friction = 0.001
             dynamic_friction = static_friction * 0.75
 
         # The friction is average between two objects. So we set object friction to 0 and the robot hand to desired * 2
@@ -307,10 +321,13 @@ class Robot:
         )
         self.scaled_act_buf[:, self.dof_slice] = scale(act_buf[:, self.dof_slice], self.min_revolute_scale, self.max_revolute_scale)
 
-        # Apply wrist velocity commands
+        # Apply wrist velocity commands (commanded in the robot's local frame, rotated to world for the sim).
         if not self.fixed_hand:
             self.set_root_transform_buf[:] = self.get_root_transform_buf
-            self.set_root_vel_buf[:] = torch.clamp(self.scaled_act_buf[:, self.root_slice], -self.max_velocity, self.max_velocity)
+            local_root_vel = torch.clamp(self.scaled_act_buf[:, self.root_slice], -self.max_velocity, self.max_velocity)
+            quat_robot_to_world = self.get_root_transform_buf[:, 0:4]
+            self.set_root_vel_buf[:, :3] = quat_rotate(quat_robot_to_world, local_root_vel[:, :3])
+            self.set_root_vel_buf[:, 3:] = quat_rotate(quat_robot_to_world, local_root_vel[:, 3:])
             gym.set_articulation_kinematic_states(self.gpu_set_kinematic_state_command_array)
 
         self.set_motor_cmd_buf[:] = 0.0
@@ -334,10 +351,13 @@ class Robot:
 
     def pre_gym_step(self, gym):
 
-        # Apply wrist velocity commands
+        # Apply wrist velocity commands (commanded in the robot's local frame, rotated to world for the sim).
         if not self.fixed_hand:
             self.set_root_transform_buf[:] = self.get_root_transform_buf
-            self.set_root_vel_buf[:] = torch.clamp(self.scaled_act_buf[:, self.root_slice], -self.max_velocity, self.max_velocity)
+            robot_velocity_in_robot = torch.clamp(self.scaled_act_buf[:, self.root_slice], -self.max_velocity, self.max_velocity)
+            quat_robot_to_world = self.get_root_transform_buf[:, 0:4]
+            self.set_root_vel_buf[:, :3] = quat_rotate(quat_robot_to_world, robot_velocity_in_robot[:, :3])
+            self.set_root_vel_buf[:, 3:] = quat_rotate(quat_robot_to_world, robot_velocity_in_robot[:, 3:])
             gym.set_articulation_kinematic_states(self.gpu_set_kinematic_state_command_array)
 
         self.set_motor_cmd_buf[:] = 0.0

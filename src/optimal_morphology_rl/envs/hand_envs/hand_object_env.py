@@ -24,6 +24,7 @@ from optimal_morphology_rl.envs.hand_envs.helpers.hand_pen_helpers import (
     rotate_by_quat_A_to_B,
 )
 from optimal_morphology_rl.helpers.numpy_vlearn import quaternion_to_6d
+from vlearn.torch_utils.torch_jit_utils import quat_mul, quat_conjugate, quat_rotate_inverse
 
 
 class HandObjectEnvironmentGpu(EnvironmentGpu):
@@ -185,10 +186,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         if not self.fixed_hand:
             for name, width in [
-                ("robot_pos_in_world", 3),
-                ("_6d_robot_to_world", 6),
-                ("robot_linear_velocity_in_world", 3),
-                ("robot_angular_velocity_in_world", 3),
+                ("gravity_vector_in_robot_frame", 3),
+                ("robot_linear_velocity_in_robot_frame", 3),
+                ("robot_angular_velocity_in_robot_frame", 3),
             ]:
                 self.base_obs_slices[name] = slice(obs_offset, obs_offset + width)
                 obs_offset += width
@@ -197,12 +197,12 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             ("dof_pos_buf", self.robot.get_num_dofs()),
             ("dof_vel_buf", self.robot.get_num_dofs()),
             ("act_buf", self.num_actions),
-            ("object_position_in_world", 3),
-            ("_6d_object_to_world", 6),
-            ("object_linear_velocity_in_world", 3),
-            ("object_angular_velocity_in_world", 3),
-            ("object_goal_pos_in_world", 3),
-            ("_6d_object_goal_to_world", 6),
+            ("object_position_in_robot_frame", 3),
+            ("_6d_object_to_robot", 6),
+            ("object_linear_velocity_in_robot_frame", 3),
+            ("object_angular_velocity_in_robot_frame", 3),
+            ("object_goal_pos_in_robot_frame", 3),
+            ("_6d_object_goal_to_robot", 6),
         ]:
             self.base_obs_slices[name] = slice(obs_offset, obs_offset + width)
             obs_offset += width
@@ -431,30 +431,39 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.kinematic_sensor.update(self.gym)
 
         robot_state = self.robot.get_state()
+        quat_robot_to_world = robot_state["quat_robot_to_world"]
+        quat_world_to_robot = quat_conjugate(quat_robot_to_world)
+        robot_pos_world = robot_state["robot_pos_in_world"]
 
         object_pos_world = self.kinematic_sensor.pos_in_world
         object_quat_world = self.kinematic_sensor.quat_sensor_to_world
         object_lin_vel_world = self.kinematic_sensor.linear_velocity_world
         object_ang_vel_world = self.kinematic_sensor.angular_velocity_world
-        object_6d_to_world = quaternion_to_6d(object_quat_world)
         object_goal_pos_in_world = self.reward_object.goal_pos_in_world
         quat_object_goal_to_world = self.reward_object.goal_quat_object_to_world
         self._6d_object_goal_to_world = quaternion_to_6d(quat_object_goal_to_world)
 
+        # Object and goal state expressed in the robot (base) frame.
+        object_position_in_robot_frame = quat_rotate_inverse(quat_robot_to_world, object_pos_world - robot_pos_world)
+        _6d_object_to_robot = quaternion_to_6d(quat_mul(quat_world_to_robot, object_quat_world))
+        object_linear_velocity_in_robot_frame = quat_rotate_inverse(quat_robot_to_world, object_lin_vel_world)
+        object_angular_velocity_in_robot_frame = quat_rotate_inverse(quat_robot_to_world, object_ang_vel_world)
+        object_goal_pos_in_robot_frame = quat_rotate_inverse(quat_robot_to_world, object_goal_pos_in_world - robot_pos_world)
+        _6d_object_goal_to_robot = quaternion_to_6d(quat_mul(quat_world_to_robot, quat_object_goal_to_world))
+
         if not self.fixed_hand:
-            self.base_obs[:, self.base_obs_slices["robot_pos_in_world"]] = robot_state["robot_pos_in_world"]
-            self.base_obs[:, self.base_obs_slices["_6d_robot_to_world"]] = robot_state["_6d_robot_to_world"]
-            self.base_obs[:, self.base_obs_slices["robot_linear_velocity_in_world"]] = robot_state["robot_linear_velocity_in_world"]
-            self.base_obs[:, self.base_obs_slices["robot_angular_velocity_in_world"]] = robot_state["robot_angular_velocity_in_world"]
+            self.base_obs[:, self.base_obs_slices["gravity_vector_in_robot_frame"]] = robot_state["gravity_vector_in_robot_frame"]
+            self.base_obs[:, self.base_obs_slices["robot_linear_velocity_in_robot_frame"]] = robot_state["robot_linear_velocity_in_robot_frame"]
+            self.base_obs[:, self.base_obs_slices["robot_angular_velocity_in_robot_frame"]] = robot_state["robot_angular_velocity_in_robot_frame"]
         self.base_obs[:, self.base_obs_slices["dof_pos_buf"]] = robot_state["dof_pos_buf"]
         self.base_obs[:, self.base_obs_slices["dof_vel_buf"]] = robot_state["dof_vel_buf"]
         self.base_obs[:, self.base_obs_slices["act_buf"]] = self.act_buf
-        self.base_obs[:, self.base_obs_slices["object_position_in_world"]] = object_pos_world
-        self.base_obs[:, self.base_obs_slices["_6d_object_to_world"]] = object_6d_to_world
-        self.base_obs[:, self.base_obs_slices["object_linear_velocity_in_world"]] = object_lin_vel_world
-        self.base_obs[:, self.base_obs_slices["object_angular_velocity_in_world"]] = object_ang_vel_world
-        self.base_obs[:, self.base_obs_slices["object_goal_pos_in_world"]] = object_goal_pos_in_world
-        self.base_obs[:, self.base_obs_slices["_6d_object_goal_to_world"]] = self._6d_object_goal_to_world
+        self.base_obs[:, self.base_obs_slices["object_position_in_robot_frame"]] = object_position_in_robot_frame
+        self.base_obs[:, self.base_obs_slices["_6d_object_to_robot"]] = _6d_object_to_robot
+        self.base_obs[:, self.base_obs_slices["object_linear_velocity_in_robot_frame"]] = object_linear_velocity_in_robot_frame
+        self.base_obs[:, self.base_obs_slices["object_angular_velocity_in_robot_frame"]] = object_angular_velocity_in_robot_frame
+        self.base_obs[:, self.base_obs_slices["object_goal_pos_in_robot_frame"]] = object_goal_pos_in_robot_frame
+        self.base_obs[:, self.base_obs_slices["_6d_object_goal_to_robot"]] = _6d_object_goal_to_robot
 
         self.obs_history.add(self.base_obs)
 
