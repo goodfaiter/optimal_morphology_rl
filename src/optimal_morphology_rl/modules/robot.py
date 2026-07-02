@@ -256,9 +256,7 @@ class Robot:
 
         self.gravity_vector_in_robot_frame[:] = quat_rotate_inverse(self.quat_robot_to_world, self.gravity_direction_world)
         self.robot_linear_velocity_in_robot_frame[:] = quat_rotate_inverse(self.quat_robot_to_world, self.robot_linear_velocity_in_world)
-        self.robot_angular_velocity_in_robot_frame[:] = quat_rotate_inverse(
-            self.quat_robot_to_world, self.robot_angular_velocity_in_world
-        )
+        self.robot_angular_velocity_in_robot_frame[:] = quat_rotate_inverse(self.quat_robot_to_world, self.robot_angular_velocity_in_world)
 
         state = {
             "robot_pos_in_world": self.robot_pos_in_world,
@@ -328,36 +326,6 @@ class Robot:
             quat_robot_to_world = self.get_root_transform_buf[:, 0:4]
             self.set_root_vel_buf[:, :3] = quat_rotate(quat_robot_to_world, local_root_vel[:, :3])
             self.set_root_vel_buf[:, 3:] = quat_rotate(quat_robot_to_world, local_root_vel[:, 3:])
-            gym.set_articulation_kinematic_states(self.gpu_set_kinematic_state_command_array)
-
-        self.set_motor_cmd_buf[:] = 0.0
-
-        if self.use_tendon:
-            # Apply tendon forces directly from the action
-            self.set_tendon_controls_buf[:] = torch.clamp(self.scaled_act_buf[:, self.dof_slice], 0.0, None)
-            gym.set_spatial_tendon_forces(self.gpu_set_tendon_control_command_array)
-        else:
-            # Apply joint motor commands
-            self.set_motor_cmd_buf[:] = torch.clamp(self.scaled_act_buf[:, self.dof_slice], 0.0, None)
-
-        # Apply anatgonistic spring to all joints
-        self.set_motor_cmd_buf[:] += -0.1 * self.get_joint_pos_buf
-
-        gym.set_motor_forces(self.gpu_set_motor_control_command_array)
-
-        # Gravity compensation on base link
-        self.set_force_torque_buf[:, :, 2] = 9.81 * self.link_masses
-        gym.set_link_external_forces(self.set_force_torque_cmd_arr)
-
-    def pre_gym_step(self, gym):
-
-        # Apply wrist velocity commands (commanded in the robot's local frame, rotated to world for the sim).
-        if not self.fixed_hand:
-            self.set_root_transform_buf[:] = self.get_root_transform_buf
-            robot_velocity_in_robot = torch.clamp(self.scaled_act_buf[:, self.root_slice], -self.max_velocity, self.max_velocity)
-            quat_robot_to_world = self.get_root_transform_buf[:, 0:4]
-            self.set_root_vel_buf[:, :3] = quat_rotate(quat_robot_to_world, robot_velocity_in_robot[:, :3])
-            self.set_root_vel_buf[:, 3:] = quat_rotate(quat_robot_to_world, robot_velocity_in_robot[:, 3:])
             gym.set_articulation_kinematic_states(self.gpu_set_kinematic_state_command_array)
 
         self.set_motor_cmd_buf[:] = 0.0
