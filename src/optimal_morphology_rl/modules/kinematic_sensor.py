@@ -42,39 +42,68 @@ class KinematicSensor:
 
         self.kinematic_sensor_handle = source.get_kinematic_sensor_handle(sensor_index)
 
-        self.pose_buf = torch.zeros((total_num_envs, 7), dtype=torch.float32, device=device)
-        self.velocity_buf = torch.zeros((total_num_envs, 6), dtype=torch.float32, device=device)
+        self.pose_in_world_buf = torch.zeros((total_num_envs, 7), dtype=torch.float32, device=device)
+        self.velocity_in_world_buf = torch.zeros((total_num_envs, 6), dtype=torch.float32, device=device)
+        self.pose_in_object_buf = torch.zeros((total_num_envs, 7), dtype=torch.float32, device=device)
+        self.velocity_in_object_buf = torch.zeros((total_num_envs, 6), dtype=torch.float32, device=device)
 
     def create_gpu_commands(self, env_group, gym: v.Gym) -> None:
         """Create GPU commands for reading kinematic sensor state."""
-        self.get_kinematic_sensor_cmd = env_group.create_kinematic_sensor_state_command(
-            v.wrap_gpu_buffer(self.pose_buf),
-            v.wrap_gpu_buffer(self.velocity_buf),
+        self.get_kinematic_sensor_in_world_cmd = env_group.create_kinematic_sensor_state_command(
+            v.wrap_gpu_buffer(self.pose_in_world_buf),
+            v.wrap_gpu_buffer(self.velocity_in_world_buf),
             self.kinematic_sensor_handle,
             frame_type=v.FrameType.ENVIRONMENT,
         )
-        self.get_kinematic_sensor_cmd_arr = gym.create_gpu_array([self.get_kinematic_sensor_cmd])
+
+        self.get_kinematic_sensor_in_object_cmd = env_group.create_kinematic_sensor_state_command(
+            v.wrap_gpu_buffer(self.pose_in_object_buf),
+            v.wrap_gpu_buffer(self.velocity_in_object_buf),
+            self.kinematic_sensor_handle,
+            frame_type=v.FrameType.LOCAL,
+        )
+        self.get_kinematic_sensor_cmd_arr = gym.create_gpu_array([self.get_kinematic_sensor_in_world_cmd, self.get_kinematic_sensor_in_object_cmd])
 
     def update(self, gym: v.Gym) -> None:
         """Read the latest kinematic sensor data into the dense buffers."""
         gym.get_kinematic_sensor_states(self.get_kinematic_sensor_cmd_arr)
 
     @property
-    def pose(self) -> torch.Tensor:
-        return self.pose_buf
+    def pose_in_world(self) -> torch.Tensor:
+        return self.pose_in_world_buf
 
     @property
     def quat_sensor_to_world(self) -> torch.Tensor:
-        return self.pose_buf[:, :4]
+        return self.pose_in_world_buf[:, :4]
 
     @property
     def pos_in_world(self) -> torch.Tensor:
-        return self.pose_buf[:, 4:7]
+        return self.pose_in_world_buf[:, 4:7]
 
     @property
     def angular_velocity_world(self) -> torch.Tensor:
-        return self.velocity_buf[:, :3]
+        return self.velocity_in_world_buf[:, :3]
 
     @property
     def linear_velocity_world(self) -> torch.Tensor:
-        return self.velocity_buf[:, 3:6]
+        return self.velocity_in_world_buf[:, 3:6]
+    
+    @property
+    def pose_in_object(self) -> torch.Tensor:
+        return self.pose_in_object_buf
+    
+    @property
+    def quat_sensor_to_object(self) -> torch.Tensor:
+        return self.pose_in_object_buf[:, :4]
+    
+    @property
+    def pos_in_object(self) -> torch.Tensor:
+        return self.pose_in_object_buf[:, 4:7]
+    
+    @property
+    def angular_velocity_object(self) -> torch.Tensor:
+        return self.velocity_in_object_buf[:, :3]
+    
+    @property
+    def linear_velocity_object(self) -> torch.Tensor:
+        return self.velocity_in_object_buf[:, 3:6]
