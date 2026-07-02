@@ -3,6 +3,8 @@ from __future__ import annotations
 import torch
 import vlearn as v
 
+from vlearn.torch_utils.torch_jit_utils import scale
+
 from optimal_morphology_rl.helpers.numpy_vlearn import quaternion_to_6d
 
 
@@ -70,6 +72,8 @@ class Robot:
             self.get_tendon_lengths_buf = torch.zeros((total_num_envs, self.num_tendons), dtype=torch.float32, device=device)
             self.get_tendon_vel_buf = torch.zeros((total_num_envs, self.num_tendons), dtype=torch.float32, device=device)
 
+        self.scaled_act_buf = torch.zeros((total_num_envs, self.get_num_actions()), dtype=torch.float32, device=device)
+
     def create_envs(self, env_def, vsim_path: str, device: torch.device):
         """Load the hand model into the environment definition and create its articulation."""
         print(f"Loading hand model from {vsim_path}")
@@ -124,9 +128,22 @@ class Robot:
             env_def.assign_rigid_material_to_articulation_link(self.def_handle, rigid_mat_handle, i)
         self.rigid_mat_handle = rigid_mat_handle
 
-    def create_gpu_commands(
-        self, env_group, gym: v.Gym, reset_buf: torch.Tensor, inverse_reset_buf: torch.Tensor
-    ) -> None:
+        self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=device)
+        self.max_velocity = self.velocity_scale * 2.0
+
+        min_scale = -1.0 * self.max_torque
+        max_scale = 1.0 * self.max_torque
+        if self.use_tendon:
+            min_scale = -0.25 * self.tendon_max_force
+            max_scale = 1.0 * self.tendon_max_force
+
+        self.min_revolute_scale = torch.full((self.get_num_dofs(),), min_scale, device=device)
+        self.max_revolute_scale = torch.full((self.get_num_dofs(),), max_scale, device=device)
+
+        self.root_slice = slice(0, 6) if not self.fixed_hand else slice(0, 0)
+        self.dof_slice = slice(0, self.get_num_dofs()) if self.fixed_hand else slice(6, 6 + self.get_num_dofs())
+
+    def create_gpu_commands(self, env_group, gym: v.Gym, reset_buf: torch.Tensor, inverse_reset_buf: torch.Tensor) -> None:
         """Create GPU commands for robot state and control."""
 
         reset_kin_cmd = env_group.create_articulation_kinematic_state_command(
@@ -219,6 +236,10 @@ class Robot:
         """Return the number of degrees of freedom (joints) in the robot."""
         return self.num_tendons if self.use_tendon else self.num_motors
 
+    def get_num_actions(self) -> int:
+        """Return the number of actions for the robot."""
+        return self.get_num_dofs() if self.fixed_hand else 6 + self.get_num_dofs()
+
     def get_state(self) -> dict[str, torch.Tensor]:
         """Update and return the robot-derived observation tensors."""
 
@@ -234,15 +255,16 @@ class Robot:
             "_6d_robot_to_world": self._6d_robot_to_world,
             "robot_linear_velocity_in_world": self.robot_linear_velocity_in_world,
             "robot_angular_velocity_in_world": self.robot_angular_velocity_in_world,
-            "get_joint_pos_buf": self.get_joint_pos_buf,
-            "get_joint_vel_buf": self.get_joint_vel_buf,
             "get_root_transform_buf": self.get_root_transform_buf,
             "get_root_vel_buf": self.get_root_vel_buf,
             "set_motor_cmd_buf": self.set_motor_cmd_buf,
         }
         if self.use_tendon:
-            state["get_tendon_lengths_buf"] = self.get_tendon_lengths_buf
-            state["get_tendon_vel_buf"] = self.get_tendon_vel_buf
+            state["dof_pos_buf"] = self.get_tendon_lengths_buf
+            state["dof_vel_buf"] = self.get_tendon_vel_buf
+        else:
+            state["dof_pos_buf"] = self.get_joint_pos_buf
+            state["dof_vel_buf"] = self.get_joint_vel_buf
         return state
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor, device: torch.device) -> None:
@@ -250,7 +272,7 @@ class Robot:
         self.reset_joint_pos_buf[reset_buf, :] = 0.0
         self.reset_joint_vel_buf[reset_buf, :] = 0.0
         if self.fixed_hand:
-          self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.7, 0.0, 0.0, 0.7], device=device)  
+            self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.7, 0.0, 0.0, 0.7], device=device)
         else:
             self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=device)
         self.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.1]], device=device)
@@ -269,7 +291,7 @@ class Robot:
         # The friction is average between two objects. So we set object friction to 0 and the robot hand to desired * 2
         static_friction = static_friction * 2.0
         dynamic_friction = dynamic_friction * 2.0
-        
+
         self.set_static_friction_buf[reset_buf] = static_friction
         self.set_dynamic_friction_buf[reset_buf] = dynamic_friction
         gym.set_rigid_material_properties(self.gpu_set_friction_cmd)
@@ -277,28 +299,60 @@ class Robot:
     def pre_physics_step(
         self,
         gym: v.Gym,
-        scaled_act_buf: torch.Tensor,
-        max_velocity: torch.Tensor,
+        act_buf: torch.Tensor,
     ) -> None:
         """Apply wrist velocity, joint motor commands, and gravity compensation."""
+        self.scaled_act_buf[:, self.root_slice] = scale(
+            act_buf[:, self.root_slice], -self.velocity_scale[self.root_slice], self.velocity_scale[self.root_slice]
+        )
+        self.scaled_act_buf[:, self.dof_slice] = scale(act_buf[:, self.dof_slice], self.min_revolute_scale, self.max_revolute_scale)
+
         # Apply wrist velocity commands
-        self.set_root_transform_buf[:] = self.get_root_transform_buf
-        self.set_root_vel_buf[:] = torch.clamp(scaled_act_buf[:, :6], -max_velocity, max_velocity)
-        gym.set_articulation_kinematic_states(self.gpu_set_kinematic_state_command_array)
+        if not self.fixed_hand:
+            self.set_root_transform_buf[:] = self.get_root_transform_buf
+            self.set_root_vel_buf[:] = torch.clamp(self.scaled_act_buf[:, self.root_slice], -self.max_velocity, self.max_velocity)
+            gym.set_articulation_kinematic_states(self.gpu_set_kinematic_state_command_array)
 
         self.set_motor_cmd_buf[:] = 0.0
 
         if self.use_tendon:
             # Apply tendon forces directly from the action
-            self.set_tendon_controls_buf[:] = torch.clamp(scaled_act_buf[:, 6:], 0.0, None)
+            self.set_tendon_controls_buf[:] = torch.clamp(self.scaled_act_buf[:, self.dof_slice], 0.0, None)
             gym.set_spatial_tendon_forces(self.gpu_set_tendon_control_command_array)
         else:
             # Apply joint motor commands
-            self.set_motor_cmd_buf[:] = torch.clamp(scaled_act_buf[:, 6:], 0.0, None)
+            self.set_motor_cmd_buf[:] = torch.clamp(self.scaled_act_buf[:, self.dof_slice], 0.0, None)
 
         # Apply anatgonistic spring to all joints
         self.set_motor_cmd_buf[:] += -0.1 * self.get_joint_pos_buf
-            
+
+        gym.set_motor_forces(self.gpu_set_motor_control_command_array)
+
+        # Gravity compensation on base link
+        self.set_force_torque_buf[:, :, 2] = 9.81 * self.link_masses
+        gym.set_link_external_forces(self.set_force_torque_cmd_arr)
+
+    def pre_gym_step(self, gym):
+
+        # Apply wrist velocity commands
+        if not self.fixed_hand:
+            self.set_root_transform_buf[:] = self.get_root_transform_buf
+            self.set_root_vel_buf[:] = torch.clamp(self.scaled_act_buf[:, self.root_slice], -self.max_velocity, self.max_velocity)
+            gym.set_articulation_kinematic_states(self.gpu_set_kinematic_state_command_array)
+
+        self.set_motor_cmd_buf[:] = 0.0
+
+        if self.use_tendon:
+            # Apply tendon forces directly from the action
+            self.set_tendon_controls_buf[:] = torch.clamp(self.scaled_act_buf[:, self.dof_slice], 0.0, None)
+            gym.set_spatial_tendon_forces(self.gpu_set_tendon_control_command_array)
+        else:
+            # Apply joint motor commands
+            self.set_motor_cmd_buf[:] = torch.clamp(self.scaled_act_buf[:, self.dof_slice], 0.0, None)
+
+        # Apply anatgonistic spring to all joints
+        self.set_motor_cmd_buf[:] += -0.1 * self.get_joint_pos_buf
+
         gym.set_motor_forces(self.gpu_set_motor_control_command_array)
 
         # Gravity compensation on base link

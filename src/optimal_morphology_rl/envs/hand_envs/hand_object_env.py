@@ -25,8 +25,6 @@ from optimal_morphology_rl.envs.hand_envs.helpers.hand_pen_helpers import (
 )
 from optimal_morphology_rl.helpers.numpy_vlearn import quaternion_to_6d
 
-from vlearn.torch_utils.torch_jit_utils import scale
-
 
 class HandObjectEnvironmentGpu(EnvironmentGpu):
     """
@@ -146,7 +144,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.env_def_handle = self.gym.create_environment_def("hand_env")
         env_def = self.gym.get_environment_def(self.env_def_handle)
 
-        self.robot = Robot(fixed_hand = self.fixed_hand, use_tendon=True)
+        self.robot = Robot(fixed_hand=self.fixed_hand, use_tendon=True)
         self.robot.create_envs(env_def, vsim_path, self.device)
 
         # Load all objects through ObjectGenerator (includes table)
@@ -172,35 +170,32 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
     def _setup_action_space(self):
         """Configure action space dimensions."""
-        self.num_actions = 6 + self.robot.get_num_dofs()  # wrist velocities (6) + motor commands
+        self.num_actions = self.robot.get_num_actions()
 
         self.action_space = Box(
-            low=np.full(self.num_actions, -1.0, dtype=np.float32), high=np.full(self.num_actions, 1.0, dtype=np.float32), dtype=np.float32
+            low=np.full(self.num_actions, -1.0, dtype=np.float32),
+            high=np.full(self.num_actions, 1.0, dtype=np.float32),
+            dtype=np.float32,
         )
-
-        self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=self.device)
-        self.max_velocity = self.velocity_scale * 2.0
-
-        min_scale = -1.0 * self.robot.max_torque
-        max_scale = 1.0 * self.robot.max_torque
-        if self.robot.use_tendon:
-            min_scale = -0.25 * self.robot.tendon_max_force
-            max_scale = 1.0 * self.robot.tendon_max_force
-
-        self.min_revolute_scale = torch.full((self.robot.get_num_dofs(),), min_scale, device=self.device)
-        self.max_revolute_scale = torch.full((self.robot.get_num_dofs(),), max_scale, device=self.device)
 
     def _setup_observation_space(self):
         """Configure observation space dimensions."""
         self.base_obs_slices = {}
         obs_offset = 0
+
+        if not self.fixed_hand:
+            for name, width in [
+                ("robot_pos_in_world", 3),
+                ("_6d_robot_to_world", 6),
+                ("robot_linear_velocity_in_world", 3),
+                ("robot_angular_velocity_in_world", 3),
+            ]:
+                self.base_obs_slices[name] = slice(obs_offset, obs_offset + width)
+                obs_offset += width
+
         for name, width in [
-            ("robot_pos_in_world", 3),
-            ("_6d_robot_to_world", 6),
-            ("robot_linear_velocity_in_world", 3),
-            ("robot_angular_velocity_in_world", 3),
-            ("get_joint_pos_buf", self.robot.num_joints),
-            ("get_joint_vel_buf", self.robot.num_joints),
+            ("dof_pos_buf", self.robot.get_num_dofs()),
+            ("dof_vel_buf", self.robot.get_num_dofs()),
             ("act_buf", self.num_actions),
             ("object_position_in_world", 3),
             ("_6d_object_to_world", 6),
@@ -208,7 +203,6 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             ("object_angular_velocity_in_world", 3),
             ("object_goal_pos_in_world", 3),
             ("_6d_object_goal_to_world", 6),
-            # ("trajectory_timestep", 1),
         ]:
             self.base_obs_slices[name] = slice(obs_offset, obs_offset + width)
             obs_offset += width
@@ -369,7 +363,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
     def reset_idx(self):
         if self.reset_buf.sum() == 0:
             return
-        
+
         # Reset environment buffers
         self.act_buf[self.reset_buf, :] = 0.0
         self.last_act_buf[self.reset_buf, :] = 0.0
@@ -392,14 +386,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         return obs, {}
 
     def pre_physics_step(self, actions: torch.Tensor):
-        if self.fixed_hand:
-            actions[:, :6] = 0.0
         self.last_act_buf[:] = self.act_buf[:]
         self.act_buf[:] = actions
-        self.scaled_act_buf[:, :6] = scale(self.act_buf[:, :6], -self.velocity_scale, self.velocity_scale)
-        self.scaled_act_buf[:, 6:] = scale(self.act_buf[:, 6:], self.min_revolute_scale, self.max_revolute_scale)
 
-        self.robot.pre_physics_step(self.gym, self.scaled_act_buf, self.max_velocity)
+        self.robot.pre_physics_step(self.gym, self.act_buf)
 
         # Apply extral force
         if self.force_module is not None:
@@ -450,12 +440,13 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         quat_object_goal_to_world = self.reward_object.goal_quat_object_to_world
         self._6d_object_goal_to_world = quaternion_to_6d(quat_object_goal_to_world)
 
-        self.base_obs[:, self.base_obs_slices["robot_pos_in_world"]] = robot_state["robot_pos_in_world"]
-        self.base_obs[:, self.base_obs_slices["_6d_robot_to_world"]] = robot_state["_6d_robot_to_world"]
-        self.base_obs[:, self.base_obs_slices["robot_linear_velocity_in_world"]] = robot_state["robot_linear_velocity_in_world"]
-        self.base_obs[:, self.base_obs_slices["robot_angular_velocity_in_world"]] = robot_state["robot_angular_velocity_in_world"]
-        self.base_obs[:, self.base_obs_slices["get_joint_pos_buf"]] = robot_state["get_joint_pos_buf"]
-        self.base_obs[:, self.base_obs_slices["get_joint_vel_buf"]] = robot_state["get_joint_vel_buf"]
+        if not self.fixed_hand:
+            self.base_obs[:, self.base_obs_slices["robot_pos_in_world"]] = robot_state["robot_pos_in_world"]
+            self.base_obs[:, self.base_obs_slices["_6d_robot_to_world"]] = robot_state["_6d_robot_to_world"]
+            self.base_obs[:, self.base_obs_slices["robot_linear_velocity_in_world"]] = robot_state["robot_linear_velocity_in_world"]
+            self.base_obs[:, self.base_obs_slices["robot_angular_velocity_in_world"]] = robot_state["robot_angular_velocity_in_world"]
+        self.base_obs[:, self.base_obs_slices["dof_pos_buf"]] = robot_state["dof_pos_buf"]
+        self.base_obs[:, self.base_obs_slices["dof_vel_buf"]] = robot_state["dof_vel_buf"]
         self.base_obs[:, self.base_obs_slices["act_buf"]] = self.act_buf
         self.base_obs[:, self.base_obs_slices["object_position_in_world"]] = object_pos_world
         self.base_obs[:, self.base_obs_slices["_6d_object_to_world"]] = object_6d_to_world
