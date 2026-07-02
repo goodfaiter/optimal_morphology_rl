@@ -517,9 +517,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         # Penalize object drops and end episode
         if self.reward_object_name != "cube":
-            drop_penalty = object_pos_in_world[:, 2] < 0.09
-        else:
             drop_penalty = object_pos_in_world[:, 2] < -0.1
+        else:
+            drop_penalty = object_pos_in_world[:, 2] < 0.09
         drop_reward = -1 * drop_penalty
         self.info["rewards"]["drop_penalty"] = drop_reward.sum().item() / self.total_num_envs
         self.rew_buf[:] += 10.0 * drop_reward
