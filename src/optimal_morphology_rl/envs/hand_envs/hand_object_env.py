@@ -40,8 +40,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         enable_scene_query: bool = True,
         max_episode_length: int = 6 * 60,  # 6 seconds at 60Hz control frequency
         gravity: v.Vec3 = v.Vec3(0, 0, -9.81),
-        timestep: float = 1 / 120,  # 120Hz sim frequency
-        frame_skip: int = 2,  # 60Hz control step
+        timestep: float = 1 / 60,  # 60Hz sim frequency
+        frame_skip: int = 1,  # 60Hz control step
         spacing: float = 0.5,
         initial_is_paused: bool = False,
         raise_exception: bool = False,
