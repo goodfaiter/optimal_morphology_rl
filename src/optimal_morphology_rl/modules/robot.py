@@ -284,7 +284,7 @@ class Robot:
         self.reset_joint_pos_buf[reset_buf, :] = 0.0
         self.reset_joint_vel_buf[reset_buf, :] = 0.0
         if self.fixed_hand:
-            self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.7, 0.0, 0.0, 0.7], device=device)
+            self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.6963642, 0.1227878, -0.1227878, 0.6963642], device=device)
         else:
             self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=device)
         self.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.1]], device=device)

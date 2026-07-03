@@ -272,6 +272,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.scaled_act_buf = torch.zeros_like(self.act_buf)
 
         self.timestep_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.long)
+        self.goal_aligned_steps_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.long)
 
     def create_gpu_commands(self):
         """Create GPU command arrays for efficient state queries and control."""
@@ -369,6 +370,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.last_act_buf[self.reset_buf, :] = 0.0
         self.progress_buf[self.reset_buf] = 0
         self.timestep_buf[self.reset_buf] = 0
+        self.goal_aligned_steps_buf[self.reset_buf] = 0
         self.obs_history.reset_idx(self.reset_buf)
         self.term_buf[self.reset_buf] = False
         self.trunc_buf[self.reset_buf] = False
@@ -473,8 +475,8 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.rew_buf[:] = 0.0
 
         object_pos_in_world = self.kinematic_sensor.pos_in_world
-        object_quat_world = self.kinematic_sensor.quat_sensor_to_world
-        _6d_object_to_world = quaternion_to_6d(object_quat_world)
+        quat_object_to_world = self.kinematic_sensor.quat_sensor_to_world
+        _6d_object_to_world = quaternion_to_6d(quat_object_to_world)
 
         # Reward for minimizing object-to-goal distance.
         if self.reward_object_name != "cube":
@@ -486,11 +488,30 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             self.rew_buf[:] += 1.5 * obj_goal_reward
 
         # Reward upright orientation
-        goal_alignment = torch.sum(self._6d_object_goal_to_world * _6d_object_to_world, dim=-1)
-        goal_alignment_normalized = goal_alignment / 2.0
-        goal_alignment_reward = goal_alignment_normalized
-        self.info["rewards"]["goal_orientation"] = goal_alignment_reward.sum().item() / self.total_num_envs
-        self.rew_buf[:] += 1.0 * goal_alignment_reward
+        if self.reward_object_name != "cube":
+            goal_alignment = torch.sum(self._6d_object_goal_to_world * _6d_object_to_world, dim=-1)
+            goal_alignment_normalized = goal_alignment / 2.0
+            goal_alignment_reward = goal_alignment_normalized
+            self.info["rewards"]["goal_orientation"] = goal_alignment_reward.sum().item() / self.total_num_envs
+            self.rew_buf[:] += 1.0 * goal_alignment_reward
+
+        self.goal_success = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.bool)
+        if self.reward_object_name == "cube":
+            # Reward upright orientation: geodesic angle between object and goal quaternions.
+            quat_object_goal_to_world = self.reward_object.goal_quat_object_to_world
+            quat_dot = torch.sum(quat_object_goal_to_world * quat_object_to_world, dim=-1).abs().clamp(max=1.0)
+            goal_angle = 2.0 * torch.acos(quat_dot)
+            goal_angle_normalized = goal_angle / 1.0  # angle_scale in radians
+            goal_alignment_reward = torch.exp(-(goal_angle_normalized**2))
+            self.info["rewards"]["goal_orientation"] = goal_alignment_reward.sum().item() / self.total_num_envs
+            self.rew_buf[:] += 1.0 * goal_alignment_reward
+
+            # Track consecutive timesteps within 20 degrees of goal orientation.
+            is_aligned = goal_angle < math.radians(20.0)
+            self.goal_aligned_steps_buf[is_aligned] += 1
+            self.goal_aligned_steps_buf[~is_aligned] = 0
+            self.goal_success = self.goal_aligned_steps_buf > 30  # more than 30 timesteps (0.5s at 60Hz)
+            self.rew_buf[:] += 20.0 * self.goal_success.float()
 
         # Reward distance between selected object and hand.
         if self.reward_object_name != "cube":
@@ -544,10 +565,18 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.rew_buf[:] += 10.0 * bounds_reward
 
         # Terminations
-        self.term_buf[:] = torch.logical_or(drop_penalty, bounds_penalty)
+        term = torch.logical_or(drop_penalty, bounds_penalty)
+        self.term_buf[:] = torch.logical_or(term, self.goal_success)
 
         # Truncations
         self.trunc_buf[:] = self.progress_buf >= self.max_episode_length
+
+        # Success rate among episodes that ended this step (not averaged over time).
+        if self.reward_object_name == "cube":
+            episode_end = torch.logical_or(self.term_buf, self.trunc_buf)
+            num_ended = episode_end.sum()
+            if num_ended > 0:
+                self.info["rewards"]["goal_success_rate"] = self.goal_success[episode_end].float().sum().item() / num_ended.item()
 
 
 async def main():
