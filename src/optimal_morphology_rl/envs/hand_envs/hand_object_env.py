@@ -594,17 +594,6 @@ async def main():
     assert torch.cuda.is_available(), "CUDA required"
     device = torch.device("cuda:0")
 
-    lin_vel = torch.tensor([0.0, 0.0, 0.0], device=device)
-    ang_vel = torch.tensor([0.0, 0.0, 0.0], device=device)
-    grasp_force = torch.tensor([0.0] * 13, device=device)
-    from optimal_morphology_rl.transfer.collector import HandController
-    import asyncio
-
-    controller = HandController(path="/dev/input/js0", linear_velocity=lin_vel, angular_velocity=ang_vel, grasp_force=grasp_force)
-
-    loop = asyncio.get_event_loop()
-    loop.create_task(controller.listen(timeout=30))
-
     # Create environment
     envs = HandObjectEnvironmentGpu(device=device, **config)
     obs, _ = envs.reset()
@@ -645,32 +634,6 @@ async def main():
             return actions.unsqueeze(0).expand(config["num_envs"], -1)
 
         control_fn = control_by_menu
-
-    import numpy as np
-
-    max_steps = 500
-    training_data = np.zeros((max_steps, 41))
-
-    # Main simulation loop
-    print("\nStarting simulation...")
-    step = 0
-    while not envs.render_finished:
-        # actions = control_fn()
-        # print(grasp_force)
-        # grasp_tensor = torch.ones((2,), device=device) * controller.grasp_force
-        actions = torch.cat([ang_vel, lin_vel, grasp_force], dim=-1).unsqueeze(0).expand(config["num_envs"], -1)
-        obs, rewards, terminations, truncations, infos = envs.step(actions)
-        obs = envs.base_obs[:, :41]
-        # print(obs[:, :6])
-        training_data[step, :] = obs[0].cpu().numpy()
-        step += 1
-        if step >= max_steps:
-            print("Saved data.")
-            break
-        await asyncio.sleep(0.01)  # Give event loop time to run
-
-    # save numpy
-    np.save("/workspace/optimal_morphology_rl/data/transfer/pick_up_example_41_new.npy", training_data)
 
 
 if __name__ == "__main__":
