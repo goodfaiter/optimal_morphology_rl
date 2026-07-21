@@ -21,6 +21,9 @@ dependencies = [
     "optimal_morphology_rl_assets",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
 [tool.uv.sources]
 vlearn_train = { workspace = true, editable = true }
 optimal_morphology_rl_assets = { workspace = true, editable = true }

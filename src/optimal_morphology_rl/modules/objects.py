@@ -1,7 +1,12 @@
+"""Object definitions used by the object generator module and legacy env."""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 import math
+
 import torch
-from abc import ABC, abstractmethod
 import vlearn as v
 
 from optimal_morphology_rl.helpers.numpy_vlearn import random_uniform_quaternion
@@ -9,7 +14,6 @@ from optimal_morphology_rl.helpers.numpy_vlearn import random_uniform_quaternion
 import importlib.resources as resources
 
 _IDENTITY_QUAT = (0.0, 0.0, 0.0, 1.0)
-_ASSET_ROOT = "/workspace/optimal_morphology_rl_assets/optimal_morphology_rl_assets/assets/objects"
 
 
 class ObjectBase(ABC):
@@ -120,7 +124,7 @@ class LoadedRigidObject(ObjectBase):
         env_def.import_definitions(
             self.asset_path,
             fixed=self.fixed,
-            use_visual_mesh=True,
+            use_visual_mesh=False,
             force_mass_computation=False,
             force_inertia_computation=False,
         )
@@ -289,7 +293,9 @@ class Cube(LoadedRigidObject):
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
         """Reset any object-specific buffers based on reset indices."""
-        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor([0.7071068, -0.7071068, 0, 0], device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, :4] = random_uniform_quaternion(
+            reset_buf.sum().item(), device=reset_buf.device, dtype=torch.float32
+        )
         self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[-0.05, -0.15, 0.15]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
@@ -299,19 +305,6 @@ class Cube(LoadedRigidObject):
 class Tomato(LoadedRigidObject):
     def __init__(self):
         super().__init__(name="tomato", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/tomato.vsim"))
-
-
-class TomatoExtreme(LoadedRigidObject):
-    def __init__(self):
-        super().__init__(name="tomato_extreme", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/tomato_extreme.vsim"))
-
-    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
-        """Reset the larger tomato above the table."""
-        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
-        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.0, 0.0, 0.075]], device=reset_buf.device)
-        self.set_vel_in_world_buf[reset_buf, :] = 0.0
-        gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
-        self.update_goal(reset_buf)
 
 
 class Knife(LoadedRigidObject):
@@ -324,24 +317,9 @@ class Mug(LoadedRigidObject):
         super().__init__(name="mug", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/mug.vsim"))
 
 
-def _assign_teal_material(env_def, object_name: str) -> None:
-    """Assign a teal RGB material to a rigid body for nicer rendering."""
-    teal_mat = v.RGBMaterial()
-    teal_mat.color = v.Vec3(0.0, 0.5, 0.5)
-    teal_mat.specular = 40.0
-    teal_mat.spec_intensity = 0.25
-    teal_mat_handle = env_def.create_rgb_material(teal_mat)
-    rigid_body_def_handle = env_def.get_rigid_body_def_handle_by_name(object_name)
-    env_def.assign_rgb_material_to_rigid_body(rigid_body_def_handle, teal_mat_handle)
-
-
 class Table(LoadedRigidObject):
     def __init__(self):
         super().__init__(name="table", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/table.vsim"), fixed=True)
-
-    def load(self, env_def):
-        super().load(env_def)
-        _assign_teal_material(env_def, self.name)
 
     @property
     def half_size_tensor(self) -> torch.Tensor:
@@ -355,10 +333,6 @@ class Table(LoadedRigidObject):
 class TableWithCamera(LoadedRigidObject):
     def __init__(self):
         super().__init__(name="table_with_camera", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/table_with_camera.vsim"), fixed=True)
-
-    def load(self, env_def):
-        super().load(env_def)
-        _assign_teal_material(env_def, self.name)
 
     @property
     def half_size_tensor(self) -> torch.Tensor:
@@ -379,7 +353,7 @@ class Drawer(LoadedArticulatedObject):
         lock_stiffness: float = 100.0,
         lock_damping: float = 10.0,
         max_lock_force: float = 5.0,
-        unlock_angle_threshold: float = math.radians(60.0),
+        unlock_angle_threshold: float = math.radians(80.0),
     ):
         super().__init__(name="drawer", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/drawer.vsim"), fixed=True)
         self.spring_stiffness = spring_stiffness
@@ -515,85 +489,8 @@ class Drawer(LoadedArticulatedObject):
 
 
 class Button(LoadedArticulatedObject):
-    def __init__(
-        self,
-        spring_stiffness: float = 0.1,
-        spring_damping: float = 0.01,
-        spring_rest_position: float = 0.0,
-        max_spring_force: float = 5.0,
-    ):
+    def __init__(self):
         super().__init__(name="button", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/button.vsim"), fixed=True)
-        self.spring_stiffness = spring_stiffness
-        self.spring_damping = spring_damping
-        self.spring_rest_position = spring_rest_position
-        self.max_spring_force = max_spring_force
-
-        # Set by load() once the articulation definition is available.
-        self.button_joint_motor_index: Optional[int] = None
-        self.button_joint_dof_index: Optional[int] = None
-        self.spring_motor_cmd_buf: Optional[torch.Tensor] = None
-        self.gpu_spring_motor_cmd_array = None
-
-    def load(self, env_def):
-        super().load(env_def)
-
-        if self.art_def is None:
-            return
-
-        # Enable motor control so we can drive the button joint.
-        self.art_def.enable_control_type(v.ArticulationControlType.MOTOR, True)
-
-        # Locate the button joint motor / DOF.
-        for i in range(self.art_def.get_num_motor_defs()):
-            motor_def = self.art_def.get_motor_def(i)
-            if motor_def.joint_name == "button":
-                self.button_joint_motor_index = i
-                self.button_joint_dof_index = motor_def.dof_index
-
-    def allocate_buffers(self, total_num_envs: int, device: torch.device):
-        """Allocate buffers for articulated state and the button spring motor."""
-        super().allocate_buffers(total_num_envs, device)
-
-        if self.button_joint_motor_index is not None and self.num_motors > 0:
-            self.spring_motor_cmd_buf = torch.zeros(
-                (total_num_envs, self.num_motors), device=device, dtype=torch.float32
-            )
-
-    def create_gpu_command(self, env_group, gym, reset_buf):
-        """Create GPU commands for articulated state and the button spring motor."""
-        super().create_gpu_command(env_group, gym, reset_buf)
-
-        if self.spring_motor_cmd_buf is not None and self.num_motors > 0:
-            set_motor_cmd = env_group.create_motor_control_command(
-                v.wrap_gpu_buffer(self.spring_motor_cmd_buf),
-                self.handle,
-                (0, self.num_motors),
-            )
-            self.gpu_spring_motor_cmd_array = gym.create_gpu_array([set_motor_cmd])
-
-    def pre_physics_step(self, gym: v.Gym):
-        """Apply a spring force to the button joint."""
-        if (
-            self.button_joint_dof_index is None
-            or self.button_joint_motor_index is None
-            or self.spring_motor_cmd_buf is None
-            or self.gpu_spring_motor_cmd_array is None
-        ):
-            return
-
-        q_button = self.get_joint_pos_buf[:, self.button_joint_dof_index]
-        qd_button = self.get_joint_vel_buf[:, self.button_joint_dof_index]
-        force = -self.spring_stiffness * (q_button - self.spring_rest_position)
-        force = force - self.spring_damping * qd_button
-        force = torch.clamp(force, -self.max_spring_force, self.max_spring_force)
-
-        self.spring_motor_cmd_buf.zero_()
-        self.spring_motor_cmd_buf[:, self.button_joint_motor_index] = force
-        gym.set_motor_forces(self.gpu_spring_motor_cmd_array)
-
-    def post_physics_step(self, gym: v.Gym):
-        """Post-step hook; nothing to do for the button spring currently."""
-        pass
 
     def update_goal(self, reset_buf: torch.Tensor):
         self.goal_pos_in_world[reset_buf, 0] = 0.3
@@ -606,101 +503,20 @@ class Button(LoadedArticulatedObject):
         self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
         self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
-
-        # Reset the button to its rest position and zero velocity.
-        if self.button_joint_dof_index is not None:
-            self.set_joint_pos_buf[reset_buf, self.button_joint_dof_index] = self.spring_rest_position
-            self.set_joint_vel_buf[reset_buf, self.button_joint_dof_index] = 0.0
-
         gym.set_articulation_kinematic_states(self.gpu_set_object_kin_cmd_array)
 
         self.update_goal(reset_buf)
 
 
-class ButtonDifficult(Button):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.name = "button_difficult"
-        self.asset_path = str(resources.files("optimal_morphology_rl_assets.assets") / "objects/button_difficult.vsim")
-
-    def update_goal(self, reset_buf: torch.Tensor):
-        self.goal_pos_in_world[reset_buf, 0] = 0.35
-        self.goal_pos_in_world[reset_buf, 1] = 0.0
-        self.goal_pos_in_world[reset_buf, 2] = 0.1
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
-
-
-class ObjectGenerator:
-    """Container for all objects in the environment."""
-
-    OBJECT_REGISTRY: Dict[str, type] = {
-        "cube": Cube,
-        "tomato": Tomato,
-        "tomato_extreme": TomatoExtreme,
-        "knife": Knife,
-        "mug": Mug,
-        "table": Table,
-        "table_with_camera": TableWithCamera,
-        "drawer": Drawer,
-        "button": Button,
-        "button_difficult": ButtonDifficult,
-    }
-
-    def __init__(self, object_names: List[str]):
-        """
-        Initialize ObjectGenerator.
-
-        Args:
-            object_names: List of object names to create (e.g., ["knife", "table"])
-        """
-        self.object_names = object_names
-
-        # Create object instances
-        self.objects: Dict[str, ObjectBase] = {}
-        for obj_name in object_names:
-            if obj_name not in self.OBJECT_REGISTRY:
-                raise ValueError(f"Unknown object: {obj_name}. Available: {list(self.OBJECT_REGISTRY.keys())}")
-            self.objects[obj_name] = self.OBJECT_REGISTRY[obj_name]()
-
-    def load(self, env_def):
-        """Load objects into environment definition."""
-        for obj_name in self.object_names:
-            self.objects[obj_name].load(env_def)
-
-    def allocate_buffers(self, total_num_envs: int, device):
-        """Allocate GPU buffers for all objects."""
-        for obj in self.objects.values():
-            obj.allocate_buffers(total_num_envs, device)
-
-    def create_gpu_commands(self, env_group, gym, reset_buf) -> any:
-        """Create and return GPU command array for all objects."""
-        for obj in self.objects.values():
-            obj.create_gpu_command(env_group, gym, reset_buf)
-
-    def refresh_buffers(self, gym):
-        """Refresh state buffers for all objects."""
-        for obj in self.objects.values():
-            obj.refresh_buffers(gym)
-
-    def pre_physics_step(self, gym) -> None:
-        """Dispatch pre-physics hook to all objects."""
-        for obj in self.objects.values():
-            obj.pre_physics_step(gym)
-
-    def post_physics_step(self, gym) -> None:
-        """Dispatch post-physics hook to all objects."""
-        for obj in self.objects.values():
-            obj.post_physics_step(gym)
-
-    def get_object(self, name: str) -> ObjectBase:
-        """Get a specific object by name."""
-        return self.objects.get(name)
-
-    def get_object_link_offset(self, name: str) -> int:
-        """Return link-based offset for the object based on object order."""
-        offset = 0
-        for obj_name in self.object_names:
-            offset += self.objects[obj_name].get_link_offset()
-            if obj_name == name:
-                return offset
-        raise ValueError(f"Unknown object: {name}.")
+#: Mapping from object name to object class.  Used by the legacy
+#: :class:`ObjectGenerator` and by :class:`ObjectGeneratorModule`.
+OBJECT_REGISTRY: Dict[str, type] = {
+    "cube": Cube,
+    "tomato": Tomato,
+    "knife": Knife,
+    "mug": Mug,
+    "table": Table,
+    "table_with_camera": TableWithCamera,
+    "drawer": Drawer,
+    "button": Button,
+}

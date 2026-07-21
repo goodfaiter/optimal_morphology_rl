@@ -1,0 +1,27 @@
+modules:
+  - create_rigid_vsim_envs
+  - robot
+  - object_generator
+
+create_rigid_vsim_envs:
+  num_envs: 4096
+  device: cuda:0
+  rendering: false
+  enable_scene_query: true
+  with_window: false
+  max_episode_length: 360
+  timestep: 0.008333
+  frame_skip: 2
+  spacing: 0.5
+  gravity: [0.0, 0.0, -9.81]
+  up_axis: [0.0, 0.0, 1.0]
+
+robot:
+  vsim_path: /workspace/data/vsim/claw_3_tendon.vsim
+  fixed_hand: false
+  use_tendon: true
+
+object_generator:
+  reward_object: drawer
+  scene_objects:
+    - table
