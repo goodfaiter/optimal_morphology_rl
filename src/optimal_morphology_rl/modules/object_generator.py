@@ -289,9 +289,7 @@ class Cube(LoadedRigidObject):
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
         """Reset any object-specific buffers based on reset indices."""
-        self.set_trans_object_to_world_buf[reset_buf, :4] = random_uniform_quaternion(
-            reset_buf.sum().item(), device=reset_buf.device, dtype=torch.float32
-        )
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor([0.7071068, -0.7071068, 0, 0], device=reset_buf.device)
         self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[-0.05, -0.15, 0.15]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)

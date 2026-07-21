@@ -274,6 +274,17 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.timestep_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.long)
         self.goal_aligned_steps_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.long)
 
+        # Rolling history of episode-end outcomes for cumulative success-rate reporting.
+        # Stores [num_successes, num_ended] pairs per step over the last 1000 steps.
+        self.episode_success_history = TimeSeriesBuffer(
+            num_envs=1,
+            dim=2,
+            max_size=1000,
+            stride=1,
+            device=self.device,
+        )
+        self.episode_success_history_count = 0
+
     def create_gpu_commands(self):
         """Create GPU command arrays for efficient state queries and control."""
         self.robot.create_gpu_commands(self.env_group, self.gym, self.reset_buf, self.inverse_reset_buf)
@@ -376,7 +387,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.trunc_buf[self.reset_buf] = False
 
         # Reset modules
-        self.robot.reset_idx(self.gym, self.reset_buf, self.device)
+        self.robot.reset_idx(self.gym, self.reset_buf, self.device, rand_fric=True if self.reward_object_name != "cube" else False)
         self.reward_object.reset_idx(self.gym, self.reset_buf)
         self.visualize_goal()
 
@@ -504,21 +515,22 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         self.goal_success = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.bool)
         if self.reward_object_name == "cube":
-            # Reward upright orientation: geodesic angle between object and goal quaternions.
-            quat_object_goal_to_world = self.reward_object.goal_quat_object_to_world
-            quat_dot = torch.sum(quat_object_goal_to_world * quat_object_to_world, dim=-1).abs().clamp(max=1.0)
-            goal_angle = 2.0 * torch.acos(quat_dot)
-            goal_angle_normalized = goal_angle / 1.0  # angle_scale in radians
-            goal_alignment_reward = torch.exp(-(goal_angle_normalized**2))
+            # Reward orientation alignment via 6D rotation representation similarity.
+            goal_alignment = torch.sum(self._6d_object_goal_to_world * _6d_object_to_world, dim=-1) + 2.0
+            goal_alignment_normalized = goal_alignment / 4.0
+            goal_alignment_reward = torch.exp(-2.0 * (1.0 - goal_alignment_normalized))
             self.info["rewards"]["goal_orientation"] = goal_alignment_reward.sum().item() / self.total_num_envs
             self.rew_buf[:] += 1.0 * goal_alignment_reward
 
-            # Track consecutive timesteps within 20 degrees of goal orientation.
-            is_aligned = goal_angle < math.radians(20.0)
+            # Track consecutive timesteps within 15 degrees of goal orientation.
+            quat_object_goal_to_world = self.reward_object.goal_quat_object_to_world
+            quat_dot = torch.sum(quat_object_goal_to_world * quat_object_to_world, dim=-1).abs().clamp(max=1.0)
+            goal_angle = 2.0 * torch.acos(quat_dot)
+            is_aligned = goal_angle < math.radians(15.0)
             self.goal_aligned_steps_buf[is_aligned] += 1
             self.goal_aligned_steps_buf[~is_aligned] = 0
             self.goal_success = self.goal_aligned_steps_buf > 30  # more than 30 timesteps (0.5s at 60Hz)
-            self.rew_buf[:] += 20.0 * self.goal_success.float()
+            self.rew_buf[:] += 50.0 * self.goal_success.float()
 
         # Reward distance between selected object and hand.
         if self.reward_object_name != "cube":
@@ -578,12 +590,24 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # Truncations
         self.trunc_buf[:] = self.progress_buf >= self.max_episode_length
 
-        # Success rate among episodes that ended this step (not averaged over time).
+        # Cumulative goal success rate over the last 1000 env steps.
         if self.reward_object_name == "cube":
             episode_end = torch.logical_or(self.term_buf, self.trunc_buf)
             num_ended = episode_end.sum()
             if num_ended > 0:
-                self.info["rewards"]["goal_success_rate"] = self.goal_success[episode_end].float().sum().item() / num_ended.item()
+                num_success = self.goal_success[episode_end].float().sum()
+                entry = torch.stack([num_success, num_ended.float()], dim=-1).unsqueeze(0)
+            else:
+                entry = torch.zeros((1, 2), device=self.device, dtype=torch.float32)
+            self.episode_success_history.add(entry)
+            self.episode_success_history_count = min(self.episode_success_history_count + 1, 1000)
+
+            history = self.episode_success_history.get()[0]
+            filled_history = history[: self.episode_success_history_count]
+            total_ended = filled_history[:, 1].sum()
+            if total_ended > 0:
+                total_success = filled_history[:, 0].sum()
+                self.info["rewards"]["goal_success_rate"] = (total_success / total_ended).item()
 
 
 async def main():
