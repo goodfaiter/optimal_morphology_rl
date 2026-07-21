@@ -397,6 +397,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         if self.force_module is not None:
             self.force_module.step(self.gym)
 
+        # Apply object-level pre-physics hooks (e.g. drawer handle spring).
+        self.objects.pre_physics_step(self.gym)
+
     def refresh_buffers(self):
         """Refresh all state buffers from simulation."""
         self.robot.refresh_buffers(self.gym)
@@ -419,6 +422,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         # Update state
         self.refresh_buffers()
+        self.objects.post_physics_step(self.gym)
         self.compute_observations()
         self.compute_reward_termination_truncation()
 
@@ -481,7 +485,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # Reward for minimizing object-to-goal distance.
         if self.reward_object_name != "cube":
             obj_goal_dist = torch.norm(self.reward_object.goal_pos_in_world - object_pos_in_world, dim=-1)
-            obj_goal_dist_normalized = obj_goal_dist / 0.2
+            if self.reward_object_name != "button":
+                obj_goal_dist_normalized = obj_goal_dist / 0.2
+            else:
+                obj_goal_dist_normalized = obj_goal_dist / 0.05
             obj_goal_reward = torch.exp(-1.0 * obj_goal_dist_normalized**2)
             self.info["rewards"]["goal_position_reward"] = obj_goal_reward.sum().item() / self.total_num_envs
             self.info["rewards"]["goal_position_error_l2_norm_mm"] = obj_goal_dist.sum().item() / self.total_num_envs * 1000

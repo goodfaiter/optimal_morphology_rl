@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional
+import math
 import torch
 from abc import ABC, abstractmethod
 import vlearn as v
@@ -33,6 +34,14 @@ class ObjectBase(ABC):
         # Goals
         self.goal_pos_in_world: Optional[torch.Tensor] = None
         self.goal_quat_object_to_world: Optional[torch.Tensor] = None
+
+    def pre_physics_step(self, gym: v.Gym) -> None:
+        """Called before the physics step; subclasses may apply control forces."""
+        pass
+
+    def post_physics_step(self, gym: v.Gym) -> None:
+        """Called after the physics step; subclasses may run cleanup or logging."""
+        pass
 
     @abstractmethod
     def load(self, env_def):
@@ -180,8 +189,10 @@ class LoadedArticulatedObject(ObjectBase):
         super().__init__(name)
         self.asset_path = asset_path
         self.fixed = fixed
+        self.art_def = None
         self.num_joints = 0
         self.num_links = 0
+        self.num_motors = 0
         self.link_names: List[str] = []
 
         self.get_joint_pos_buf: Optional[torch.Tensor] = None
@@ -203,13 +214,14 @@ class LoadedArticulatedObject(ObjectBase):
         object_root_trans_init = v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, 0))
 
         object_def_handle = env_def.get_articulation_def_handle_by_name(self.name)
-        art_def = env_def.get_articulation_def(object_def_handle)
-        self.num_joints = art_def.get_num_joint_dof_defs()
-        self.num_links = art_def.get_num_link_defs()
+        self.art_def = env_def.get_articulation_def(object_def_handle)
+        self.num_joints = self.art_def.get_num_joint_dof_defs()
+        self.num_links = self.art_def.get_num_link_defs()
+        self.num_motors = self.art_def.get_num_motor_defs()
         for i in range(self.num_links):
-            link_def = art_def.get_link_def(i)
+            link_def = self.art_def.get_link_def(i)
             print(link_def)
-        self.link_names = [art_def.get_link_def(i).name for i in range(self.num_links)]
+        self.link_names = [self.art_def.get_link_def(i).name for i in range(self.num_links)]
         self.handle = env_def.create_articulation(object_def_handle, object_root_trans_init, self.name)
 
         # The friction is average between two objects. So we set this one to 0 and the robot hand to desired * 2
@@ -220,7 +232,7 @@ class LoadedArticulatedObject(ObjectBase):
         rigid_mat.damping = 0.0
         rigid_mat.roughness = 0.0
         rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
-        for i in range(art_def.get_num_link_defs()):
+        for i in range(self.art_def.get_num_link_defs()):
             env_def.assign_rigid_material_to_articulation_link(object_def_handle, rigid_mat_handle, i)
 
     def allocate_buffers(self, total_num_envs: int, device: torch.device):
@@ -328,20 +340,144 @@ class TableWithCamera(LoadedRigidObject):
 
 
 class Drawer(LoadedArticulatedObject):
-    def __init__(self):
+    def __init__(
+        self,
+        spring_stiffness: float = 0.01,
+        spring_damping: float = 0.05,
+        spring_rest_angle: float = 0.0,
+        max_spring_torque: float = 1.0,
+        lock_stiffness: float = 100.0,
+        lock_damping: float = 10.0,
+        max_lock_force: float = 5.0,
+        unlock_angle_threshold: float = math.radians(60.0),
+    ):
         super().__init__(name="drawer", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/drawer.vsim"), fixed=True)
+        self.spring_stiffness = spring_stiffness
+        self.spring_damping = spring_damping
+        self.spring_rest_angle = spring_rest_angle
+        self.max_spring_torque = max_spring_torque
+
+        # Latch parameters: the drawer prismatic joint is locked until the
+        # handle rotates past unlock_angle_threshold.
+        self.lock_stiffness = lock_stiffness
+        self.lock_damping = lock_damping
+        self.max_lock_force = max_lock_force
+        self.unlock_angle_threshold = unlock_angle_threshold
+
+        # Set by load() once the articulation definition is available.
+        self.handle_joint_motor_index: Optional[int] = None
+        self.handle_joint_dof_index: Optional[int] = None
+        self.drawer_joint_motor_index: Optional[int] = None
+        self.drawer_joint_dof_index: Optional[int] = None
+        self.spring_motor_cmd_buf: Optional[torch.Tensor] = None
+        self.gpu_spring_motor_cmd_array = None
+        self.unlocked_buf: Optional[torch.Tensor] = None
+
+    def load(self, env_def):
+        super().load(env_def)
+
+        if self.art_def is None:
+            return
+
+        # Enable motor control so we can drive the handle joint.
+        self.art_def.enable_control_type(v.ArticulationControlType.MOTOR, True)
+
+        # Locate the handle and drawer joint motors / DOFs.
+        for i in range(self.art_def.get_num_motor_defs()):
+            motor_def = self.art_def.get_motor_def(i)
+            if motor_def.joint_name == "handle_joint":
+                self.handle_joint_motor_index = i
+                self.handle_joint_dof_index = motor_def.dof_index
+            elif motor_def.joint_name == "drawer_joint":
+                self.drawer_joint_motor_index = i
+                self.drawer_joint_dof_index = motor_def.dof_index
+
+    def allocate_buffers(self, total_num_envs: int, device: torch.device):
+        """Allocate buffers for articulated state and the handle spring motor."""
+        super().allocate_buffers(total_num_envs, device)
+
+        if (
+            self.handle_joint_motor_index is not None
+            and self.drawer_joint_motor_index is not None
+            and self.num_motors > 0
+        ):
+            self.spring_motor_cmd_buf = torch.zeros((total_num_envs, self.num_motors), device=device, dtype=torch.float32)
+            self.unlocked_buf = torch.zeros((total_num_envs,), device=device, dtype=torch.bool)
+
+    def create_gpu_command(self, env_group, gym, reset_buf):
+        """Create GPU commands for articulated state and the handle spring motor."""
+        super().create_gpu_command(env_group, gym, reset_buf)
+
+        if self.spring_motor_cmd_buf is not None and self.num_motors > 0:
+            set_motor_cmd = env_group.create_motor_control_command(
+                v.wrap_gpu_buffer(self.spring_motor_cmd_buf),
+                self.handle,
+                (0, self.num_motors),
+            )
+            self.gpu_spring_motor_cmd_array = gym.create_gpu_array([set_motor_cmd])
+
+    def pre_physics_step(self, gym: v.Gym):
+        """Apply a spring torque to the handle and a lock force to the drawer joint."""
+        if (
+            self.handle_joint_dof_index is None
+            or self.handle_joint_motor_index is None
+            or self.drawer_joint_dof_index is None
+            or self.drawer_joint_motor_index is None
+            or self.spring_motor_cmd_buf is None
+            or self.gpu_spring_motor_cmd_array is None
+            or self.unlocked_buf is None
+        ):
+            return
+
+        # Handle spring torque.
+        q_handle = self.get_joint_pos_buf[:, self.handle_joint_dof_index]
+        qd_handle = self.get_joint_vel_buf[:, self.handle_joint_dof_index]
+        torque = -self.spring_stiffness * (q_handle - self.spring_rest_angle)
+        torque = torch.clamp(torque, -self.max_spring_torque, self.max_spring_torque)
+
+        # Once the handle is close to 90 degrees, unlock the drawer for this episode.
+        self.unlocked_buf |= torch.abs(q_handle) >= self.unlock_angle_threshold
+
+        # Drawer lock: hold the prismatic joint at q=0 until unlocked.
+        q_drawer = self.get_joint_pos_buf[:, self.drawer_joint_dof_index]
+        qd_drawer = self.get_joint_vel_buf[:, self.drawer_joint_dof_index]
+        lock_force = torch.zeros_like(q_drawer)
+        locked = ~self.unlocked_buf
+        if locked.any():
+            lock_force[locked] = (
+                -self.lock_stiffness * q_drawer[locked]
+                - self.lock_damping * qd_drawer[locked]
+            )
+            lock_force = torch.clamp(lock_force, -self.max_lock_force, self.max_lock_force)
+
+        self.spring_motor_cmd_buf.zero_()
+        self.spring_motor_cmd_buf[:, self.handle_joint_motor_index] = torque
+        self.spring_motor_cmd_buf[:, self.drawer_joint_motor_index] = lock_force
+        gym.set_motor_forces(self.gpu_spring_motor_cmd_array)
+
+    def post_physics_step(self, gym: v.Gym):
+        """Post-step hook; nothing to do for the drawer spring currently."""
+        pass
 
     def update_goal(self, reset_buf: torch.Tensor):
         self.goal_pos_in_world[reset_buf, 0] = 0.0
         self.goal_pos_in_world[reset_buf, 1] = 0.0
         self.goal_pos_in_world[reset_buf, 2] = 0.1
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        # Goal orientation: handle rotated 90 degrees around its x-axis.
+        half = math.sin(math.pi / 4.0)
+        w = math.cos(math.pi / 4.0)
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(
+            [half, 0.0, 0.0, w], device=reset_buf.device
+        )
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
         """Reset any object-specific buffers based on reset indices."""
         self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
         self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
+
+        if self.unlocked_buf is not None:
+            self.unlocked_buf[reset_buf] = False
 
         gym.set_articulation_kinematic_states(self.gpu_set_object_kin_cmd_array)
 
@@ -419,6 +555,16 @@ class ObjectGenerator:
         """Refresh state buffers for all objects."""
         for obj in self.objects.values():
             obj.refresh_buffers(gym)
+
+    def pre_physics_step(self, gym) -> None:
+        """Dispatch pre-physics hook to all objects."""
+        for obj in self.objects.values():
+            obj.pre_physics_step(gym)
+
+    def post_physics_step(self, gym) -> None:
+        """Dispatch post-physics hook to all objects."""
+        for obj in self.objects.values():
+            obj.post_physics_step(gym)
 
     def get_object(self, name: str) -> ObjectBase:
         """Get a specific object by name."""
