@@ -483,8 +483,85 @@ class Drawer(LoadedArticulatedObject):
 
 
 class Button(LoadedArticulatedObject):
-    def __init__(self):
+    def __init__(
+        self,
+        spring_stiffness: float = 10.0,
+        spring_damping: float = 1.0,
+        spring_rest_position: float = 0.0,
+        max_spring_force: float = 5.0,
+    ):
         super().__init__(name="button", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/button.vsim"), fixed=True)
+        self.spring_stiffness = spring_stiffness
+        self.spring_damping = spring_damping
+        self.spring_rest_position = spring_rest_position
+        self.max_spring_force = max_spring_force
+
+        # Set by load() once the articulation definition is available.
+        self.button_joint_motor_index: Optional[int] = None
+        self.button_joint_dof_index: Optional[int] = None
+        self.spring_motor_cmd_buf: Optional[torch.Tensor] = None
+        self.gpu_spring_motor_cmd_array = None
+
+    def load(self, env_def):
+        super().load(env_def)
+
+        if self.art_def is None:
+            return
+
+        # Enable motor control so we can drive the button joint.
+        self.art_def.enable_control_type(v.ArticulationControlType.MOTOR, True)
+
+        # Locate the button joint motor / DOF.
+        for i in range(self.art_def.get_num_motor_defs()):
+            motor_def = self.art_def.get_motor_def(i)
+            if motor_def.joint_name == "button":
+                self.button_joint_motor_index = i
+                self.button_joint_dof_index = motor_def.dof_index
+
+    def allocate_buffers(self, total_num_envs: int, device: torch.device):
+        """Allocate buffers for articulated state and the button spring motor."""
+        super().allocate_buffers(total_num_envs, device)
+
+        if self.button_joint_motor_index is not None and self.num_motors > 0:
+            self.spring_motor_cmd_buf = torch.zeros(
+                (total_num_envs, self.num_motors), device=device, dtype=torch.float32
+            )
+
+    def create_gpu_command(self, env_group, gym, reset_buf):
+        """Create GPU commands for articulated state and the button spring motor."""
+        super().create_gpu_command(env_group, gym, reset_buf)
+
+        if self.spring_motor_cmd_buf is not None and self.num_motors > 0:
+            set_motor_cmd = env_group.create_motor_control_command(
+                v.wrap_gpu_buffer(self.spring_motor_cmd_buf),
+                self.handle,
+                (0, self.num_motors),
+            )
+            self.gpu_spring_motor_cmd_array = gym.create_gpu_array([set_motor_cmd])
+
+    def pre_physics_step(self, gym: v.Gym):
+        """Apply a spring force to the button joint."""
+        if (
+            self.button_joint_dof_index is None
+            or self.button_joint_motor_index is None
+            or self.spring_motor_cmd_buf is None
+            or self.gpu_spring_motor_cmd_array is None
+        ):
+            return
+
+        q_button = self.get_joint_pos_buf[:, self.button_joint_dof_index]
+        qd_button = self.get_joint_vel_buf[:, self.button_joint_dof_index]
+        force = -self.spring_stiffness * (q_button - self.spring_rest_position)
+        force = force - self.spring_damping * qd_button
+        force = torch.clamp(force, -self.max_spring_force, self.max_spring_force)
+
+        self.spring_motor_cmd_buf.zero_()
+        self.spring_motor_cmd_buf[:, self.button_joint_motor_index] = force
+        gym.set_motor_forces(self.gpu_spring_motor_cmd_array)
+
+    def post_physics_step(self, gym: v.Gym):
+        """Post-step hook; nothing to do for the button spring currently."""
+        pass
 
     def update_goal(self, reset_buf: torch.Tensor):
         self.goal_pos_in_world[reset_buf, 0] = 0.3
@@ -497,11 +574,15 @@ class Button(LoadedArticulatedObject):
         self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
         self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
+
+        # Reset the button to its rest position and zero velocity.
+        if self.button_joint_dof_index is not None:
+            self.set_joint_pos_buf[reset_buf, self.button_joint_dof_index] = self.spring_rest_position
+            self.set_joint_vel_buf[reset_buf, self.button_joint_dof_index] = 0.0
+
         gym.set_articulation_kinematic_states(self.gpu_set_object_kin_cmd_array)
 
         self.update_goal(reset_buf)
-
-    
 
 
 class ObjectGenerator:
