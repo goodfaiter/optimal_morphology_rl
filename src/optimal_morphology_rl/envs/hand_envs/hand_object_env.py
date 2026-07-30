@@ -3,8 +3,6 @@ import torch
 import numpy as np
 from vlearn.spaces import Box
 import vlearn as v
-import os
-import sys
 from optimal_morphology_rl.modules.contacts import Contacts
 from optimal_morphology_rl.modules.kinematic_sensor import KinematicSensor
 from optimal_morphology_rl.modules.force_sensors import ForceSensors
@@ -15,9 +13,7 @@ from optimal_morphology_rl.modules.external_force import ExternalForceConfig, Ex
 
 from pathlib import Path
 
-# TODO: Refactor to avoid this hack to import from the vlearn repo.
-sys.path.append(os.path.join(os.path.dirname(__file__), "/workspace/vlearn/train/envs/"))
-from environment import EnvironmentGpu
+from train.envs.environment import EnvironmentGpu
 
 from time_series_buffer.time_series_buffer import TimeSeriesBuffer
 from optimal_morphology_rl.envs.hand_envs.helpers.hand_pen_helpers import (

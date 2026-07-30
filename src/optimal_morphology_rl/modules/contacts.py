@@ -4,12 +4,7 @@ import torch
 import vlearn as v
 from vlearn import gym
 
-# TODO: Refactor to avoid this hack to import from the vlearn repo.
-import os
-import sys
-
-sys.path.append(os.path.join(os.path.dirname(__file__), "/workspace/vlearn/train/envs/"))
-from environment import EnvironmentGpu
+from train.envs.environment import EnvironmentGpu
 
 
 class Contacts:

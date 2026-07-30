@@ -9,15 +9,7 @@ import wandb
 from optimal_morphology_rl.tendon_model.buffer import TimeSeriesBuffer
 from optimal_morphology_rl.tendon_model.tendon_force_estimation import TendonForceEstimation
 
-# from tools.vlearn.train.envs.environment import EnvironmentGpu
-import os
-import sys
-
-# sys.path.append(os.path.join(os.path.dirname(__file__), '/workspace/tools/vlearn/train/envs/'))
-# from environment import EnvironmentGpu
-from vlearn_train.envs.environment import EnvironmentGpu
-
-# from vlearn.train.envs.environment import EnvironmentGpu
+from train.envs.environment import EnvironmentGpu
 from vlearn.torch_utils.torch_jit_utils import scale, quat_mul, quat_conjugate, v_rpy_from_quat
 
 
