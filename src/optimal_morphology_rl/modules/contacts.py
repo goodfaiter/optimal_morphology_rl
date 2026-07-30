@@ -72,7 +72,7 @@ class Contacts:
         for name in link_name_set:
             for i in range(self.num_links):
                 link_def = self.env.robot.art_def.get_link_def(i)
-                if name in link_def.name.lower():
+                if link_def.name.lower().endswith(name):
                     self.monitored_link_mask[i] = True
 
         if not torch.any(self.monitored_link_mask):
