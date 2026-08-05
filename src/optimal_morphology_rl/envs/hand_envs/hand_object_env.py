@@ -492,10 +492,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # Reward for minimizing object-to-goal distance.
         if self.reward_object_name != "cube":
             obj_goal_dist = torch.norm(self.reward_object.goal_pos_in_world - object_pos_in_world, dim=-1)
-            if self.reward_object_name != "button":
-                obj_goal_dist_normalized = obj_goal_dist / 0.2
-            else:
+            if self.reward_object_name == "button" or self.reward_object_name == "drawer":
                 obj_goal_dist_normalized = obj_goal_dist / 0.05
+            else:
+                obj_goal_dist_normalized = obj_goal_dist / 0.2
             obj_goal_reward = torch.exp(-1.0 * obj_goal_dist_normalized**2)
             self.info["rewards"]["goal_position_reward"] = obj_goal_reward.sum().item() / self.total_num_envs
             self.info["rewards"]["goal_position_error_l2_norm_mm"] = obj_goal_dist.sum().item() / self.total_num_envs * 1000

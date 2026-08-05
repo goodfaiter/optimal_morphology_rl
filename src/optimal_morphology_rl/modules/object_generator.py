@@ -485,8 +485,8 @@ class Drawer(LoadedArticulatedObject):
 class Button(LoadedArticulatedObject):
     def __init__(
         self,
-        spring_stiffness: float = 10.0,
-        spring_damping: float = 1.0,
+        spring_stiffness: float = 0.1,
+        spring_damping: float = 0.01,
         spring_rest_position: float = 0.0,
         max_spring_force: float = 5.0,
     ):
