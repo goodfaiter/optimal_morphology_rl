@@ -250,10 +250,11 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             else self.objects.get_object("table_with_camera")
         )
         self.table_half_size = table_obj.half_size
+        padding = 0.2
         self.table_bounds = torch.tensor(
             [
-                [-self.table_half_size.x, self.table_half_size.x],
-                [-self.table_half_size.y, self.table_half_size.y],
+                [-self.table_half_size.x - padding, self.table_half_size.x + padding],
+                [-self.table_half_size.y - padding, self.table_half_size.y + padding],
                 [0.0, 0.35],
             ],
             device=self.device,
@@ -383,7 +384,12 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.trunc_buf[self.reset_buf] = False
 
         # Reset modules
-        self.robot.reset_idx(self.gym, self.reset_buf, self.device, rand_fric=True if self.reward_object_name != "cube" else False)
+        if self.reward_object_name == "cube": # Need high fric to make the cube work
+            self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=0.8)
+        elif self.reward_object_name == "button_difficult": # Need low fric to make the button_difficult work
+            self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=0.1)
+        else: # Rest can be random
+            self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=None)
         self.reward_object.reset_idx(self.gym, self.reset_buf)
         self.visualize_goal()
 
@@ -492,7 +498,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # Reward for minimizing object-to-goal distance.
         if self.reward_object_name != "cube":
             obj_goal_dist = torch.norm(self.reward_object.goal_pos_in_world - object_pos_in_world, dim=-1)
-            if self.reward_object_name == "button" or self.reward_object_name == "drawer":
+            if self.reward_object_name in ("button", "button_difficult", "drawer"):
                 obj_goal_dist_normalized = obj_goal_dist / 0.05
             else:
                 obj_goal_dist_normalized = obj_goal_dist / 0.2

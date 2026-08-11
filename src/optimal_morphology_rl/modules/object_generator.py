@@ -585,6 +585,13 @@ class Button(LoadedArticulatedObject):
         self.update_goal(reset_buf)
 
 
+class ButtonDifficult(Button):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.name = "button_difficult"
+        self.asset_path = str(resources.files("optimal_morphology_rl_assets.assets") / "objects/button_difficult.vsim")
+
+
 class ObjectGenerator:
     """Container for all objects in the environment."""
 
@@ -597,6 +604,7 @@ class ObjectGenerator:
         "table_with_camera": TableWithCamera,
         "drawer": Drawer,
         "button": Button,
+        "button_difficult": ButtonDifficult,
     }
 
     def __init__(self, object_names: List[str]):

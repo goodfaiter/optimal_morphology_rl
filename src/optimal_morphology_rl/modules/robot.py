@@ -279,7 +279,7 @@ class Robot:
             state["dof_vel_buf"] = self.get_joint_vel_buf
         return state
 
-    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor, device: torch.device, rand_fric: bool = True) -> None:
+    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor, device: torch.device, fric_coeff: float = None) -> None:
         """Reset robot kinematic state for the given reset indices."""
         self.reset_joint_pos_buf[reset_buf, :] = 0.0
         self.reset_joint_vel_buf[reset_buf, :] = 0.0
@@ -301,8 +301,8 @@ class Robot:
             static_friction = 0.1
             dynamic_friction = static_friction * 0.75
 
-        if not rand_fric:
-            static_friction = 0.8
+        if fric_coeff is not None:
+            static_friction = fric_coeff
             dynamic_friction = static_friction * 0.75
 
         # The friction is average between two objects. So we set object friction to 0 and the robot hand to desired * 2
