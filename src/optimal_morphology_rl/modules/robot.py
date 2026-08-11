@@ -85,11 +85,12 @@ class Robot:
             self.get_tendon_vel_buf = torch.zeros((total_num_envs, self.num_tendons), dtype=torch.float32, device=device)
 
         if self.num_distal_links > 0:
+            # Link-first shape so each per-link slice (i, :, :) is contiguous.
             self.distal_link_transform_buf = torch.zeros(
-                (total_num_envs, self.num_distal_links, 7), device=device, dtype=torch.float32
+                (self.num_distal_links, total_num_envs, 7), device=device, dtype=torch.float32
             )
             self.distal_link_pos_buf = torch.zeros(
-                (total_num_envs, self.num_distal_links, 3), device=device, dtype=torch.float32
+                (self.num_distal_links, total_num_envs, 3), device=device, dtype=torch.float32
             )
 
         self.scaled_act_buf = torch.zeros((total_num_envs, self.get_num_actions()), dtype=torch.float32, device=device)
@@ -216,7 +217,7 @@ class Robot:
             for i, link_index in enumerate(self.distal_link_indices):
                 distal_transform_cmds.append(
                     env_group.create_link_transform_command(
-                        v.wrap_gpu_buffer(self.distal_link_transform_buf[:, i, :]),
+                        v.wrap_gpu_buffer(self.distal_link_transform_buf[i, :, :]),
                         self.arti_handle,
                         (link_index, link_index + 1),
                     )

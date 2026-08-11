@@ -551,8 +551,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         # Reward average distance between object and distal links.
         if self.reward_object_name != "cube":
+            # distal_link_pos_buf is stored link-first; transpose to (envs, links, 3) for the reward.
+            link_positions = self.robot.distal_link_pos_buf.transpose(0, 1)
             link_dists = torch.norm(
-                self.robot.distal_link_pos_buf - object_pos_in_world.unsqueeze(1), dim=-1
+                link_positions - object_pos_in_world.unsqueeze(1), dim=-1
             )
             avg_dist = link_dists.mean(dim=-1)
             dist_clipped = torch.clamp(avg_dist, min=0.05)  # don't reward getting too close to allow for exploration
