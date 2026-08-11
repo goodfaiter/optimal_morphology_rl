@@ -36,6 +36,13 @@ class Robot:
         self.gpu_get_tendon_lengths_command_array = None
         self.gpu_get_tendon_velocities_command_array = None
 
+        # Distal link transforms for reward/observation computations.
+        self.distal_link_indices: list[int] = []
+        self.num_distal_links: int = 0
+        self.distal_link_transform_buf: torch.Tensor | None = None
+        self.distal_link_pos_buf: torch.Tensor | None = None
+        self.gpu_get_distal_link_transforms_cmd_arr = None
+
     def allocate_buffers(self, total_num_envs: int, device: torch.device) -> None:
         """Allocate robot state and control buffers."""
         self.reset_joint_pos_buf = torch.zeros((total_num_envs, self.num_joints), device=device, dtype=torch.float32)
@@ -77,6 +84,14 @@ class Robot:
             self.get_tendon_lengths_buf = torch.zeros((total_num_envs, self.num_tendons), dtype=torch.float32, device=device)
             self.get_tendon_vel_buf = torch.zeros((total_num_envs, self.num_tendons), dtype=torch.float32, device=device)
 
+        if self.num_distal_links > 0:
+            self.distal_link_transform_buf = torch.zeros(
+                (total_num_envs, self.num_distal_links, 7), device=device, dtype=torch.float32
+            )
+            self.distal_link_pos_buf = torch.zeros(
+                (total_num_envs, self.num_distal_links, 3), device=device, dtype=torch.float32
+            )
+
         self.scaled_act_buf = torch.zeros((total_num_envs, self.get_num_actions()), dtype=torch.float32, device=device)
 
     def create_envs(self, env_def, vsim_path: str, device: torch.device):
@@ -106,6 +121,15 @@ class Robot:
         self.num_sensors = self.art_def.get_num_force_sensor_defs()
         if self.use_tendon:
             self.num_tendons = self.art_def.get_num_spatial_tendon_defs()
+
+        # Identify distal links for fingertip-position tracking.
+        self.distal_link_indices = [
+            i
+            for i in range(self.num_links)
+            if self.art_def.get_link_def(i).name.lower().endswith("distal")
+        ]
+        self.num_distal_links = len(self.distal_link_indices)
+
         self.link_masses = torch.zeros(self.num_links, dtype=torch.float32, device=device)
         for i in range(self.num_links):
             link_def = self.art_def.get_link_def(i)
@@ -186,6 +210,19 @@ class Robot:
         )
         self.gpu_get_kinematic_state_command_array = gym.create_gpu_array([get_kin_cmd])
 
+        # Distal link transform commands for fingertip-position tracking.
+        if self.num_distal_links > 0:
+            distal_transform_cmds = []
+            for i, link_index in enumerate(self.distal_link_indices):
+                distal_transform_cmds.append(
+                    env_group.create_link_transform_command(
+                        v.wrap_gpu_buffer(self.distal_link_transform_buf[:, i, :]),
+                        self.arti_handle,
+                        (link_index, link_index + 1),
+                    )
+                )
+            self.gpu_get_distal_link_transforms_cmd_arr = gym.create_gpu_array(distal_transform_cmds)
+
         set_motor_cmd = env_group.create_motor_control_command(
             v.wrap_gpu_buffer(self.set_motor_cmd_buf), self.arti_handle, index_range=[0, self.num_motors]
         )
@@ -233,6 +270,9 @@ class Robot:
     def refresh_buffers(self, gym: v.Gym) -> None:
         """Refresh robot kinematic state from simulation."""
         gym.get_articulation_kinematic_states(self.gpu_get_kinematic_state_command_array)
+        if self.num_distal_links > 0:
+            gym.get_link_transforms(self.gpu_get_distal_link_transforms_cmd_arr)
+            self.distal_link_pos_buf[:] = self.distal_link_transform_buf[:, :, 4:7]
         if self.use_tendon:
             gym.get_spatial_tendon_states(self.gpu_get_tendon_lengths_command_array)
             gym.get_spatial_tendon_states(self.gpu_get_tendon_velocities_command_array)

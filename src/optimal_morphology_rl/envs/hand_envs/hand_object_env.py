@@ -549,10 +549,13 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             self.goal_success = self.goal_aligned_steps_buf > 30  # more than 30 timesteps (0.5s at 60Hz)
             self.rew_buf[:] += 50.0 * self.goal_success.float()
 
-        # Reward distance between selected object and hand.
+        # Reward average distance between object and distal links.
         if self.reward_object_name != "cube":
-            dist = torch.norm(self.robot.robot_pos_in_world - object_pos_in_world, dim=-1)
-            dist_clipped = torch.clamp(dist, min=0.05)  # don't reward getting too close to allow for exploration
+            link_dists = torch.norm(
+                self.robot.distal_link_pos_buf - object_pos_in_world.unsqueeze(1), dim=-1
+            )
+            avg_dist = link_dists.mean(dim=-1)
+            dist_clipped = torch.clamp(avg_dist, min=0.05)  # don't reward getting too close to allow for exploration
             dist_clipped_normalized = dist_clipped / 0.2
             dist_rew = torch.exp(-1.0 * dist_clipped_normalized**2)
             self.info["rewards"]["hand_to_object_distance"] = dist_rew.sum().item() / self.total_num_envs
