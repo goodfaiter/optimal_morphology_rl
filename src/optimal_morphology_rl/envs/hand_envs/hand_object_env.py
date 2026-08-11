@@ -116,8 +116,13 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.gym.finalize()
         self.gym.update_scene_dependent_components()
 
-        reward_object_link_offset = self.objects.get_object_link_offset(self.reward_object.name)
-        self.contacts = Contacts(self, reward_object_link_offset, link_names=["distal"])
+        reward_object_contact_link_name = self._get_reward_object_contact_link_name()
+        self.contacts = Contacts(
+            self,
+            self.reward_object,
+            reward_object_contact_link_name,
+            link_names=["distal"],
+        )
         if isinstance(self.reward_object, LoadedRigidObject) and self.reward_object_name != "cube":
             self.force_module = ExternalForceModule(
                 body_handles={object: self.reward_object.handle},
@@ -134,6 +139,16 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             self.gym_render.reset_camera(v.Vec3(-0.671139, 0.073098, 0.726423), v.Vec3(0.755459, -0.009100, -0.655133))
 
         self.info["rewards"] = {}
+
+    def _get_reward_object_contact_link_name(self) -> str:
+        """Return the object link that should count for fingertip-contact reward."""
+        if self.reward_object_name in ("button", "button_difficult"):
+            return "button"
+        if self.reward_object_name == "drawer":
+            return "handle"
+        # Tomato and cube are single-link objects; any name resolves to their
+        # only transform handle.
+        return ""
 
     def create_envs(self, vsim_path):
         """Create simulation environments."""

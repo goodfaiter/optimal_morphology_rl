@@ -4,6 +4,7 @@ import torch
 import vlearn as v
 from vlearn import gym
 
+from optimal_morphology_rl.modules.object_generator import ObjectBase
 from train.envs.environment import EnvironmentGpu
 
 
@@ -15,7 +16,13 @@ class Contacts:
     lookup tables that were previously computed on the environment.
     """
 
-    def __init__(self, env: EnvironmentGpu, reward_object_link_offset: int, link_names: List[str] | None = None) -> None:
+    def __init__(
+        self,
+        env: EnvironmentGpu,
+        reward_object: ObjectBase,
+        reward_object_link_name: str,
+        link_names: List[str] | None = None,
+    ) -> None:
         self.env: EnvironmentGpu = env
         self.device = self.env.device
         self.gym: gym.Gym = self.env.gym
@@ -43,12 +50,12 @@ class Contacts:
         max_envs_in_set = max(self.env.num_envs)
         self.contact_env_lookup = torch.full((len(self.env.num_envs), max_envs_in_set), -1, dtype=torch.long, device=self.device)
         self.reward_object_transform_index_by_env = torch.full((self.total_num_envs,), -1, dtype=torch.long, device=self.device)
-        self.table_transform_index_by_env = torch.full((self.total_num_envs,), -1, dtype=torch.long, device=self.device)
         self.hand_transform_indices_by_env = torch.full((self.total_num_envs, self.num_links), -1, dtype=torch.long, device=self.device)
 
         self.hand_transform_indices_by_env[:, :] = torch.arange(self.num_links, dtype=torch.long, device=self.device).unsqueeze(0)
-        self.table_transform_index_by_env[:] = self.num_links
-        self.reward_object_transform_index_by_env[:] = self.num_links + reward_object_link_offset - 1
+        self.reward_object_transform_index_by_env[:] = self._compute_reward_object_transform_index(
+            reward_object, reward_object_link_name
+        )
 
         env_flat_index = 0
         for set_index, env_set in enumerate(self.env.env_sets):
@@ -79,6 +86,39 @@ class Contacts:
 
         # Mask of touched links per env to deduplicate contacts without calling torch.unique
         self.env_link_touch = torch.zeros((self.total_num_envs, self.num_links), dtype=torch.bool, device=self.device)
+
+    def _compute_reward_object_transform_index(
+        self, reward_object: ObjectBase, reward_object_link_name: str
+    ) -> int:
+        """Return the global transform-table index for the named reward-object link.
+
+        The global transform table is laid out as:
+            [hand links][object 0 links][object 1 links]...
+        We compute the reward object's start offset from the cumulative link
+        offsets and add the link's index within that object.
+        """
+        reward_object_link_offset = self.env.objects.get_object_link_offset(reward_object.name)
+        num_reward_object_links = reward_object.get_link_offset()
+        start_offset = reward_object_link_offset - num_reward_object_links
+
+        if hasattr(reward_object, "art_def") and reward_object.art_def is not None:
+            art_def = reward_object.art_def
+            link_index = None
+            for i in range(art_def.get_num_link_defs()):
+                if art_def.get_link_def(i).name == reward_object_link_name:
+                    link_index = i
+                    break
+            if link_index is None:
+                raise ValueError(
+                    f"Reward object link '{reward_object_link_name}' not found in "
+                    f"object '{reward_object.name}'. Available links: "
+                    f"{[art_def.get_link_def(i).name for i in range(art_def.get_num_link_defs())]}"
+                )
+        else:
+            # Rigid body: only one transform handle exists.
+            link_index = 0
+
+        return self.num_links + start_offset + link_index
 
     def update(self):
         contact = self.object_hand_contact_buf
