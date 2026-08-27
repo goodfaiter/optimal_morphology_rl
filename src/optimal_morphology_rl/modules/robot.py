@@ -5,7 +5,7 @@ import vlearn as v
 
 from vlearn.torch_utils.torch_jit_utils import scale, quat_rotate, quat_rotate_inverse
 
-from optimal_morphology_rl.helpers.numpy_vlearn import quaternion_to_6d
+from optimal_morphology_rl.helpers.numpy_vlearn import random_uniform_quaternion, quaternion_to_6d
 
 
 class Robot:
@@ -320,7 +320,7 @@ class Robot:
             state["dof_vel_buf"] = self.get_joint_vel_buf
         return state
 
-    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor, device: torch.device, fric_coeff: float = None) -> None:
+    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor, device: torch.device, fric_coeff: float = None, randomize_pose: bool = False) -> None:
         """Reset robot kinematic state for the given reset indices."""
         self.reset_joint_pos_buf[reset_buf, :] = 0.0
         self.reset_joint_vel_buf[reset_buf, :] = 0.0
@@ -328,8 +328,14 @@ class Robot:
             self.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.1]], device=device)
             self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.6963642, 0.1227878, -0.1227878, 0.6963642], device=device)
         else:
-            self.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.2]], device=device)
-            self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=device)
+            if randomize_pose:
+                self.reset_root_transform_buf[reset_buf, :4] = random_uniform_quaternion(reset_buf.sum().item(), device=device, dtype=torch.float32)
+                self.reset_root_transform_buf[reset_buf, 4] = -0.1
+                self.reset_root_transform_buf[reset_buf, 5] = torch.rand(reset_buf.sum().item(), device=device) * 0.3 - 0.15
+                self.reset_root_transform_buf[reset_buf, 6] = torch.rand(reset_buf.sum().item(), device=device) * 0.2 + 0.1
+            else:
+                self.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.2]], device=device)
+                self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=device)
         self.reset_root_vel_buf[reset_buf, :] = 0.0
         gym.set_articulation_kinematic_states(self.gpu_reset_kinematic_state_command_array)
 

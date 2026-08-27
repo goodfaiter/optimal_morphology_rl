@@ -402,9 +402,12 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         if self.reward_object_name == "cube": # Need high fric to make the cube work
             self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=0.8)
         elif self.reward_object_name == "button_difficult": # Need low fric to make the button_difficult work
-            self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=0.1)
+            self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=0.1, randomize_pose=(self.total_num_envs > 1))
         else: # Rest can be random
-            self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=None)
+            if self.reward_object_name in ("button", "drawer"):
+                self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=None, randomize_pose=(self.total_num_envs > 1))
+            else:
+                self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=None)
         self.reward_object.reset_idx(self.gym, self.reset_buf)
         self.visualize_goal()
 
@@ -513,8 +516,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         # Reward for minimizing object-to-goal distance.
         if self.reward_object_name != "cube":
             obj_goal_dist = torch.norm(self.reward_object.goal_pos_in_world - object_pos_in_world, dim=-1)
-            if self.reward_object_name in ("button", "button_difficult", "drawer"):
+            if self.reward_object_name in ("button", "button_difficult"):
                 obj_goal_dist_normalized = obj_goal_dist / 0.05
+            elif self.reward_object_name == "drawer":
+                obj_goal_dist_normalized = obj_goal_dist / 0.1
             else:
                 obj_goal_dist_normalized = obj_goal_dist / 0.2
             obj_goal_reward = torch.exp(-1.0 * obj_goal_dist_normalized**2)
@@ -557,11 +562,14 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
                 link_positions - object_pos_in_world.unsqueeze(1), dim=-1
             )
             avg_dist = link_dists.mean(dim=-1)
-            dist_clipped = torch.clamp(avg_dist, min=0.05)  # don't reward getting too close to allow for exploration
+            dist_clipped = torch.clamp(avg_dist, min=0.01)  # don't reward getting too close to allow for exploration
             dist_clipped_normalized = dist_clipped / 0.2
             dist_rew = torch.exp(-1.0 * dist_clipped_normalized**2)
             self.info["rewards"]["hand_to_object_distance"] = dist_rew.sum().item() / self.total_num_envs
-            self.rew_buf[:] += 0.1 * dist_rew
+            if self.reward_object_name == "button_difficult":
+                self.rew_buf[:] += 1.0 * dist_rew
+            else:
+                self.rew_buf[:] += 0.1 * dist_rew
 
         # Fingertip contact reward.
         if self.reward_object_name != "cube":

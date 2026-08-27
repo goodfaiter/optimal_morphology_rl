@@ -604,6 +604,12 @@ class ButtonDifficult(Button):
         self.name = "button_difficult"
         self.asset_path = str(resources.files("optimal_morphology_rl_assets.assets") / "objects/button_difficult.vsim")
 
+    def update_goal(self, reset_buf: torch.Tensor):
+        self.goal_pos_in_world[reset_buf, 0] = 0.35
+        self.goal_pos_in_world[reset_buf, 1] = 0.0
+        self.goal_pos_in_world[reset_buf, 2] = 0.1
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+
 
 class ObjectGenerator:
     """Container for all objects in the environment."""
