@@ -414,9 +414,10 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
     def reset(self):
         obs, _ = super().reset()
         self.refresh_buffers()
+        self.compute_observations()
         if self.total_num_envs != 1:  # when testing we prefer to start from 0
             self.progress_buf[:] = torch.randint(0, self.max_episode_length, (self.total_num_envs,), device=self.device)
-        return obs, {}
+        return self.obs_buf.clone(), {}
 
     def pre_physics_step(self, actions: torch.Tensor):
         self.last_act_buf[:] = self.act_buf[:]
@@ -507,6 +508,9 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.obs_buf[:] = self.obs_history.get().view(self.total_num_envs, -1)
 
     def compute_reward_termination_truncation(self):
+        # Reset reward/info dict so no stale metrics (e.g. goal_success_rate)
+        # survive from previous steps.
+        self.info["rewards"] = {}
         self.rew_buf[:] = 0.0
 
         object_pos_in_world = self.kinematic_sensor.pos_in_world
@@ -552,7 +556,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             self.goal_aligned_steps_buf[is_aligned] += 1
             self.goal_aligned_steps_buf[~is_aligned] = 0
             self.goal_success = self.goal_aligned_steps_buf > 30  # more than 30 timesteps (0.5s at 60Hz)
-            self.rew_buf[:] += 50.0 * self.goal_success.float()
+            self.rew_buf[:] += 200.0 * self.goal_success.float()
 
         # Reward average distance between object and distal links.
         if self.reward_object_name != "cube":
