@@ -51,6 +51,9 @@ class ModularEnvironment:
         self.spacing = float(sim_config.get("spacing", 0.5))
         self.rendering = bool(sim_config.get("rendering", False))
         self.with_window = bool(sim_config.get("with_window", True))
+        # raise_exception is normally set by the render module, but we keep a
+        # sensible fallback here so env.render() can check it even without one.
+        self.raise_exception = bool(sim_config.get("raise_exception", self.rendering))
         self.max_contact_pairs_per_env = int(
             sim_config.get("max_contact_pairs_per_env", 128)
         )
@@ -326,12 +329,10 @@ class ModularEnvironment:
         """Render the environment if rendering is enabled."""
         if not self.rendering or self.gym_render is None:
             return False
-        self._render_finished = self.gym_render.render(self.render_callback)
+        self._render_finished = self.gym_render.render(lambda: None)
+        if self._render_finished and getattr(self, "raise_exception", False):
+            raise RuntimeError("Render window was closed.")
         return self._render_finished
-
-    def render_callback(self) -> None:
-        """Callback invoked by the renderer each frame."""
-        pass
 
     @property
     def render_finished(self) -> bool:

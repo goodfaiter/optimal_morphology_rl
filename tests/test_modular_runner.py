@@ -10,6 +10,13 @@ import pytest
 import torch
 import yaml
 
+from optimal_morphology_rl.modules.articulation_link_colorer_module import (
+    ArticulationLinkColorerModule,
+)
+from optimal_morphology_rl.modules.visualization.goal_visualization_module import (
+    GoalVisualizationModule,
+)
+from optimal_morphology_rl.modules.visualization.render_module import RenderModule
 from optimal_morphology_rl.runners.modular_runner import (
     adjust_minibatch_size,
     apply_env_overrides,
@@ -110,7 +117,7 @@ def test_apply_ppo_overrides_play_mode() -> None:
     )
     out = apply_ppo_overrides(ppo_config, args, "hand_cube")
     cfg = out["params"]["config"]
-    assert cfg["num_actors"] == 1
+    assert cfg["num_actors"] == 4
     assert cfg["player"]["games_num"] == 5
     assert cfg["player"]["deterministic"] is True
 
@@ -134,6 +141,47 @@ def test_adjust_minibatch_size_division() -> None:
     adjust_minibatch_size(cfg, num_envs=64, horizon_len=128)
     # batch = 8192, two batches of 4096
     assert cfg["minibatch_size"] == 4096
+
+
+def test_render_module_defaults() -> None:
+    module = RenderModule({})
+    assert module.render_substep is True
+    assert module.capped_step is False
+    assert module.paused is False
+    assert module.raise_exception is None
+    assert module.camera["eye"] == [-0.671139, 0.073098, 0.726423]
+
+
+def test_goal_visualization_module_defaults() -> None:
+    module = GoalVisualizationModule({})
+    assert module.line_width == 3.0
+    assert module.axis_length == 0.1
+
+
+def test_articulation_link_colorer_module_defaults() -> None:
+    module = ArticulationLinkColorerModule({})
+    assert "palm" in module.colorer.color_map
+    assert "finger_0" in module.colorer.color_map
+
+
+def test_goal_visualization_is_regular_module() -> None:
+    module = GoalVisualizationModule({})
+    assert hasattr(module, "post_physics_step")
+
+
+def test_play_mode_sets_capped_step() -> None:
+    env_config = {"create_rigid_vsim_envs": {"num_envs": 4096}}
+    args = argparse.Namespace(
+        num_envs=None,
+        device=None,
+        seed=None,
+        mode="play",
+        headless="False",
+    )
+    out = apply_env_overrides(env_config, args)
+    assert out["create_rigid_vsim_envs"]["rendering"] is True
+    assert out["create_rigid_vsim_envs"]["with_window"] is True
+    assert out["render"]["capped_step"] is True
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")

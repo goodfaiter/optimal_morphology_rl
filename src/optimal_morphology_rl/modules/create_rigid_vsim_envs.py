@@ -68,15 +68,11 @@ class CreateRigidVsimEnvs(BaseModule):
         # Rendering / window.
         self.rendering = bool(self.config.get("rendering", False))
         self.enable_scene_query = bool(self.config.get("enable_scene_query", True))
-        self.with_window = bool(self.config.get("with_window", True))
-        self.initial_is_paused = bool(self.config.get("initial_is_paused", False))
-        self.initial_render_substep = bool(
-            self.config.get("initial_render_substep", False)
-        )
+        # Default to no window when rendering is not configured by a runner.
+        self.with_window = bool(self.config.get("with_window", False))
 
         # Misc.
         self.spacing = float(self.config.get("spacing", 0.5))
-        self.raise_exception = bool(self.config.get("raise_exception", False))
         self.print_hash = bool(self.config.get("print_hash", False))
 
         # Gravity / up axis.
@@ -125,12 +121,6 @@ class CreateRigidVsimEnvs(BaseModule):
 
         self.gym.set_timestep(self.timestep)
         self.gym.set_gravity(self.gravity)
-
-        if self.rendering:
-            self.gym_render = self.gym.get_render()
-            self.gym_render.set_paused(self.initial_is_paused)
-        else:
-            self.gym_render = None
 
     def finalize(self, env: Any) -> None:
         """Create the environment definition and share state in the container."""

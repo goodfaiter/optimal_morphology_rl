@@ -6,7 +6,7 @@ import vlearn as v
 from vlearn.torch_utils.torch_jit_utils import scale, quat_rotate, quat_rotate_inverse
 
 from optimal_morphology_rl.helpers.numpy_vlearn import random_uniform_quaternion, quaternion_to_6d
-from optimal_morphology_rl.modules.articulation_link_colorer import ArticulationLinkColorer
+
 
 
 class Robot:
@@ -160,21 +160,6 @@ class Robot:
         for i in range(self.art_def.get_num_link_defs()):
             env_def.assign_rigid_material_to_articulation_link(self.def_handle, rigid_mat_handle, i)
         self.rigid_mat_handle = rigid_mat_handle
-
-        # Color palm, five fingers, and two thumbs distinctly.
-        hand_colorer = ArticulationLinkColorer(
-            color_map={
-                "palm": (0.95, 0.82, 0.72),      # skin tone
-                "thumb_0": (0.95, 0.60, 0.20),   # orange
-                "thumb_1": (0.75, 0.35, 0.90),   # purple
-                "finger_0": (0.95, 0.30, 0.30),  # red
-                "finger_1": (0.30, 0.70, 0.40),  # green
-                "finger_2": (0.25, 0.55, 0.95),  # blue
-                "finger_3": (1.00, 0.85, 0.20),  # yellow
-                "finger_4": (0.95, 0.50, 0.70),  # pink
-            },
-        )
-        hand_colorer.assign(env_def, self.def_handle, self.art_def)
 
         self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=device)
         self.max_velocity = self.velocity_scale * 2.0

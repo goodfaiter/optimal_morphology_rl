@@ -125,10 +125,16 @@ def apply_env_overrides(
     if headless is None:
         headless = "False" if args.mode == "play" else "True"
 
+    # Single source of truth: --headless drives all rendering settings.
     rendering = not str_to_bool(headless)
     sim["rendering"] = rendering
     sim["with_window"] = rendering
     sim["raise_exception"] = rendering
+
+    render_cfg = env_config.setdefault("render", {})
+    render_cfg["capped_step"] = rendering
+    render_cfg["paused"] = False
+
     return env_config
 
 
@@ -157,7 +163,9 @@ def apply_ppo_overrides(
     cfg.setdefault("player", {})["use_vecenv"] = True
 
     if args.mode == "play":
-        cfg["num_actors"] = 1
+        # Default to 4 actors in play mode for visualization; user override wins.
+        if args.num_envs is None:
+            cfg["num_actors"] = 4
         if args.games_num is not None:
             cfg["player"]["games_num"] = args.games_num
         if args.deterministic is not None:
@@ -313,6 +321,14 @@ def run_step(env_config: dict[str, Any], steps: int) -> None:
 
 def main() -> None:
     args = parse_args()
+
+    # Play mode defaults: windowed, 4 parallel environments for visualization.
+    if args.mode == "play":
+        if args.headless is None:
+            args.headless = "False"
+        if args.num_envs is None:
+            args.num_envs = 4
+
     _, env_config, ppo_config = load_task_configs(args.task, args.task_root)
 
     env_config = apply_env_overrides(env_config, args)

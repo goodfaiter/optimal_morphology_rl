@@ -692,6 +692,13 @@ class ObjectGenerator:
         for obj in self.objects.values():
             obj.post_physics_step(gym)
 
+    def reset_idx(self, gym, reset_buf) -> None:
+        """Reset objects selected by the reset buffer."""
+        if reset_buf.sum() == 0:
+            return
+        for obj in self.objects.values():
+            obj.reset_idx(gym, reset_buf)
+
     def get_object(self, name: str) -> ObjectBase:
         """Get a specific object by name."""
         return self.objects.get(name)

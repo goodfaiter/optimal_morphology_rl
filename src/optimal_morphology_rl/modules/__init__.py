@@ -14,6 +14,9 @@ from optimal_morphology_rl.modules.module_manager import (
     ModuleManager,
     register_module,
 )
+from optimal_morphology_rl.modules.articulation_link_colorer_module import (
+    ArticulationLinkColorerModule,
+)
 from optimal_morphology_rl.modules.object_generator_module import ObjectGeneratorModule
 
 # Observation sub-modules and manager.
@@ -40,6 +43,10 @@ from optimal_morphology_rl.modules.terminations import (
     TerminationManagerModule,
     register_termination,
 )
+from optimal_morphology_rl.modules.visualization.goal_visualization_module import (
+    GoalVisualizationModule,
+)
+from optimal_morphology_rl.modules.visualization.render_module import RenderModule
 
 # Import environment-specific reward/termination modules so their decorators
 # register even when only the module registry is imported.
@@ -47,18 +54,21 @@ from optimal_morphology_rl.envs.hand_cube import rewards as _hand_cube_rewards
 from optimal_morphology_rl.envs.hand_cube import terminations as _hand_cube_terminations
 
 __all__ = [
+    "ArticulationLinkColorerModule",
     "BaseModule",
     "CameraRecorderModule",
     "ContactsModule",
     "CreateRigidVsimEnvs",
     "ExternalForceModule",
     "ForceSensorsModule",
+    "GoalVisualizationModule",
     "KinematicSensorModule",
     "ModuleContainer",
     "ModuleManager",
     "ObjectGeneratorModule",
     "ObservationBaseModule",
     "ObservationManagerModule",
+    "RenderModule",
     "RewardBaseModule",
     "RewardManagerModule",
     "RobotControlModule",
