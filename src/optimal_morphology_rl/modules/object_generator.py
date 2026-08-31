@@ -120,7 +120,7 @@ class LoadedRigidObject(ObjectBase):
         env_def.import_definitions(
             self.asset_path,
             fixed=self.fixed,
-            use_visual_mesh=False,
+            use_visual_mesh=True,
             force_mass_computation=False,
             force_inertia_computation=False,
         )
@@ -324,9 +324,24 @@ class Mug(LoadedRigidObject):
         super().__init__(name="mug", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/mug.vsim"))
 
 
+def _assign_teal_material(env_def, object_name: str) -> None:
+    """Assign a teal RGB material to a rigid body for nicer rendering."""
+    teal_mat = v.RGBMaterial()
+    teal_mat.color = v.Vec3(0.0, 0.5, 0.5)
+    teal_mat.specular = 40.0
+    teal_mat.spec_intensity = 0.25
+    teal_mat_handle = env_def.create_rgb_material(teal_mat)
+    rigid_body_def_handle = env_def.get_rigid_body_def_handle_by_name(object_name)
+    env_def.assign_rgb_material_to_rigid_body(rigid_body_def_handle, teal_mat_handle)
+
+
 class Table(LoadedRigidObject):
     def __init__(self):
         super().__init__(name="table", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/table.vsim"), fixed=True)
+
+    def load(self, env_def):
+        super().load(env_def)
+        _assign_teal_material(env_def, self.name)
 
     @property
     def half_size_tensor(self) -> torch.Tensor:
@@ -340,6 +355,10 @@ class Table(LoadedRigidObject):
 class TableWithCamera(LoadedRigidObject):
     def __init__(self):
         super().__init__(name="table_with_camera", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/table_with_camera.vsim"), fixed=True)
+
+    def load(self, env_def):
+        super().load(env_def)
+        _assign_teal_material(env_def, self.name)
 
     @property
     def half_size_tensor(self) -> torch.Tensor:

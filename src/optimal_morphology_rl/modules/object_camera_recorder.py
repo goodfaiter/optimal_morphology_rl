@@ -86,6 +86,7 @@ class ObjectCameraRecorder:
         camera.render_relative_transform = camera.relative_transform
         camera.render_width = 1
         camera.render_height = 1
+        camera.base_color = v.Vec3(1.0, 1.0, 1.0)
         return CameraSpec(
             object_name=object_name,
             kind="rgb",
