@@ -14,14 +14,14 @@ from optimal_morphology_rl.modules.rewards.reward_manager_module import register
 class FingertipContactReward(RewardBaseModule):
     """Reward contact between monitored distal links and the reward object."""
 
-    def compute(self, env: Any) -> None:
+    def compute(self, env: Any) -> torch.Tensor | None:
         container = env.module_manager.container
         contacts = container.get("contacts")
         force_sensors = container.get("force_sensors")
         if contacts is None or force_sensors is None:
-            return
+            return None
         if force_sensors.force_sensor_buf is None:
-            return
+            return None
 
         forces = force_sensors.force_sensor_buf.norm(dim=-1)
         contact_mask = contacts.env_link_touch[:, contacts.monitored_link_mask]
@@ -35,4 +35,4 @@ class FingertipContactReward(RewardBaseModule):
         env.info["rewards"]["fingertip_contact_reward"] = (
             fingertip_contact_reward.sum().item() / env.total_num_envs
         )
-        env.rew_buf[:] += scale * fingertip_contact_reward
+        return scale * fingertip_contact_reward

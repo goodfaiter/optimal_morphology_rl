@@ -34,4 +34,4 @@ class GoalPositionReward(RewardBaseModule):
         env.info["rewards"]["goal_position_error_l2_norm_mm"] = (
             obj_goal_dist.sum().item() / env.total_num_envs * 1000
         )
-        env.rew_buf[:] += scale * obj_goal_reward
+        return scale * obj_goal_reward

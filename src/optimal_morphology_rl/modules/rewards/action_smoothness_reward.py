@@ -24,4 +24,4 @@ class ActionSmoothnessReward(RewardBaseModule):
         env.info["rewards"]["action_smoothness_penalty"] = (
             action_smoothness_reward.sum().item() / env.total_num_envs
         )
-        env.rew_buf[:] += scale * action_smoothness_reward
+        return scale * action_smoothness_reward

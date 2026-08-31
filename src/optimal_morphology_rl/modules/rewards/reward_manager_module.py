@@ -66,12 +66,14 @@ class RewardManagerModule(BaseModule):
         self.sub_manager.post_finalize(env)
 
     def compute(self, env: Any) -> None:
-        """Reset reward buffers and call every reward sub-module."""
+        """Reset reward buffers and sum contributions from every reward sub-module."""
         env.rew_buf[:] = 0.0
         env.info["rewards"] = {}
 
         for module in self._reward_modules:
-            module.compute(env)
+            contribution = module.compute(env)
+            if contribution is not None:
+                env.rew_buf[:] += contribution
 
     def reset(self, env: Any) -> None:
         """Reset reward sub-modules."""

@@ -35,4 +35,4 @@ class GoalOrientationReward(RewardBaseModule):
         env.info["rewards"]["goal_orientation"] = (
             goal_alignment_reward.sum().item() / env.total_num_envs
         )
-        env.rew_buf[:] += scale * goal_alignment_reward
+        return scale * goal_alignment_reward

@@ -27,10 +27,10 @@ class CubeOrientationSuccessReward(RewardBaseModule):
     def reset(self, env: Any) -> None:
         self.goal_aligned_steps_buf[env.reset_buf] = 0
 
-    def compute(self, env: Any) -> None:
+    def compute(self, env: Any) -> torch.Tensor | None:
         reward_object_name = get_reward_object_name(env)
         if reward_object_name != "cube":
-            return
+            return None
 
         container = env.module_manager.container
         reward_object = container.reward_object
@@ -54,7 +54,6 @@ class CubeOrientationSuccessReward(RewardBaseModule):
         env.info["rewards"]["goal_orientation"] = (
             orientation_reward.sum().item() / env.total_num_envs
         )
-        env.rew_buf[:] += scale * orientation_reward
 
         # Success bonus: keep orientation within 15 degrees for > 30 steps.
         quat_object_goal_to_world = reward_object.goal_quat_object_to_world
@@ -70,7 +69,8 @@ class CubeOrientationSuccessReward(RewardBaseModule):
         goal_success = self.goal_aligned_steps_buf > 30
 
         success_scale = float(self.config.get("success_scale", 200.0))
-        env.rew_buf[:] += success_scale * goal_success.float()
 
         # Expose success for the termination module.
         container.goal_success = goal_success
+
+        return scale * orientation_reward + success_scale * goal_success.float()

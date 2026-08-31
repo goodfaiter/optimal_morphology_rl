@@ -32,4 +32,4 @@ class HandToObjectDistanceReward(RewardBaseModule):
         env.info["rewards"]["hand_to_object_distance"] = (
             dist_rew.sum().item() / env.total_num_envs
         )
-        env.rew_buf[:] += scale * dist_rew
+        return scale * dist_rew

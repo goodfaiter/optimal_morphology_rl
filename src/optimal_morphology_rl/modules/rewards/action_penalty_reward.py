@@ -22,4 +22,4 @@ class ActionPenaltyReward(RewardBaseModule):
         env.info["rewards"]["action_penalty"] = (
             action_penalty_reward.sum().item() / env.total_num_envs
         )
-        env.rew_buf[:] += scale * action_penalty_reward
+        return scale * action_penalty_reward
