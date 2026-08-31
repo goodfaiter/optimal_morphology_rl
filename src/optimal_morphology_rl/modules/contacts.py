@@ -22,6 +22,7 @@ class Contacts:
         reward_object: ObjectBase,
         reward_object_link_name: str,
         link_names: List[str] | None = None,
+        reward_object_link_offset: int | None = None,
     ) -> None:
         self.env: EnvironmentGpu = env
         self.device = self.env.device
@@ -54,7 +55,7 @@ class Contacts:
 
         self.hand_transform_indices_by_env[:, :] = torch.arange(self.num_links, dtype=torch.long, device=self.device).unsqueeze(0)
         self.reward_object_transform_index_by_env[:] = self._compute_reward_object_transform_index(
-            reward_object, reward_object_link_name
+            reward_object, reward_object_link_name, reward_object_link_offset
         )
 
         env_flat_index = 0
@@ -88,7 +89,10 @@ class Contacts:
         self.env_link_touch = torch.zeros((self.total_num_envs, self.num_links), dtype=torch.bool, device=self.device)
 
     def _compute_reward_object_transform_index(
-        self, reward_object: ObjectBase, reward_object_link_name: str
+        self,
+        reward_object: ObjectBase,
+        reward_object_link_name: str,
+        reward_object_link_offset: int | None = None,
     ) -> int:
         """Return the global transform-table index for the named reward-object link.
 
@@ -96,8 +100,16 @@ class Contacts:
             [hand links][object 0 links][object 1 links]...
         We compute the reward object's start offset from the cumulative link
         offsets and add the link's index within that object.
+
+        Args:
+            reward_object_link_offset: Pre-computed cumulative link offset for
+                the reward object.  If ``None``, the offset is read from
+                ``env.objects.get_object_link_offset`` for backward compatibility.
         """
-        reward_object_link_offset = self.env.objects.get_object_link_offset(reward_object.name)
+        if reward_object_link_offset is None:
+            reward_object_link_offset = self.env.objects.get_object_link_offset(
+                reward_object.name
+            )
         num_reward_object_links = reward_object.get_link_offset()
         start_offset = reward_object_link_offset - num_reward_object_links
 

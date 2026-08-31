@@ -77,8 +77,10 @@ class Robot:
         self.set_force_torque_buf = torch.zeros((total_num_envs, self.num_links, 6), dtype=torch.float32, device=device)
 
         # Rigid Material Buffers
-        self.set_static_friction_buf = torch.zeros(total_num_envs, dtype=torch.float32, device=device)
-        self.set_dynamic_friction_buf = torch.zeros(total_num_envs, dtype=torch.float32, device=device)
+        # Rigid material properties are scalar per material, so these buffers hold a
+        # single value that is applied to the environments selected by the reset mask.
+        self.set_static_friction_buf = torch.zeros(1, dtype=torch.float32, device=device)
+        self.set_dynamic_friction_buf = torch.zeros(1, dtype=torch.float32, device=device)
 
         if self.use_tendon:
             self.set_tendon_controls_buf = torch.zeros((total_num_envs, self.num_tendons), dtype=torch.float32, device=device)
@@ -355,25 +357,19 @@ class Robot:
         self.reset_root_vel_buf[reset_buf, :] = 0.0
         gym.set_articulation_kinematic_states(self.gpu_reset_kinematic_state_command_array)
 
-        # Randomize rigid body material
+        # Randomize rigid body material.  The rigid material property command expects
+        # a scalar value buffer, so we draw one value per reset call.
         total_num_envs = reset_buf.shape[0]
-        if total_num_envs != 1:
-            static_friction = torch.rand(reset_buf.sum().item(), device=device) * 0.9 + 0.1
-            dynamic_friction = static_friction * 0.75
+        if total_num_envs != 1 and fric_coeff is None:
+            static_friction = torch.rand(1, device=device).item() * 0.9 + 0.1
         else:
-            static_friction = 0.1
-            dynamic_friction = static_friction * 0.75
+            static_friction = 0.1 if fric_coeff is None else fric_coeff
+        dynamic_friction = static_friction * 0.75
 
-        if fric_coeff is not None:
-            static_friction = fric_coeff
-            dynamic_friction = static_friction * 0.75
-
-        # The friction is average between two objects. So we set object friction to 0 and the robot hand to desired * 2
-        static_friction = static_friction * 2.0
-        dynamic_friction = dynamic_friction * 2.0
-
-        self.set_static_friction_buf[reset_buf] = static_friction
-        self.set_dynamic_friction_buf[reset_buf] = dynamic_friction
+        # The friction is average between two objects. So we set object friction to 0
+        # and the robot hand to desired * 2.
+        self.set_static_friction_buf[0] = static_friction * 2.0
+        self.set_dynamic_friction_buf[0] = dynamic_friction * 2.0
         gym.set_rigid_material_properties(self.gpu_set_friction_cmd)
 
     def pre_physics_step(

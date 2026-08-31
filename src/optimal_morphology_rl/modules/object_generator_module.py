@@ -60,6 +60,7 @@ class ObjectGeneratorModule(BaseModule):
             self.objects[obj_name] = obj
 
         container.objects = self.objects
+        container.object_generator = self
         container.reward_object_name = self.reward_object_name
         container.reward_object = self.objects.get(self.reward_object_name)
         container.object_names = self.object_names
@@ -138,7 +139,7 @@ class ObjectGeneratorModule(BaseModule):
             raise ValueError(f"Unknown object: {name}.")
         return self.objects[name]
 
-    def _get_object_link_offset(self, name: str) -> int:
+    def get_object_link_offset(self, name: str) -> int:
         """Return link-based offset for the object based on object order."""
         offset = 0
         for obj_name in self.object_names:
@@ -146,3 +147,7 @@ class ObjectGeneratorModule(BaseModule):
             if obj_name == name:
                 return offset
         raise ValueError(f"Unknown object: {name}.")
+
+    def _get_object_link_offset(self, name: str) -> int:
+        """Deprecated alias for :meth:`get_object_link_offset`."""
+        return self.get_object_link_offset(name)

@@ -46,6 +46,22 @@ uv run python3 rl_games_train.py hand train runs/hand_pen_18-20-35-35/nn/hand_pe
 uv run python3 rl_games_train.py finger play <path>
 ```
 
+### Modular runner (new)
+Each task now has its own `env.yaml` and `ppo.yaml` under `src/optimal_morphology_rl/envs/hand_<task>/`.
+
+```
+# smoke-test a task with random actions
+uv run python3 src/optimal_morphology_rl/runners/modular_runner.py hand_cube --mode step --num-envs 1 --steps 10
+
+# train a task
+uv run python3 src/optimal_morphology_rl/runners/modular_runner.py hand_cube --mode train
+
+# play from a checkpoint
+uv run python3 src/optimal_morphology_rl/runners/modular_runner.py hand_cube --mode play --checkpoint nn/hand_cube.pth
+```
+
+Common overrides: `--num-envs`, `--max-epochs`, `--horizon-length`, `--learning-rate`, `--kl-threshold`, `--device`, `--headless`, `--seed`.
+
 ### Via VSCode
 Or a *better* way is to setup your `.vscode/launch.json`:
 

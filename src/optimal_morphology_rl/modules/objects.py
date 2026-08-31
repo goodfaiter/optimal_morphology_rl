@@ -307,6 +307,19 @@ class Tomato(LoadedRigidObject):
         super().__init__(name="tomato", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/tomato.vsim"))
 
 
+class TomatoExtreme(LoadedRigidObject):
+    def __init__(self):
+        super().__init__(name="tomato_extreme", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/tomato_extreme.vsim"))
+
+    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
+        """Reset the larger tomato above the table."""
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.0, 0.0, 0.075]], device=reset_buf.device)
+        self.set_vel_in_world_buf[reset_buf, :] = 0.0
+        gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
+        self.update_goal(reset_buf)
+
+
 class Knife(LoadedRigidObject):
     def __init__(self):
         super().__init__(name="knife", asset_path=str(resources.files("optimal_morphology_rl_assets.assets") / "objects/kitchen_knife.vsim"))
@@ -508,15 +521,30 @@ class Button(LoadedArticulatedObject):
         self.update_goal(reset_buf)
 
 
+class ButtonDifficult(Button):
+    def __init__(self):
+        super().__init__()
+        self.name = "button_difficult"
+        self.asset_path = str(resources.files("optimal_morphology_rl_assets.assets") / "objects/button_difficult.vsim")
+
+    def update_goal(self, reset_buf: torch.Tensor):
+        self.goal_pos_in_world[reset_buf, 0] = 0.35
+        self.goal_pos_in_world[reset_buf, 1] = 0.0
+        self.goal_pos_in_world[reset_buf, 2] = 0.1
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+
+
 #: Mapping from object name to object class.  Used by the legacy
 #: :class:`ObjectGenerator` and by :class:`ObjectGeneratorModule`.
 OBJECT_REGISTRY: Dict[str, type] = {
     "cube": Cube,
     "tomato": Tomato,
+    "tomato_extreme": TomatoExtreme,
     "knife": Knife,
     "mug": Mug,
     "table": Table,
     "table_with_camera": TableWithCamera,
     "drawer": Drawer,
     "button": Button,
+    "button_difficult": ButtonDifficult,
 }
