@@ -111,7 +111,10 @@ def load_task_configs(
         raise FileNotFoundError(f"Missing ppo config: {ppo_path}")
 
     env_config = load_yaml_with_context(env_path, context=context)
-    ppo_config = load_yaml_with_context(ppo_path, context=context)
+
+    num_envs = env_config.get("create_rigid_vsim_envs", {}).get("num_envs")
+    ppo_context = {**(context or {}), "num_envs": num_envs}
+    ppo_config = load_yaml_with_context(ppo_path, context=ppo_context)
 
     return env_path, env_config, ppo_config
 

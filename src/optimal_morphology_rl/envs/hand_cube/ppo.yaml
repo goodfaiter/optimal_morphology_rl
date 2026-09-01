@@ -43,7 +43,7 @@ params:
     normalize_input: True
     normalize_value: True
     value_bootstrap: True
-    num_actors: 4096
+    num_actors: ${num_envs}
     reward_shaper:
       scale_value: 1.0
     normalize_advantage: True
