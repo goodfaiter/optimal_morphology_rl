@@ -79,6 +79,11 @@ def parse_args() -> argparse.Namespace:
         default=100,
         help="Number of steps for step mode",
     )
+    parser.add_argument(
+        "--no-wandb",
+        action="store_true",
+        help="Disable Weights & Biases logging",
+    )
     return parser.parse_args()
 
 
@@ -260,6 +265,7 @@ def run_rl_games(
     mode: str,
     checkpoint: str | None,
     experiment_name: str | None = None,
+    no_wandb: bool = False,
 ) -> None:
     cfg = ppo_config["params"]["config"]
     env_name = cfg["env_name"]
@@ -297,9 +303,31 @@ def run_rl_games(
     # rl_games uses this folder when freezing the traced player at the end of training.
     run_args["experiment_name"] = experiment_name or "runs"
 
+    use_wandb = mode == "train" and not no_wandb
+    if use_wandb:
+        try:
+            import wandb
+        except ImportError as exc:
+            raise RuntimeError(
+                "wandb is requested but not installed. Install it or use --no-wandb."
+            ) from exc
+        wandb.init(
+            project="optimal_morphology_rl",
+            sync_tensorboard=True,
+            config={"env_config": env_config, "ppo_config": ppo_config, "mode": mode},
+            monitor_gym=True,
+            save_code=True,
+        )
+
     runner = Runner(algo_observer=VlearnAlgoObserver())
     runner.load(ppo_config)
-    runner.run(run_args)
+    try:
+        runner.run(run_args)
+    finally:
+        if use_wandb:
+            import wandb
+
+            wandb.finish()
 
 
 def run_step(env_config: dict[str, Any], steps: int) -> None:
@@ -344,6 +372,7 @@ def main() -> None:
             args.mode,
             args.checkpoint,
             experiment_name=args.experiment_name,
+            no_wandb=args.no_wandb,
         )
 
 
