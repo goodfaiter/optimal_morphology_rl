@@ -25,6 +25,9 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
 
+[project.scripts]
+omrl = "optimal_morphology_rl.runners.modular_runner:main"
+
 [tool.uv.sources]
 vlearn_train = { workspace = true, editable = true }
 optimal_morphology_rl_assets = { workspace = true, editable = true }

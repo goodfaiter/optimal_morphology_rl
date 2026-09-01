@@ -51,13 +51,13 @@ Each task now has its own `env.yaml` and `ppo.yaml` under `src/optimal_morpholog
 
 ```
 # smoke-test a task with random actions
-uv run python3 src/optimal_morphology_rl/runners/modular_runner.py hand_cube --mode step --num-envs 1 --steps 10
+uv run omrl hand_cube --mode step --num-envs 1 --steps 10
 
 # train a task
-uv run python3 src/optimal_morphology_rl/runners/modular_runner.py hand_cube --mode train
+uv run omrl hand_cube --mode train
 
 # play from a checkpoint
-uv run python3 src/optimal_morphology_rl/runners/modular_runner.py hand_cube --mode play --checkpoint nn/hand_cube.pth
+uv run omrl hand_cube --mode play --cp nn/hand_cube.pth
 ```
 
 Common overrides: `--num-envs`, `--max-epochs`, `--horizon-length`, `--learning-rate`, `--kl-threshold`, `--device`, `--headless`, `--seed`.
