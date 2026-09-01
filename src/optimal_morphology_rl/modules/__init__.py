@@ -3,21 +3,26 @@
 # Import modules so their @register_module decorators execute.
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.camera_recorder_module import CameraRecorderModule
-from optimal_morphology_rl.modules.contacts_module import ContactsModule
+from optimal_morphology_rl.modules.create_contacts_module import CreateContactsModule
+from optimal_morphology_rl.modules.update_contacts_module import UpdateContactsModule
 from optimal_morphology_rl.modules.create_rigid_vsim_envs import CreateRigidVsimEnvs
 from optimal_morphology_rl.modules.external_force_module import ExternalForceModule
-from optimal_morphology_rl.modules.force_sensors_module import ForceSensorsModule
-from optimal_morphology_rl.modules.kinematic_sensor_module import KinematicSensorModule
+from optimal_morphology_rl.modules.create_kinematic_sensor_module import CreateKinematicSensorModule
+from optimal_morphology_rl.modules.update_kinematic_sensor_module import UpdateKinematicSensorModule
+from optimal_morphology_rl.modules.create_force_sensor_module import CreateForceSensorModule
+from optimal_morphology_rl.modules.update_force_sensors_module import UpdateForceSensorsModule
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import (
     DEFAULT_REGISTRY,
-    ModuleContainer,
     ModuleManager,
     register_module,
 )
 from optimal_morphology_rl.modules.articulation_link_colorer_module import (
     ArticulationLinkColorerModule,
 )
-from optimal_morphology_rl.modules.object_generator_module import ObjectGeneratorModule
+from optimal_morphology_rl.modules.create_objects_module import CreateObjectsModule
+from optimal_morphology_rl.modules.object_control_module import ObjectControlModule
+from optimal_morphology_rl.modules.update_objects_module import UpdateObjectsModule
 
 # Observation sub-modules and manager.
 from optimal_morphology_rl.modules.observations import (
@@ -36,7 +41,8 @@ from optimal_morphology_rl.modules.rewards import (
     register_reward,
 )
 from optimal_morphology_rl.modules.robot_control_module import RobotControlModule
-from optimal_morphology_rl.modules.robot_module import RobotModule
+from optimal_morphology_rl.modules.create_robot_module import RobotModule
+from optimal_morphology_rl.modules.update_robot_module import UpdateRobotModule
 from optimal_morphology_rl.modules.terminations import (
     TERMINATION_REGISTRY,
     TerminationBaseModule,
@@ -57,15 +63,20 @@ __all__ = [
     "ArticulationLinkColorerModule",
     "BaseModule",
     "CameraRecorderModule",
-    "ContactsModule",
+    "CreateContactsModule",
+    "UpdateContactsModule",
     "CreateRigidVsimEnvs",
     "ExternalForceModule",
-    "ForceSensorsModule",
     "GoalVisualizationModule",
-    "KinematicSensorModule",
+    "CreateKinematicSensorModule",
+    "UpdateKinematicSensorModule",
+    "CreateForceSensorModule",
+    "UpdateForceSensorsModule",
     "ModuleContainer",
     "ModuleManager",
-    "ObjectGeneratorModule",
+    "CreateObjectsModule",
+    "ObjectControlModule",
+    "UpdateObjectsModule",
     "ObservationBaseModule",
     "ObservationManagerModule",
     "RenderModule",
@@ -73,6 +84,7 @@ __all__ = [
     "RewardManagerModule",
     "RobotControlModule",
     "RobotModule",
+    "UpdateRobotModule",
     "TerminationBaseModule",
     "TerminationManagerModule",
     "register_module",

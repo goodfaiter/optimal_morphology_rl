@@ -1,4 +1,4 @@
-"""Module that discovers and reads fingertip force sensors on the robot."""
+"""Module that discovers and creates fingertip force sensors on the robot."""
 
 from __future__ import annotations
 
@@ -6,11 +6,12 @@ from typing import Any, Sequence
 
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.force_sensors import ForceSensors
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
 
-@register_module("force_sensors")
-class ForceSensorsModule(BaseModule):
+@register_module("create_force_sensor")
+class CreateForceSensorModule(BaseModule):
     """Wraps ForceSensors and exposes the buffer on the shared container."""
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -18,15 +19,15 @@ class ForceSensorsModule(BaseModule):
         self.sensors = ForceSensors()
         self.link_names: Sequence[str] = self.config.get("link_names", ["distal"])
 
-    def finalize(self, env: Any) -> None:
-        container = env.module_manager.container
+    def finalize(self, container: ModuleContainer) -> None:
+        """Verify dependencies."""
         if container.get("robot") is None or container.get("env_def") is None:
             raise RuntimeError(
-                "ForceSensorsModule requires 'robot' and 'env_def' in the shared container."
+                "CreateForceSensorModule requires 'robot' and 'env_def' in the shared container."
             )
 
-    def post_finalize(self, env: Any) -> None:
-        container = env.module_manager.container
+    def post_finalize(self, container: ModuleContainer) -> None:
+        """Allocate buffers and create GPU commands."""
         env_def = container.env_def
         robot = container.robot
         # The articulation instance is only available after env_def.finalize().
@@ -35,12 +36,9 @@ class ForceSensorsModule(BaseModule):
         self.sensors.allocate_buffers(
             robot.art_def,
             articulation,
-            env.total_num_envs,
-            env.device,
+            container.total_num_envs,
+            container.device,
             link_names=self.link_names,
         )
         container.force_sensors = self.sensors
         self.sensors.create_gpu_commands(container.env_group, container.gym)
-
-    def post_physics_step(self, env: Any) -> None:
-        self.sensors.update(env.module_manager.container.gym)

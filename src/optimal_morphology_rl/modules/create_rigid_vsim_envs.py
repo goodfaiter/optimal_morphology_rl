@@ -11,6 +11,7 @@ import torch
 import vlearn as v
 
 from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
 
@@ -63,7 +64,6 @@ class CreateRigidVsimEnvs(BaseModule):
         # Simulation frequency / control frequency.
         self.timestep = float(self.config.get("timestep", 1.0 / 120.0))
         self.frame_skip = int(self.config.get("frame_skip", 2))
-        self.max_episode_length = int(self.config.get("max_episode_length", 6 * 60))
 
         # Rendering / window.
         self.rendering = bool(self.config.get("rendering", False))
@@ -122,29 +122,31 @@ class CreateRigidVsimEnvs(BaseModule):
         self.gym.set_timestep(self.timestep)
         self.gym.set_gravity(self.gravity)
 
-    def finalize(self, env: Any) -> None:
+    def finalize(self, container: ModuleContainer) -> None:
         """Create the environment definition and share state in the container."""
         env_def_name = self.config.get("env_def_name", "rigid_env")
         self.env_def_handle = self.gym.create_environment_def(env_def_name)
         self.env_def = self.gym.get_environment_def(self.env_def_handle)
 
-        container = env.module_manager.container
         container.gym = self.gym
         container.env_def_handle = self.env_def_handle
         container.env_def = self.env_def
         container.device = self.device
-        container.num_envs = self.num_envs
+        container.num_envs = [self.num_envs]
         container.total_num_envs = self.total_num_envs
         container.timestep = self.timestep
         container.frame_skip = self.frame_skip
+        container.rendering = self.rendering
+        container.with_window = self.with_window
         container.gravity = self.gravity
         container.up_axis = self.up_axis
         container.spacing = self.spacing
-        container.max_episode_length = self.max_episode_length
+        container.max_contact_pairs_per_env = self.max_contact_pairs_per_env
+        container.max_contact_patches_per_env = self.max_contact_patches_per_env
+        container.max_contact_points_per_patch = self.max_contact_points_per_patch
 
-    def post_finalize(self, env: Any) -> None:
+    def post_finalize(self, container: ModuleContainer) -> None:
         """Finalize the environment definition and create the environment group."""
-        container = env.module_manager.container
         if container.get("env_def") is None:
             raise RuntimeError(
                 "Environment definition not found in container. "

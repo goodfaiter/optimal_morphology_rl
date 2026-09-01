@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import torch
+
 from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import ModuleManager, register_module
 from optimal_morphology_rl.modules.rewards.reward_base_module import RewardBaseModule
 
@@ -53,20 +56,35 @@ class RewardManagerModule(BaseModule):
 
     def _build_sub_manager(self) -> ModuleManager:
         """Create a ModuleManager for reward sub-modules from config keys."""
-        sub_config: dict[str, Any] = {"modules": []}
+        sub_config: dict[str, Any] = {"modules": {"init_modules": []}}
         for key in self.config.keys():
             if key.startswith("_"):
                 continue
-            sub_config["modules"].append(key)
+            sub_config["modules"]["init_modules"].append(key)
             sub_config[key] = self.config[key]
         return ModuleManager.from_config(sub_config, registry=REWARD_REGISTRY)
 
-    def post_finalize(self, env: Any) -> None:
-        """Run post_finalize on reward sub-modules."""
-        self.sub_manager.post_finalize(env)
+    def post_finalize(self, container: ModuleContainer) -> None:
+        """Allocate the reward buffer and run post_finalize on reward sub-modules."""
+        if container.get("total_num_envs") is None or container.get("device") is None:
+            raise RuntimeError(
+                "RewardManagerModule requires 'total_num_envs' and 'device' "
+                "in the shared container."
+            )
+        container.rew_buf = torch.zeros(
+            container.total_num_envs, dtype=torch.float32, device=container.device
+        )
+        self.sub_manager.container = container
+        self.sub_manager.post_finalize()
 
-    def compute(self, env: Any) -> None:
+    def step(self, container: ModuleContainer) -> None:
         """Reset reward buffers and sum contributions from every reward sub-module."""
+        env = container.get("env")
+        if env is None:
+            raise RuntimeError(
+                "RewardManagerModule requires 'env' in the shared container."
+            )
+
         env.rew_buf[:] = 0.0
         env.info["rewards"] = {}
 
@@ -75,6 +93,7 @@ class RewardManagerModule(BaseModule):
             if contribution is not None:
                 env.rew_buf[:] += contribution
 
-    def reset(self, env: Any) -> None:
+    def reset(self, container: ModuleContainer) -> None:
         """Reset reward sub-modules."""
-        self.sub_manager.reset(env)
+        self.sub_manager.container = container
+        self.sub_manager.reset()

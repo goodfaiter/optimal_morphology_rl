@@ -6,10 +6,9 @@ from typing import Any
 
 import torch
 
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.terminations.termination_base_module import (
     TerminationBaseModule,
-)
-from optimal_morphology_rl.modules.terminations.termination_manager_module import (
     register_termination,
 )
 
@@ -18,9 +17,8 @@ from optimal_morphology_rl.modules.terminations.termination_manager_module impor
 class BoundsTermination(TerminationBaseModule):
     """Terminates episodes when the robot base leaves the configured table area."""
 
-    def post_finalize(self, env: Any) -> None:
-        container = env.module_manager.container
-        device = env.device
+    def post_finalize(self, container: ModuleContainer) -> None:
+        device = container.device
 
         table_obj = container.objects.get("table") or container.objects.get(
             "table_with_camera"

@@ -7,6 +7,7 @@ from typing import Any
 import vlearn as v
 
 from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
 
@@ -45,15 +46,17 @@ class RenderModule(BaseModule):
             )
         )
 
-    def finalize(self, env: Any) -> None:
-        """Store the exception-on-close flag on the environment."""
+    def finalize(self, container: ModuleContainer) -> None:
+        """Resolve the exception-on-close flag."""
+        env = container.env
         if self.raise_exception is None:
-            env.raise_exception = getattr(env, "rendering", False)
+            self.raise_exception = getattr(env, "rendering", False)
         else:
-            env.raise_exception = bool(self.raise_exception)
+            self.raise_exception = bool(self.raise_exception)
 
-    def post_finalize(self, env: Any) -> None:
+    def post_finalize(self, container: ModuleContainer) -> None:
         """Obtain the renderer and configure camera/window behavior."""
+        env = container.env
         if not getattr(env, "rendering", False):
             return
 
@@ -63,7 +66,7 @@ class RenderModule(BaseModule):
         if gym_render is None:
             return
 
-        env.module_manager.container.gym_render = gym_render
+        container.gym_render = gym_render
 
         eye = self.camera.get("eye", [-0.671139, 0.073098, 0.726423])
         target = self.camera.get("target", [0.755459, -0.009100, -0.655133])
@@ -71,17 +74,14 @@ class RenderModule(BaseModule):
         gym_render.capped_step = self.capped_step
         gym_render.set_paused(self.paused)
 
-    def pre_physics_step(self, env: Any) -> None:
-        """Render once per control step when not rendering every sub-step."""
-        if getattr(env, "rendering", False) and not self.render_substep:
-            env.render()
+    def step(self, container: ModuleContainer) -> None:
+        """Render the environment and mark the simulation step as finished."""
+        env = container.env
+        gym_render = container.get("gym_render", None)
+        if not getattr(env, "rendering", False) or gym_render is None:
+            return
 
-    def pre_gym_step(self, env: Any) -> None:
-        """Render before each gym sub-step when sub-step rendering is enabled."""
-        if getattr(env, "rendering", False) and self.render_substep:
-            env.render()
-
-    def post_physics_step(self, env: Any) -> None:
-        """Tell the renderer that the simulation step is finished."""
-        if getattr(env, "rendering", False) and env.gym_render is not None:
-            env.gym_render.set_step(False)
+        finished = gym_render.render(lambda: None)
+        if finished and self.raise_exception:
+            raise RuntimeError("Render window was closed.")
+        gym_render.set_step(False)

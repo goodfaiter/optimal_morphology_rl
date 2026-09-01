@@ -9,6 +9,7 @@ from optimal_morphology_rl.modules.external_force import (
     ExternalForceConfig,
     ExternalForceModule as ExternalForceHelper,
 )
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
 
@@ -27,8 +28,8 @@ class ExternalForceModule(BaseModule):
         self.torque_max = float(self.config.get("torque_max", 0.0))
         self.force_module: ExternalForceHelper | None = None
 
-    def post_finalize(self, env: Any) -> None:
-        container = env.module_manager.container
+    def post_finalize(self, container: ModuleContainer) -> None:
+        """Create the external force helper if the reward object is eligible."""
         reward_object = container.get("reward_object")
         if reward_object is None:
             return
@@ -48,14 +49,15 @@ class ExternalForceModule(BaseModule):
         )
         self.force_module = ExternalForceHelper(
             body_handles={reward_object_name: reward_object.handle},
-            total_num_envs=env.total_num_envs,
-            device=env.device,
+            total_num_envs=container.total_num_envs,
+            device=container.device,
             env_group=container.env_group,
             gym=container.gym,
             config=config,
         )
         container.external_force = self.force_module
 
-    def pre_physics_step(self, env: Any) -> None:
+    def step(self, container: ModuleContainer) -> None:
+        """Apply a random external force/torque to the reward object."""
         if self.force_module is not None:
-            self.force_module.step(env.module_manager.container.gym)
+            self.force_module.step(container.gym)

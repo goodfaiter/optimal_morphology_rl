@@ -5,13 +5,14 @@ from optimal_morphology_rl.modules.terminations.bounds_termination import (
     BoundsTermination,
 )
 from optimal_morphology_rl.modules.terminations.drop_termination import DropTermination
+from optimal_morphology_rl.modules.terminations.progress_module import ProgressModule
 from optimal_morphology_rl.modules.terminations.termination_base_module import (
+    TERMINATION_REGISTRY,
     TerminationBaseModule,
+    register_termination,
 )
 from optimal_morphology_rl.modules.terminations.termination_manager_module import (
-    TERMINATION_REGISTRY,
     TerminationManagerModule,
-    register_termination,
 )
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "TERMINATION_REGISTRY",
     "DropTermination",
     "BoundsTermination",
+    "ProgressModule",
 ]

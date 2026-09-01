@@ -9,6 +9,7 @@ import torch
 from vlearn.spaces import Box
 
 from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import ModuleManager, register_module
 from optimal_morphology_rl.modules.observations.observation_base_module import (
     ObservationBaseModule,
@@ -69,12 +70,24 @@ class ObservationManagerModule(BaseModule):
 
     def _build_sub_manager(self) -> ModuleManager:
         """Create a ModuleManager for observation sub-modules."""
-        sub_config = dict(self.config)
-        sub_config.setdefault("modules", [])
+        sub_config: dict[str, Any] = {"modules": {"init_modules": []}}
+        for key in self.config.keys():
+            if key.startswith("_"):
+                continue
+            if key == "modules":
+                sub_config["modules"]["init_modules"] = list(self.config[key])
+            else:
+                sub_config[key] = self.config[key]
         return ModuleManager.from_config(sub_config, registry=OBSERVATION_REGISTRY)
 
-    def finalize(self, env: Any) -> None:
+    def finalize(self, container: ModuleContainer) -> None:
         """Compute obs dims, build slices, and set the env observation space."""
+        env = container.get("env")
+        if env is None:
+            raise RuntimeError(
+                "ObservationManagerModule requires 'env' in the shared container."
+            )
+
         offset = 0
         self._obs_slices = {}
 
@@ -99,10 +112,17 @@ class ObservationManagerModule(BaseModule):
             f"stride={self.hist_stride})"
         )
 
-    def post_finalize(self, env: Any) -> None:
-        """Allocate base observation and history buffers."""
+    def post_finalize(self, container: ModuleContainer) -> None:
+        """Allocate observation buffer, base obs, and history buffers."""
+        env = container.env
         device = env.device
         total_num_envs = env.total_num_envs
+
+        container.obs_buf = torch.zeros(
+            (total_num_envs,) + env.observation_space.shape,
+            device=device,
+            dtype=torch.float32,
+        )
 
         self.base_obs = torch.zeros(
             (total_num_envs, self._base_obs_dim), device=device, dtype=torch.float32
@@ -120,8 +140,13 @@ class ObservationManagerModule(BaseModule):
             device=device,
         )
 
-    def compute_observations(self, env: Any) -> None:
+    def step(self, container: ModuleContainer) -> None:
         """Fill ``env.obs_buf`` from sub-module observations and history."""
+        env = container.get("env")
+        if env is None:
+            raise RuntimeError(
+                "ObservationManagerModule requires 'env' in the shared container."
+            )
         if self.base_obs is None or self._obs_slices is None:
             raise RuntimeError("ObservationManagerModule has not been finalized.")
 
@@ -133,7 +158,8 @@ class ObservationManagerModule(BaseModule):
         self.obs_history.add(self.base_obs)
         env.obs_buf[:] = self.obs_history.get().view(env.total_num_envs, -1)
 
-    def reset(self, env: Any) -> None:
+    def reset(self, container: ModuleContainer) -> None:
         """Reset the observation history."""
-        if self.obs_history is not None:
-            self.obs_history.reset_idx(env.reset_buf)
+        reset_buf = container.get("reset_buf")
+        if self.obs_history is not None and reset_buf is not None:
+            self.obs_history.reset_idx(reset_buf)

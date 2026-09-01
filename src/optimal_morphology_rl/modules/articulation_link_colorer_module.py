@@ -8,6 +8,7 @@ from optimal_morphology_rl.modules.articulation_link_colorer import (
     ArticulationLinkColorer,
 )
 from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
 
@@ -28,7 +29,7 @@ _DEFAULT_HAND_COLOR_MAP = {
 class ArticulationLinkColorerModule(BaseModule):
     """Colors articulation links based on their names.
 
-    The module expects ``container.robot`` to be populated by the ``robot``
+    The module expects ``container.robot`` to be populated by the ``create_robot``
     module.  It runs in ``finalize`` (after the robot articulation has been
     loaded into the environment definition) and assigns RGB materials to
     matched links.
@@ -54,14 +55,13 @@ class ArticulationLinkColorerModule(BaseModule):
         )
         self.colorer = ArticulationLinkColorer(color_map, exclude_substrings)
 
-    def finalize(self, env: Any) -> None:
+    def finalize(self, container: ModuleContainer) -> None:
         """Assign colors to the robot articulation links."""
-        container = env.module_manager.container
         robot = container.get("robot")
         if robot is None:
             raise RuntimeError(
                 "ArticulationLinkColorerModule requires 'robot' in the shared container. "
-                "Ensure the 'robot' module is listed before 'articulation_link_colorer'."
+                "Ensure the 'create_robot' module is listed before 'articulation_link_colorer'."
             )
         if container.get("env_def") is None:
             raise RuntimeError(

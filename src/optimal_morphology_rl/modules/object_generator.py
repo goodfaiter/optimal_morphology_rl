@@ -39,10 +39,6 @@ class ObjectBase(ABC):
         """Called before the physics step; subclasses may apply control forces."""
         pass
 
-    def post_physics_step(self, gym: v.Gym) -> None:
-        """Called after the physics step; subclasses may run cleanup or logging."""
-        pass
-
     @abstractmethod
     def load(self, env_def):
         """Load object into environment definition and return handle."""
@@ -485,10 +481,6 @@ class Drawer(LoadedArticulatedObject):
         self.spring_motor_cmd_buf[:, self.drawer_joint_motor_index] = lock_force
         gym.set_motor_forces(self.gpu_spring_motor_cmd_array)
 
-    def post_physics_step(self, gym: v.Gym):
-        """Post-step hook; nothing to do for the drawer spring currently."""
-        pass
-
     def update_goal(self, reset_buf: torch.Tensor):
         self.goal_pos_in_world[reset_buf, 0] = 0.0
         self.goal_pos_in_world[reset_buf, 1] = 0.0
@@ -591,10 +583,6 @@ class Button(LoadedArticulatedObject):
         self.spring_motor_cmd_buf[:, self.button_joint_motor_index] = force
         gym.set_motor_forces(self.gpu_spring_motor_cmd_array)
 
-    def post_physics_step(self, gym: v.Gym):
-        """Post-step hook; nothing to do for the button spring currently."""
-        pass
-
     def update_goal(self, reset_buf: torch.Tensor):
         self.goal_pos_in_world[reset_buf, 0] = 0.3
         self.goal_pos_in_world[reset_buf, 1] = 0.0
@@ -686,11 +674,6 @@ class ObjectGenerator:
         """Dispatch pre-physics hook to all objects."""
         for obj in self.objects.values():
             obj.pre_physics_step(gym)
-
-    def post_physics_step(self, gym) -> None:
-        """Dispatch post-physics hook to all objects."""
-        for obj in self.objects.values():
-            obj.post_physics_step(gym)
 
     def reset_idx(self, gym, reset_buf) -> None:
         """Reset objects selected by the reset buffer."""

@@ -9,13 +9,7 @@ import vlearn as v
 from optimal_morphology_rl.modules import ModuleManager
 
 
-VSIM_PATH = "/workspace/data/vsim/claw_3_tendon.vsim"
-
-
-class DummyEnv:
-    def __init__(self, manager: ModuleManager):
-        self.module_manager = manager
-        self.reset_buf = torch.zeros(1, dtype=torch.bool, device="cuda:0")
+VSIM_PATH = "/workspace/data/claw_3.vsim"
 
 
 @pytest.fixture(scope="module")
@@ -28,30 +22,37 @@ def _manager_session():
         pytest.fail(f"Hand VSIM not found: {VSIM_PATH}")
 
     config = {
-        "modules": ["create_rigid_vsim_envs", "robot", "object_generator"],
+        "modules": {
+            "init_modules": [
+                "create_rigid_vsim_envs",
+                "create_robot",
+                "create_objects",
+            ],
+        },
         "create_rigid_vsim_envs": {
             "num_envs": 1,
             "device": "cuda:0",
             "rendering": False,
             "with_window": False,
             "enable_scene_query": True,
-            "max_episode_length": 10,
         },
-        "robot": {
+        "create_robot": {
             "vsim_path": VSIM_PATH,
             "fixed_hand": False,
             "use_tendon": True,
         },
-        "object_generator": {
+        "create_objects": {
             "reward_object": "drawer",
             "scene_objects": ["table"],
         },
     }
 
     manager = ModuleManager.from_config(config)
-    env = DummyEnv(manager)
-    manager.finalize(env)
-    manager.post_finalize(env)
+    manager.finalize()
+    manager.container.reset_buf = torch.ones(
+        1, dtype=torch.bool, device="cuda:0"
+    )
+    manager.post_finalize()
 
     yield manager
 
@@ -82,7 +83,7 @@ class TestCreateRigidVsimEnvs:
         assert container.gym is not None
         assert container.env_def is not None
         assert container.env_group is not None
-        assert container.num_envs == 1
+        assert container.num_envs == [1]
         assert container.total_num_envs == 1
 
     def test_robot_loaded(self, manager):

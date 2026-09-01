@@ -166,7 +166,7 @@ def test_articulation_link_colorer_module_defaults() -> None:
 
 def test_goal_visualization_is_regular_module() -> None:
     module = GoalVisualizationModule({})
-    assert hasattr(module, "post_physics_step")
+    assert hasattr(module, "step")
 
 
 def test_play_mode_sets_capped_step() -> None:
@@ -189,7 +189,7 @@ def test_train_two_epochs(task_root: Path, tmp_path: Path) -> None:
     env_path = task_root / "hand_cube" / "env.yaml"
     with open(env_path, "r") as f:
         env_cfg = yaml.safe_load(f)
-    vsim_path = env_cfg["robot"]["vsim_path"]
+    vsim_path = env_cfg["create_robot"]["vsim_path"]
     if not os.path.isfile(vsim_path):
         pytest.skip(f"VSIM not found: {vsim_path}")
 

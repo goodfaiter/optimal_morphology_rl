@@ -3,6 +3,8 @@
 from abc import ABC
 from typing import Any
 
+from optimal_morphology_rl.modules.module_container import ModuleContainer
+
 
 class BaseModule(ABC):
     """Minimal lifecycle interface for a modular environment component.
@@ -22,18 +24,18 @@ class BaseModule(ABC):
         """
         self.config = config or {}
 
-    def finalize(self, env: Any) -> None:
+    def finalize(self, container: ModuleContainer) -> None:
         """Called once after all modules have been instantiated.
 
         Use this hook to resolve cross-module dependencies via
         ``env.module_manager`` or ``env.modules``.
 
         Args:
-            env: The environment instance that owns this manager.
+            container: The module container.
         """
         pass
 
-    def post_finalize(self, env: Any) -> None:
+    def post_finalize(self, container: ModuleContainer) -> None:
         """Called once after :meth:`finalize` has run for every module.
 
         Use this for construction steps that require the shared container to
@@ -41,23 +43,11 @@ class BaseModule(ABC):
         """
         pass
 
-    def pre_physics_step(self, env: Any) -> None:
-        """Called before the physics step with the current actions applied."""
+    def step(self, container: ModuleContainer) -> None:
+        """Main step function called at pre/post gym/physics steps."""
         pass
 
-    def pre_gym_step(self, env: Any) -> None:
-        """Called at the beginning of each simulation sub-step."""
-        pass
-
-    def post_gym_step(self, env: Any) -> None:
-        """Called at the end of each simulation sub-step."""
-        pass
-
-    def post_physics_step(self, env: Any) -> None:
-        """Called after the physics step (compute obs/reward/reset)."""
-        pass
-
-    def reset(self, env: Any) -> None:
+    def reset(self, container: ModuleContainer) -> None:
         """Reset the modules selected by the environment's reset buffer.
 
         This maps to the existing ``reset_idx`` convention.

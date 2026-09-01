@@ -43,10 +43,6 @@ class ObjectBase(ABC):
         """Called before the physics step; subclasses may apply control forces."""
         pass
 
-    def post_physics_step(self, gym: v.Gym) -> None:
-        """Called after the physics step; subclasses may run cleanup or logging."""
-        pass
-
     @abstractmethod
     def load(self, env_def):
         """Load object into environment definition and return handle."""
@@ -471,10 +467,6 @@ class Drawer(LoadedArticulatedObject):
         self.spring_motor_cmd_buf[:, self.handle_joint_motor_index] = torque
         self.spring_motor_cmd_buf[:, self.drawer_joint_motor_index] = lock_force
         gym.set_motor_forces(self.gpu_spring_motor_cmd_array)
-
-    def post_physics_step(self, gym: v.Gym):
-        """Post-step hook; nothing to do for the drawer spring currently."""
-        pass
 
     def update_goal(self, reset_buf: torch.Tensor):
         self.goal_pos_in_world[reset_buf, 0] = 0.0

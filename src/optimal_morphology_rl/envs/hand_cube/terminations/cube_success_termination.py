@@ -10,8 +10,6 @@ import torch
 from optimal_morphology_rl.envs.hand_envs.utils import get_reward_object_name
 from optimal_morphology_rl.modules.terminations.termination_base_module import (
     TerminationBaseModule,
-)
-from optimal_morphology_rl.modules.terminations.termination_manager_module import (
     register_termination,
 )
 

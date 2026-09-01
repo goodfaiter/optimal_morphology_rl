@@ -9,6 +9,7 @@ import vlearn as v
 from vlearn.torch_utils.torch_jit_utils import quat_rotate
 
 from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
 
@@ -17,7 +18,7 @@ class GoalVisualizationModule(BaseModule):
     """Draws RGB axes at the reward object's current goal pose.
 
     This module only does work when rendering is enabled.  It updates the
-    debug line shapes during ``post_physics_step`` so the renderer can draw
+    debug line shapes during the post-gym step so the renderer can draw
     them on the next frame.
 
     Config shape::
@@ -32,12 +33,12 @@ class GoalVisualizationModule(BaseModule):
         self.line_width = float(self.config.get("line_width", 3.0))
         self.axis_length = float(self.config.get("axis_length", 0.1))
 
-    def post_physics_step(self, env: Any) -> None:
+    def step(self, container: ModuleContainer) -> None:
         """Update goal-axis visualization for the first environment."""
-        if not getattr(env, "rendering", False) or env.gym_render is None:
+        env = container.env
+        if not getattr(env, "rendering", False) or container.gym_render is None:
             return
 
-        container = env.module_manager.container
         reward_object = container.get("reward_object")
         if reward_object is None:
             return
@@ -96,9 +97,9 @@ class GoalVisualizationModule(BaseModule):
         for attr_name in ("_goal_axis_x", "_goal_axis_y", "_goal_axis_z"):
             line = getattr(self, attr_name, None)
             if line is not None:
-                env.gym_render.unregister_line_shape(line)
+                container.gym_render.unregister_line_shape(line)
 
-        env_set = env.env_sets[0]
+        env_set = container.env_sets[0]
         env_handle = env_set.get_environment_handle(0)
 
         colors = [
@@ -109,12 +110,12 @@ class GoalVisualizationModule(BaseModule):
         attr_names = ("_goal_axis_x", "_goal_axis_y", "_goal_axis_z")
 
         for attr_name, color, points in zip(attr_names, colors, goal_points):
-            line = env.gym_render.create_user_line(
+            line = container.gym_render.create_user_line(
                 points,
                 color,
                 line_width=self.line_width,
                 visible=True,
                 env_handle=env_handle,
             )
-            env.gym_render.register_line_shape(line)
+            container.gym_render.register_line_shape(line)
             setattr(self, attr_name, line)

@@ -1,19 +1,18 @@
-"""Object generator module that owns loading, buffers, and lifecycle of scene objects."""
+"""Module that creates scene objects and exposes them on the shared container."""
 
 from __future__ import annotations
 
 from typing import Any, List
 
-import torch
-
 from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 from optimal_morphology_rl.modules.object_generator import ObjectGenerator
 
 
-@register_module("object_generator")
-class ObjectGeneratorModule(BaseModule):
-    """Loads scene objects, manages their GPU state, and dispatches per-step hooks.
+@register_module("create_objects")
+class CreateObjectsModule(BaseModule):
+    """Loads scene objects, manages their GPU state, and exposes them on the container.
 
     Expects the shared container to already contain ``env_def`` (populated by
     ``create_rigid_vsim_envs``).  After ``create_rigid_vsim_envs.post_finalize``
@@ -28,13 +27,12 @@ class ObjectGeneratorModule(BaseModule):
         self.record_output_path = self.config.get("record_output_path", None)
         self.generator: ObjectGenerator | None = None
 
-    def finalize(self, env: Any) -> None:
+    def finalize(self, container: ModuleContainer) -> None:
         """Instantiate and load requested objects into the environment definition."""
-        container = env.module_manager.container
         if container.get("env_def") is None:
             raise RuntimeError(
-                "ObjectGeneratorModule requires 'env_def' in the shared container. "
-                "Ensure create_rigid_vsim_envs is listed before object_generator."
+                "CreateObjectsModule requires 'env_def' in the shared container. "
+                "Ensure create_rigid_vsim_envs is listed before create_objects."
             )
 
         table_name = "table" if self.record_output_path is None else "table_with_camera"
@@ -50,27 +48,31 @@ class ObjectGeneratorModule(BaseModule):
         self.generator.load(container.env_def)
 
         container.objects = self.generator.objects
-        container.object_generator = self
+        container.create_objects = self
         container.reward_object_name = self.reward_object_name
         container.reward_object = self.generator.get_object(self.reward_object_name)
         container.object_names = object_names
 
-    def post_finalize(self, env: Any) -> None:
+    def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate buffers and create GPU commands now that env_group exists."""
-        container = env.module_manager.container
         if container.get("env_group") is None:
             raise RuntimeError(
-                "ObjectGeneratorModule requires 'env_group' in the shared container. "
-                "Ensure create_rigid_vsim_envs.post_finalize runs before object_generator.post_finalize."
+                "CreateObjectsModule requires 'env_group' in the shared container. "
+                "Ensure create_rigid_vsim_envs.post_finalize runs before create_objects.post_finalize."
             )
         if container.get("total_num_envs") is None or container.get("device") is None:
             raise RuntimeError(
-                "ObjectGeneratorModule requires 'total_num_envs' and 'device' in the shared container."
+                "CreateObjectsModule requires 'total_num_envs' and 'device' in the shared container."
+            )
+        if container.get("reset_buf") is None:
+            raise RuntimeError(
+                "CreateObjectsModule requires 'reset_buf' in the shared container. "
+                "Ensure ModularEnvironment sets container.reset_buf before post_finalize."
             )
 
         total_num_envs = container.total_num_envs
         device = container.device
-        reset_buf = env.reset_buf
+        reset_buf = container.reset_buf
 
         self.generator.allocate_buffers(total_num_envs, device)
         self.generator.create_gpu_commands(container.env_group, container.gym, reset_buf)
@@ -84,45 +86,23 @@ class ObjectGeneratorModule(BaseModule):
             self.reward_object_name
         )
 
-    def pre_physics_step(self, env: Any) -> None:
-        """Dispatch pre-physics hooks to every loaded object."""
-        if self.generator is None:
-            return
-        self.generator.pre_physics_step(env.module_manager.container.gym)
-
-    def post_physics_step(self, env: Any) -> None:
-        """Dispatch post-physics hooks to every loaded object."""
-        if self.generator is None:
-            return
-        self.generator.post_physics_step(env.module_manager.container.gym)
-
-    def reset(self, env: Any) -> None:
+    def reset(self, container: ModuleContainer) -> None:
         """Reset objects selected by the environment's reset buffer."""
         if self.generator is None:
             return
-        reset_buf = env.reset_buf
-        if reset_buf.sum() == 0:
+        reset_buf = container.get("reset_buf")
+        if reset_buf is None or reset_buf.sum() == 0:
             return
-        self.generator.reset_idx(env.module_manager.container.gym, reset_buf)
-
-    def refresh_buffers(self, env: Any) -> None:
-        """Refresh object state buffers from simulation.
-
-        This is not a manager lifecycle hook; environments or other modules can
-        call it explicitly when they need fresh object state.
-        """
-        if self.generator is None:
-            return
-        self.generator.refresh_buffers(env.module_manager.container.gym)
+        self.generator.reset_idx(container.gym, reset_buf)
 
     def get_object(self, name: str):
         """Get a specific object by name."""
         if self.generator is None:
-            raise RuntimeError("ObjectGeneratorModule has not been finalized.")
+            raise RuntimeError("CreateObjectsModule has not been finalized.")
         return self.generator.get_object(name)
 
     def get_object_link_offset(self, name: str) -> int:
         """Return link-based offset for the object based on object order."""
         if self.generator is None:
-            raise RuntimeError("ObjectGeneratorModule has not been finalized.")
+            raise RuntimeError("CreateObjectsModule has not been finalized.")
         return self.generator.get_object_link_offset(name)

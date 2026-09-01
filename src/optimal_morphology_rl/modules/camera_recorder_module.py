@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 from optimal_morphology_rl.modules.object_camera_recorder import ObjectCameraRecorder
 
@@ -20,32 +21,34 @@ class CameraRecorderModule(BaseModule):
         if output_dir is not None:
             self.recorder = ObjectCameraRecorder(output_dir)
 
-    def finalize(self, env: Any) -> None:
+    def finalize(self, container: ModuleContainer) -> None:
+        """Build camera specs from the loaded objects."""
         if self.recorder is None:
             return
-        container = env.module_manager.container
         if container.get("objects") is None or container.get("env_def") is None:
             raise RuntimeError(
                 "CameraRecorderModule requires 'objects' and 'env_def' in the shared container."
             )
         self.recorder.build_specs(container.objects, container.env_def)
 
-    def post_finalize(self, env: Any) -> None:
+    def post_finalize(self, container: ModuleContainer) -> None:
+        """Create camera instances on the environment group."""
         if self.recorder is None:
             return
-        container = env.module_manager.container
+        env = container.env
         self.recorder.build_cameras(
             container.env_def,
             container.env_group,
             container.gym,
             env.num_envs,
-            env.device,
+            container.device,
         )
         container.camera_recorder = self.recorder
 
-    def post_physics_step(self, env: Any) -> None:
+    def step(self, container: ModuleContainer) -> None:
+        """Record a frame from each camera."""
         if self.recorder is None:
             return
-        gym = env.module_manager.container.gym
-        self.recorder.update(gym)
+        env = container.env
+        self.recorder.update(container.gym)
         self.recorder.save(env.progress_buf[0].cpu().item())

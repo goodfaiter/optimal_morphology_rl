@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 from optimal_morphology_rl.modules.robot import Robot
 
 
-@register_module("robot")
+@register_module("create_robot")
 class RobotModule(BaseModule):
     """Loads and exposes the robot hand.
 
@@ -17,13 +18,12 @@ class RobotModule(BaseModule):
     (populated by ``create_rigid_vsim_envs``).
     """
 
-    def finalize(self, env: Any) -> None:
-        container = env.module_manager.container
-
+    def finalize(self, container: ModuleContainer) -> None:
+        """Load the robot hand into the environment definition."""
         if container.get("env_def") is None:
             raise RuntimeError(
                 "RobotModule requires 'env_def' in the shared container. "
-                "Ensure create_rigid_vsim_envs is listed before robot."
+                "Ensure create_rigid_vsim_envs is listed before create_robot."
             )
         if container.get("device") is None:
             raise RuntimeError(
@@ -32,7 +32,7 @@ class RobotModule(BaseModule):
 
         vsim_path = self.config.get("vsim_path")
         if vsim_path is None:
-            raise ValueError("robot config missing 'vsim_path'")
+            raise ValueError("create_robot config missing 'vsim_path'")
 
         fixed_hand = bool(self.config.get("fixed_hand", False))
         use_tendon = bool(self.config.get("use_tendon", True))
