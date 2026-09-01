@@ -13,7 +13,9 @@ from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.create_robot_module import Robot
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
-from optimal_morphology_rl.helpers.numpy_vlearn import quaternion_to_6d
+from optimal_morphology_rl.modules.observations.observation_jit_helpers import (
+    _quaternion_to_6d_jit,
+)
 
 
 def _allocate_read_buffers(
@@ -147,7 +149,7 @@ def _get_state(robot: Robot) -> dict[str, torch.Tensor]:
     """Update and return robot-derived observation tensors."""
     robot.robot_pos_in_world[:] = robot.get_root_transform_buf[:, 4:7]
     robot.quat_robot_to_world[:] = robot.get_root_transform_buf[:, 0:4]
-    robot._6d_robot_to_world[:] = quaternion_to_6d(robot.quat_robot_to_world)
+    robot._6d_robot_to_world[:] = _quaternion_to_6d_jit(robot.quat_robot_to_world)
     robot.robot_linear_velocity_in_world[:] = robot.get_root_vel_buf[:, 3:6]
     robot.robot_angular_velocity_in_world[:] = robot.get_root_vel_buf[:, :3]
 

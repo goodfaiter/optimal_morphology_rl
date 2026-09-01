@@ -6,6 +6,9 @@ from typing import Any
 
 import torch
 
+from optimal_morphology_rl.modules.observations.observation_jit_helpers import (
+    _robot_state_obs_jit,
+)
 from optimal_morphology_rl.modules.observations.observation_base_module import (
     ObservationBaseModule,
 )
@@ -32,22 +35,23 @@ class RobotStateObservation(ObservationBaseModule):
         robot = env.module_manager.container.robot
         robot_state = robot.get_state()
 
-        offset = 0
-        if not robot.fixed_hand:
-            out[:, offset : offset + 3] = robot_state["gravity_vector_in_robot_frame"]
-            offset += 3
-            out[:, offset : offset + 3] = robot_state[
-                "robot_linear_velocity_in_robot_frame"
-            ]
-            offset += 3
-            out[:, offset : offset + 3] = robot_state[
-                "robot_angular_velocity_in_robot_frame"
-            ]
-            offset += 3
+        if robot.fixed_hand:
+            gravity = torch.empty(
+                (env.total_num_envs, 0), device=env.device, dtype=torch.float32
+            )
+            lin_vel = gravity
+            ang_vel = gravity
+        else:
+            gravity = robot_state["gravity_vector_in_robot_frame"]
+            lin_vel = robot_state["robot_linear_velocity_in_robot_frame"]
+            ang_vel = robot_state["robot_angular_velocity_in_robot_frame"]
 
-        num_dofs = robot.get_num_dofs()
-        out[:, offset : offset + num_dofs] = robot_state["dof_pos_buf"]
-        offset += num_dofs
-        out[:, offset : offset + num_dofs] = robot_state["dof_vel_buf"]
-        offset += num_dofs
-        out[:, offset : offset + robot.get_num_actions()] = env.act_buf
+        out[:] = _robot_state_obs_jit(
+            gravity,
+            lin_vel,
+            ang_vel,
+            robot_state["dof_pos_buf"],
+            robot_state["dof_vel_buf"],
+            env.act_buf,
+            robot.fixed_hand,
+        )
