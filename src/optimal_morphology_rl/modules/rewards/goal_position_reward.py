@@ -45,11 +45,8 @@ class GoalPositionReward(RewardBaseModule):
             scale,
         )
 
-        env.info["rewards"]["goal_position_reward"] = (
-            raw.sum().item() / env.total_num_envs
-        )
+        env.info["rewards"]["goal_position_reward"] = raw.sum().item() / env.total_num_envs
         env.info["rewards"]["goal_position_error_l2_norm_mm"] = (
-            (torch.norm(object_pos_in_world - reward_object.goal_pos_in_world, dim=-1)
-             .sum().item() / env.total_num_envs * 1000)
+            torch.norm(object_pos_in_world - reward_object.goal_pos_in_world, dim=-1).sum().item() / env.total_num_envs * 1000
         )
         return reward
