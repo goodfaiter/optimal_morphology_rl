@@ -49,21 +49,15 @@ class GoalVisualizationModule(BaseModule):
         axes = [
             quat_rotate(
                 goal_quat,
-                torch.tensor(
-                    [[1.0, 0.0, 0.0]], device=env.device, dtype=torch.float32
-                ),
+                torch.tensor([[1.0, 0.0, 0.0]], device=env.device, dtype=torch.float32),
             )[0],
             quat_rotate(
                 goal_quat,
-                torch.tensor(
-                    [[0.0, 1.0, 0.0]], device=env.device, dtype=torch.float32
-                ),
+                torch.tensor([[0.0, 1.0, 0.0]], device=env.device, dtype=torch.float32),
             )[0],
             quat_rotate(
                 goal_quat,
-                torch.tensor(
-                    [[0.0, 0.0, 1.0]], device=env.device, dtype=torch.float32
-                ),
+                torch.tensor([[0.0, 0.0, 1.0]], device=env.device, dtype=torch.float32),
             )[0],
         ]
 

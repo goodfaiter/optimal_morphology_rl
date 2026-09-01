@@ -32,3 +32,15 @@ time_series_buffer = { git = "https://github.com/goodfaiter/time_series_buffer.g
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/optimal_morphology_rl"]
+
+[tool.ruff]
+line-length = 140
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.5",
+]

@@ -42,24 +42,14 @@ class KinematicSensor:
             source = env_def.get_articulation(handle)
 
         if source is None:
-            raise ValueError(
-                f"Handle {handle} is neither a rigid body nor an articulation."
-            )
+            raise ValueError(f"Handle {handle} is neither a rigid body nor an articulation.")
 
         self.kinematic_sensor_handle = source.get_kinematic_sensor_handle(sensor_index)
 
-        self.pose_in_world_buf = torch.zeros(
-            (total_num_envs, 7), dtype=torch.float32, device=device
-        )
-        self.velocity_in_world_buf = torch.zeros(
-            (total_num_envs, 6), dtype=torch.float32, device=device
-        )
-        self.pose_in_object_buf = torch.zeros(
-            (total_num_envs, 7), dtype=torch.float32, device=device
-        )
-        self.velocity_in_object_buf = torch.zeros(
-            (total_num_envs, 6), dtype=torch.float32, device=device
-        )
+        self.pose_in_world_buf = torch.zeros((total_num_envs, 7), dtype=torch.float32, device=device)
+        self.velocity_in_world_buf = torch.zeros((total_num_envs, 6), dtype=torch.float32, device=device)
+        self.pose_in_object_buf = torch.zeros((total_num_envs, 7), dtype=torch.float32, device=device)
+        self.velocity_in_object_buf = torch.zeros((total_num_envs, 6), dtype=torch.float32, device=device)
 
     def create_gpu_commands(self, env_group: Any, gym: v.Gym) -> None:
         """Create GPU commands for reading kinematic sensor state."""
@@ -75,9 +65,7 @@ class KinematicSensor:
             self.kinematic_sensor_handle,
             frame_type=v.FrameType.LOCAL,
         )
-        self.get_kinematic_sensor_cmd_arr = gym.create_gpu_array(
-            [in_world_cmd, in_object_cmd]
-        )
+        self.get_kinematic_sensor_cmd_arr = gym.create_gpu_array([in_world_cmd, in_object_cmd])
 
     def update(self, gym: v.Gym) -> None:
         """Read the latest kinematic sensor data into the dense buffers."""
@@ -135,13 +123,9 @@ class CreateKinematicSensorModule(BaseModule):
     def finalize(self, container: ModuleContainer) -> None:
         """Verify dependencies."""
         if container.get("reward_object") is None:
-            raise RuntimeError(
-                "CreateKinematicSensorModule requires 'reward_object' in the shared container."
-            )
+            raise RuntimeError("CreateKinematicSensorModule requires 'reward_object' in the shared container.")
         if container.get("env_def") is None:
-            raise RuntimeError(
-                "CreateKinematicSensorModule requires 'env_def' in the shared container."
-            )
+            raise RuntimeError("CreateKinematicSensorModule requires 'env_def' in the shared container.")
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate buffers and create GPU commands."""

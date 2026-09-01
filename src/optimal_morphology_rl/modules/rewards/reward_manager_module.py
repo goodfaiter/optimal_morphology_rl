@@ -22,9 +22,7 @@ def register_reward(name: str | None = None):
     def decorator(cls: type[RewardBaseModule]) -> type[RewardBaseModule]:
         registry_name = name if name is not None else cls.__name__
         if registry_name in REWARD_REGISTRY:
-            raise ValueError(
-                f"Reward module '{registry_name}' is already registered."
-            )
+            raise ValueError(f"Reward module '{registry_name}' is already registered.")
         REWARD_REGISTRY[registry_name] = cls
         return cls
 
@@ -50,9 +48,7 @@ class RewardManagerModule(BaseModule):
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
         self.sub_manager = self._build_sub_manager()
-        self._reward_modules: list[RewardBaseModule] = [
-            m for m in self.sub_manager if isinstance(m, RewardBaseModule)
-        ]
+        self._reward_modules: list[RewardBaseModule] = [m for m in self.sub_manager if isinstance(m, RewardBaseModule)]
 
     def _build_sub_manager(self) -> ModuleManager:
         """Create a ModuleManager for reward sub-modules from config keys."""
@@ -67,13 +63,8 @@ class RewardManagerModule(BaseModule):
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate the reward buffer and run post_finalize on reward sub-modules."""
         if container.get("total_num_envs") is None or container.get("device") is None:
-            raise RuntimeError(
-                "RewardManagerModule requires 'total_num_envs' and 'device' "
-                "in the shared container."
-            )
-        container.rew_buf = torch.zeros(
-            container.total_num_envs, dtype=torch.float32, device=container.device
-        )
+            raise RuntimeError("RewardManagerModule requires 'total_num_envs' and 'device' in the shared container.")
+        container.rew_buf = torch.zeros(container.total_num_envs, dtype=torch.float32, device=container.device)
         self.sub_manager.container = container
         self.sub_manager.post_finalize()
 
@@ -81,9 +72,7 @@ class RewardManagerModule(BaseModule):
         """Reset reward buffers and sum contributions from every reward sub-module."""
         env = container.get("env")
         if env is None:
-            raise RuntimeError(
-                "RewardManagerModule requires 'env' in the shared container."
-            )
+            raise RuntimeError("RewardManagerModule requires 'env' in the shared container.")
 
         env.rew_buf[:] = 0.0
         env.info["rewards"] = {}

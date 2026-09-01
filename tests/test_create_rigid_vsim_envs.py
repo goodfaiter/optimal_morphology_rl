@@ -50,9 +50,7 @@ def _manager_session():
 
     manager = ModuleManager.from_config(config)
     manager.finalize()
-    manager.container.reset_buf = torch.ones(
-        1, dtype=torch.bool, device="cuda:0"
-    )
+    manager.container.reset_buf = torch.ones(1, dtype=torch.bool, device="cuda:0")
     manager.post_finalize()
 
     yield manager

@@ -23,47 +23,25 @@ from optimal_morphology_rl.helpers.numpy_vlearn import random_uniform_quaternion
 # ---------------------------------------------------------------------------
 def _allocate_control_buffers(robot: Robot, total_num_envs: int, device: torch.device) -> None:
     """Allocate buffers used for control and reset."""
-    robot.reset_joint_pos_buf = torch.zeros(
-        (total_num_envs, robot.num_joints), device=device, dtype=torch.float32
-    )
-    robot.reset_joint_vel_buf = torch.zeros(
-        (total_num_envs, robot.num_joints), device=device, dtype=torch.float32
-    )
-    robot.reset_root_transform_buf = torch.zeros(
-        (total_num_envs, 7), device=device, dtype=torch.float32
-    )
-    robot.reset_root_vel_buf = torch.zeros(
-        (total_num_envs, 6), device=device, dtype=torch.float32
-    )
+    robot.reset_joint_pos_buf = torch.zeros((total_num_envs, robot.num_joints), device=device, dtype=torch.float32)
+    robot.reset_joint_vel_buf = torch.zeros((total_num_envs, robot.num_joints), device=device, dtype=torch.float32)
+    robot.reset_root_transform_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
+    robot.reset_root_vel_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
 
-    robot.set_joint_pos_buf = torch.zeros(
-        (total_num_envs, 0), device=device, dtype=torch.float32
-    )
-    robot.set_joint_vel_buf = torch.zeros(
-        (total_num_envs, 0), device=device, dtype=torch.float32
-    )
-    robot.set_root_transform_buf = torch.zeros(
-        (total_num_envs, 7), device=device, dtype=torch.float32
-    )
-    robot.set_root_vel_buf = torch.zeros(
-        (total_num_envs, 6), device=device, dtype=torch.float32
-    )
+    robot.set_joint_pos_buf = torch.zeros((total_num_envs, 0), device=device, dtype=torch.float32)
+    robot.set_joint_vel_buf = torch.zeros((total_num_envs, 0), device=device, dtype=torch.float32)
+    robot.set_root_transform_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
+    robot.set_root_vel_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
 
-    robot.set_motor_cmd_buf = torch.zeros(
-        (total_num_envs, robot.num_motors), device=device, dtype=torch.float32
-    )
-    robot.set_force_torque_buf = torch.zeros(
-        (total_num_envs, robot.num_links, 6), dtype=torch.float32, device=device
-    )
+    robot.set_motor_cmd_buf = torch.zeros((total_num_envs, robot.num_motors), device=device, dtype=torch.float32)
+    robot.set_force_torque_buf = torch.zeros((total_num_envs, robot.num_links, 6), dtype=torch.float32, device=device)
 
     # Rigid material property buffers are scalar per material.
     robot.set_static_friction_buf = torch.zeros(1, dtype=torch.float32, device=device)
     robot.set_dynamic_friction_buf = torch.zeros(1, dtype=torch.float32, device=device)
 
     if robot.use_tendon:
-        robot.set_tendon_controls_buf = torch.zeros(
-            (total_num_envs, robot.num_tendons), dtype=torch.float32, device=device
-        )
+        robot.set_tendon_controls_buf = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
 
 
 # ---------------------------------------------------------------------------
@@ -136,9 +114,7 @@ def _create_control_gpu_commands(
         robot.rigid_mat_handle,
         v.wrap_gpu_buffer(reset_buf),
     )
-    robot.gpu_set_friction_cmd = gym.create_gpu_array(
-        [set_static_friction_cmd, set_dynamic_friction_cmd]
-    )
+    robot.gpu_set_friction_cmd = gym.create_gpu_array([set_static_friction_cmd, set_dynamic_friction_cmd])
 
 
 @register_module("robot_control")
@@ -181,10 +157,7 @@ class RobotControlModule(BaseModule):
                 "'robot_control' in pre_physics_step_modules."
             )
         if container.get("inverse_reset_buf") is None:
-            raise RuntimeError(
-                "RobotControlModule requires 'inverse_reset_buf' in the shared "
-                "container. Ensure 'termination' is loaded."
-            )
+            raise RuntimeError("RobotControlModule requires 'inverse_reset_buf' in the shared container. Ensure 'termination' is loaded.")
 
         _allocate_control_buffers(robot, total_num_envs, device)
 
@@ -209,25 +182,17 @@ class RobotControlModule(BaseModule):
                 robot.max_velocity,
             )
             quat_robot_to_world = robot.get_root_transform_buf[:, 0:4]
-            robot.set_root_vel_buf[:, :3] = quat_rotate(
-                quat_robot_to_world, local_root_vel[:, :3]
-            )
-            robot.set_root_vel_buf[:, 3:] = quat_rotate(
-                quat_robot_to_world, local_root_vel[:, 3:]
-            )
+            robot.set_root_vel_buf[:, :3] = quat_rotate(quat_robot_to_world, local_root_vel[:, :3])
+            robot.set_root_vel_buf[:, 3:] = quat_rotate(quat_robot_to_world, local_root_vel[:, 3:])
             gym.set_articulation_kinematic_states(robot.gpu_set_kinematic_state_command_array)
 
         robot.set_motor_cmd_buf[:] = 0.0
 
         if robot.use_tendon:
-            robot.set_tendon_controls_buf[:] = torch.clamp(
-                robot.scaled_act_buf[:, robot.dof_slice], 0.0, None
-            )
+            robot.set_tendon_controls_buf[:] = torch.clamp(robot.scaled_act_buf[:, robot.dof_slice], 0.0, None)
             gym.set_spatial_tendon_forces(robot.gpu_set_tendon_control_command_array)
         else:
-            robot.set_motor_cmd_buf[:] = torch.clamp(
-                robot.scaled_act_buf[:, robot.dof_slice], 0.0, None
-            )
+            robot.set_motor_cmd_buf[:] = torch.clamp(robot.scaled_act_buf[:, robot.dof_slice], 0.0, None)
 
         # Antagonistic spring on all joints.
         robot.set_motor_cmd_buf[:] += -0.1 * robot.get_joint_pos_buf

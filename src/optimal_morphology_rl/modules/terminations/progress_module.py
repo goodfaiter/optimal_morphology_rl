@@ -24,21 +24,15 @@ class ProgressModule(TerminationBaseModule):
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
-        self.max_episode_length = int(
-            self.config.get("max_episode_length", 6 * 60)
-        )
+        self.max_episode_length = int(self.config.get("max_episode_length", 6 * 60))
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate the per-environment progress buffer."""
         if container.get("progress_buf") is not None:
             return
         if container.get("total_num_envs") is None or container.get("device") is None:
-            raise RuntimeError(
-                "ProgressModule requires 'total_num_envs' and 'device' in the shared container."
-            )
-        container.progress_buf = torch.zeros(
-            container.total_num_envs, dtype=torch.long, device=container.device
-        )
+            raise RuntimeError("ProgressModule requires 'total_num_envs' and 'device' in the shared container.")
+        container.progress_buf = torch.zeros(container.total_num_envs, dtype=torch.long, device=container.device)
 
     def compute(self, env: Any) -> None:
         """Increment progress and apply the episode-length truncation."""

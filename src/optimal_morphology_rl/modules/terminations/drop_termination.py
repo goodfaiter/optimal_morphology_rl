@@ -27,6 +27,4 @@ class DropTermination(TerminationBaseModule):
 
         if reward_scale != 0.0:
             env.rew_buf[:] += reward_scale * drop.float()
-            env.info["rewards"]["drop_penalty"] = (
-                -drop.float().sum().item() / env.total_num_envs
-            )
+            env.info["rewards"]["drop_penalty"] = -drop.float().sum().item() / env.total_num_envs

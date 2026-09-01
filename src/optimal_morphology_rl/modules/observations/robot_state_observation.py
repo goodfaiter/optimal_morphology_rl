@@ -36,9 +36,7 @@ class RobotStateObservation(ObservationBaseModule):
         robot_state = robot.get_state()
 
         if robot.fixed_hand:
-            gravity = torch.empty(
-                (env.total_num_envs, 0), device=env.device, dtype=torch.float32
-            )
+            gravity = torch.empty((env.total_num_envs, 0), device=env.device, dtype=torch.float32)
             lin_vel = gravity
             ang_vel = gravity
         else:

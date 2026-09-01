@@ -239,7 +239,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
             device=self.device,
         )
 
-        print(f"Observation space size: {self.num_obs} " f"(base={self.base_num_obs}, num_hist={self.num_hist}, stride={self.hist_stride})")
+        print(f"Observation space size: {self.num_obs} (base={self.base_num_obs}, num_hist={self.num_hist}, stride={self.hist_stride})")
 
         self.observation_space = Box(
             low=np.full(self.num_obs, np.finfo("f").min, dtype=np.float32),
@@ -405,11 +405,11 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         self.trunc_buf[self.reset_buf] = False
 
         # Reset modules
-        if self.reward_object_name == "cube": # Need high fric to make the cube work
+        if self.reward_object_name == "cube":  # Need high fric to make the cube work
             self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=0.8)
-        elif self.reward_object_name == "button_difficult": # Need low fric to make the button_difficult work
+        elif self.reward_object_name == "button_difficult":  # Need low fric to make the button_difficult work
             self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=0.1, randomize_pose=(self.total_num_envs > 1))
-        else: # Rest can be random
+        else:  # Rest can be random
             if self.reward_object_name in ("button", "drawer"):
                 self.robot.reset_idx(self.gym, self.reset_buf, self.device, fric_coeff=None, randomize_pose=(self.total_num_envs > 1))
             else:
@@ -497,8 +497,12 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
 
         if not self.fixed_hand:
             self.base_obs[:, self.base_obs_slices["gravity_vector_in_robot_frame"]] = robot_state["gravity_vector_in_robot_frame"]
-            self.base_obs[:, self.base_obs_slices["robot_linear_velocity_in_robot_frame"]] = robot_state["robot_linear_velocity_in_robot_frame"]
-            self.base_obs[:, self.base_obs_slices["robot_angular_velocity_in_robot_frame"]] = robot_state["robot_angular_velocity_in_robot_frame"]
+            self.base_obs[:, self.base_obs_slices["robot_linear_velocity_in_robot_frame"]] = robot_state[
+                "robot_linear_velocity_in_robot_frame"
+            ]
+            self.base_obs[:, self.base_obs_slices["robot_angular_velocity_in_robot_frame"]] = robot_state[
+                "robot_angular_velocity_in_robot_frame"
+            ]
         self.base_obs[:, self.base_obs_slices["dof_pos_buf"]] = robot_state["dof_pos_buf"]
         self.base_obs[:, self.base_obs_slices["dof_vel_buf"]] = robot_state["dof_vel_buf"]
         self.base_obs[:, self.base_obs_slices["act_buf"]] = self.act_buf
@@ -568,9 +572,7 @@ class HandObjectEnvironmentGpu(EnvironmentGpu):
         if self.reward_object_name != "cube":
             # distal_link_pos_buf is stored link-first; transpose to (envs, links, 3) for the reward.
             link_positions = self.robot.distal_link_pos_buf.transpose(0, 1)
-            link_dists = torch.norm(
-                link_positions - object_pos_in_world.unsqueeze(1), dim=-1
-            )
+            link_dists = torch.norm(link_positions - object_pos_in_world.unsqueeze(1), dim=-1)
             avg_dist = link_dists.mean(dim=-1)
             dist_clipped = torch.clamp(avg_dist, min=0.01)  # don't reward getting too close to allow for exploration
             dist_clipped_normalized = dist_clipped / 0.2

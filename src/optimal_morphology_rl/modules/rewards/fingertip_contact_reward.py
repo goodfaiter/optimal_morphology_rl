@@ -45,7 +45,5 @@ class FingertipContactReward(RewardBaseModule):
         scale = float(self.config.get("scale", 2.0))
         reward, raw = _fingertip_contact_reward_jit(forces, contact_mask, scale)
 
-        env.info["rewards"]["fingertip_contact_reward"] = (
-            raw.sum().item() / env.total_num_envs
-        )
+        env.info["rewards"]["fingertip_contact_reward"] = raw.sum().item() / env.total_num_envs
         return reward

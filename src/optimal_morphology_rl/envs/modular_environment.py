@@ -186,9 +186,7 @@ class ModularEnvironment:
     # ------------------------------------------------------------------
     # RL interface
     # ------------------------------------------------------------------
-    def step(
-        self, actions: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, Any]]:
+    def step(self, actions: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, Any]]:
         """Step the physics and return obs, reward, term, trunc, info."""
         self.module_manager.container.actions[:] = actions
 
@@ -212,7 +210,7 @@ class ModularEnvironment:
             self.term_buf.clone(),
             self.trunc_buf.clone(),
             self.info,
-        )   
+        )
 
     def reset(self) -> tuple[torch.Tensor, dict[str, Any]]:
         """Reset all environments and return initial observations."""

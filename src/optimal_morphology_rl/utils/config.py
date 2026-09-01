@@ -78,10 +78,7 @@ def _safe_eval(expr: str, context: dict[str, Any]) -> Any:
 
     for node in ast.walk(tree):
         if not isinstance(node, _ALLOWED_EXPR_NODES):
-            raise ValueError(
-                f"Disallowed syntax in config expression {expr!r}: "
-                f"{type(node).__name__}"
-            )
+            raise ValueError(f"Disallowed syntax in config expression {expr!r}: {type(node).__name__}")
 
     compiled = compile(tree, filename="<config-eval>", mode="eval")
     return eval(compiled, {"__builtins__": {}}, context)

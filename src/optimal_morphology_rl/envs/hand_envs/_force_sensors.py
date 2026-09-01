@@ -45,12 +45,9 @@ class ForceSensors:
         self.num_force_sensors = len(self.force_sensor_handles)
 
         if self.num_force_sensors > 0:
-            self.force_sensor_buf = torch.zeros(
-                (total_num_envs, self.num_force_sensors, 6), dtype=torch.float32, device=device
-            )
+            self.force_sensor_buf = torch.zeros((total_num_envs, self.num_force_sensors, 6), dtype=torch.float32, device=device)
             self.force_sensor_views = [
-                torch.zeros((total_num_envs, 6), dtype=torch.float32, device=device)
-                for _ in range(self.num_force_sensors)
+                torch.zeros((total_num_envs, 6), dtype=torch.float32, device=device) for _ in range(self.num_force_sensors)
             ]
 
     def create_gpu_commands(self, env_group, gym: v.Gym) -> None:

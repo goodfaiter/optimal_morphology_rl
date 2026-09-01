@@ -54,9 +54,7 @@ class _BodyForceEntry:
         self.device = device
         self.config = config
 
-        self.force_buf = torch.zeros(
-            (num_envs, 1, 6), dtype=torch.float32, device=device
-        )
+        self.force_buf = torch.zeros((num_envs, 1, 6), dtype=torch.float32, device=device)
         self.cmd = env_group.create_rigid_body_external_force_command(
             v.wrap_gpu_buffer(self.force_buf),
             handle,
@@ -140,9 +138,7 @@ class ExternalForceModule(BaseModule):
         from optimal_morphology_rl.modules.create_objects_module import LoadedRigidObject
 
         reward_object_name = container.get("reward_object_name", "")
-        if reward_object_name == "cube" or not isinstance(
-            reward_object, LoadedRigidObject
-        ):
+        if reward_object_name == "cube" or not isinstance(reward_object, LoadedRigidObject):
             return
 
         config = ExternalForceConfig(

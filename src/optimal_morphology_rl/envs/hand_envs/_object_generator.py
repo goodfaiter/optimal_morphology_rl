@@ -390,11 +390,7 @@ class Drawer(LoadedArticulatedObject):
 
     def allocate_buffers(self, total_num_envs: int, device: torch.device):
         super().allocate_buffers(total_num_envs, device)
-        if (
-            self.handle_joint_motor_index is not None
-            and self.drawer_joint_motor_index is not None
-            and self.num_motors > 0
-        ):
+        if self.handle_joint_motor_index is not None and self.drawer_joint_motor_index is not None and self.num_motors > 0:
             self.spring_motor_cmd_buf = torch.zeros((total_num_envs, self.num_motors), device=device, dtype=torch.float32)
             self.unlocked_buf = torch.zeros((total_num_envs,), device=device, dtype=torch.bool)
 
@@ -432,10 +428,7 @@ class Drawer(LoadedArticulatedObject):
         lock_force = torch.zeros_like(q_drawer)
         locked = ~self.unlocked_buf
         if locked.any():
-            lock_force[locked] = (
-                -self.lock_stiffness * q_drawer[locked]
-                - self.lock_damping * qd_drawer[locked]
-            )
+            lock_force[locked] = -self.lock_stiffness * q_drawer[locked] - self.lock_damping * qd_drawer[locked]
             lock_force = torch.clamp(lock_force, -self.max_lock_force, self.max_lock_force)
 
         self.spring_motor_cmd_buf.zero_()
@@ -449,9 +442,7 @@ class Drawer(LoadedArticulatedObject):
         self.goal_pos_in_world[reset_buf, 2] = 0.1
         half = math.sin(math.pi / 4.0)
         w = math.cos(math.pi / 4.0)
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(
-            [half, 0.0, 0.0, w], device=reset_buf.device
-        )
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor([half, 0.0, 0.0, w], device=reset_buf.device)
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor):
         self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)

@@ -55,8 +55,7 @@ class ForceSensors:
                 device=device,
             )
             self.force_sensor_views = [
-                torch.zeros((total_num_envs, 6), dtype=torch.float32, device=device)
-                for _ in range(self.num_force_sensors)
+                torch.zeros((total_num_envs, 6), dtype=torch.float32, device=device) for _ in range(self.num_force_sensors)
             ]
 
     def create_gpu_commands(self, env_group: Any, gym: v.Gym) -> None:
@@ -64,9 +63,7 @@ class ForceSensors:
         if self.num_force_sensors == 0:
             return
 
-        for force_sensor_handle, sensor_view in zip(
-            self.force_sensor_handles, self.force_sensor_views
-        ):
+        for force_sensor_handle, sensor_view in zip(self.force_sensor_handles, self.force_sensor_views):
             self.force_sensor_cmds.append(
                 env_group.create_force_sensor_command(
                     v.wrap_gpu_buffer(sensor_view),
@@ -99,9 +96,7 @@ class CreateForceSensorModule(BaseModule):
     def finalize(self, container: ModuleContainer) -> None:
         """Verify dependencies."""
         if container.get("robot") is None or container.get("env_def") is None:
-            raise RuntimeError(
-                "CreateForceSensorModule requires 'robot' and 'env_def' in the shared container."
-            )
+            raise RuntimeError("CreateForceSensorModule requires 'robot' and 'env_def' in the shared container.")
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate buffers and create GPU commands."""

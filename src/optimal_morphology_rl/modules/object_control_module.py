@@ -16,22 +16,12 @@ from optimal_morphology_rl.modules.module_manager import register_module
 def _allocate_control_buffers(obj: Any, total_num_envs: int, device: torch.device) -> None:
     """Allocate control buffers for objects that need them."""
     if isinstance(obj, Drawer):
-        if (
-            obj.handle_joint_motor_index is not None
-            and obj.drawer_joint_motor_index is not None
-            and obj.num_motors > 0
-        ):
-            obj.spring_motor_cmd_buf = torch.zeros(
-                (total_num_envs, obj.num_motors), device=device, dtype=torch.float32
-            )
-            obj.unlocked_buf = torch.zeros(
-                (total_num_envs,), device=device, dtype=torch.bool
-            )
+        if obj.handle_joint_motor_index is not None and obj.drawer_joint_motor_index is not None and obj.num_motors > 0:
+            obj.spring_motor_cmd_buf = torch.zeros((total_num_envs, obj.num_motors), device=device, dtype=torch.float32)
+            obj.unlocked_buf = torch.zeros((total_num_envs,), device=device, dtype=torch.bool)
     elif isinstance(obj, Button):
         if obj.button_joint_motor_index is not None and obj.num_motors > 0:
-            obj.spring_motor_cmd_buf = torch.zeros(
-                (total_num_envs, obj.num_motors), device=device, dtype=torch.float32
-            )
+            obj.spring_motor_cmd_buf = torch.zeros((total_num_envs, obj.num_motors), device=device, dtype=torch.float32)
 
 
 def _create_control_gpu_commands(obj: Any, env_group: Any, gym: v.Gym) -> None:
@@ -71,10 +61,7 @@ def _drawer_pre_physics_step(obj: Drawer, gym: v.Gym) -> None:
     lock_force = torch.zeros_like(q_drawer)
     locked = ~obj.unlocked_buf
     if locked.any():
-        lock_force[locked] = (
-            -obj.lock_stiffness * q_drawer[locked]
-            - obj.lock_damping * qd_drawer[locked]
-        )
+        lock_force[locked] = -obj.lock_stiffness * q_drawer[locked] - obj.lock_damping * qd_drawer[locked]
         lock_force = torch.clamp(lock_force, -obj.max_lock_force, obj.max_lock_force)
 
     obj.spring_motor_cmd_buf.zero_()

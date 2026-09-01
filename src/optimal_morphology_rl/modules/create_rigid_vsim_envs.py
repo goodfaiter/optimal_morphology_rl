@@ -88,18 +88,10 @@ class CreateRigidVsimEnvs(BaseModule):
         self.up_axis_rotation = v.shortest_rotation(self.up_axis, v.Vec3(0, 1, 0))
 
         # Contact limits.
-        self.max_contact_pairs_per_env = int(
-            self.config.get("max_contact_pairs_per_env", 128)
-        )
+        self.max_contact_pairs_per_env = int(self.config.get("max_contact_pairs_per_env", 128))
         max_contact_patches = self.config.get("max_contact_patches_per_env", -1)
-        self.max_contact_patches_per_env = (
-            self.max_contact_pairs_per_env
-            if max_contact_patches == -1
-            else int(max_contact_patches)
-        )
-        self.max_contact_points_per_patch = int(
-            self.config.get("max_contact_points_per_patch", 4)
-        )
+        self.max_contact_patches_per_env = self.max_contact_pairs_per_env if max_contact_patches == -1 else int(max_contact_patches)
+        self.max_contact_points_per_patch = int(self.config.get("max_contact_points_per_patch", 4))
 
         self.gym = v.create_gym(
             self.rendering,
@@ -109,9 +101,7 @@ class CreateRigidVsimEnvs(BaseModule):
             with_window=self.with_window,
             max_contact_pairs=self.max_contact_pairs_per_env * self.total_num_envs,
             max_contact_patches=self.max_contact_patches_per_env * self.total_num_envs,
-            max_contact_points=self.max_contact_points_per_patch
-            * self.max_contact_patches_per_env
-            * self.total_num_envs,
+            max_contact_points=self.max_contact_points_per_patch * self.max_contact_patches_per_env * self.total_num_envs,
             update_scene_dependent_components_in_step=True,
             cuda_device=self.device.index,
             enable_graph_captures=True,
@@ -149,16 +139,13 @@ class CreateRigidVsimEnvs(BaseModule):
         """Finalize the environment definition and create the environment group."""
         if container.get("env_def") is None:
             raise RuntimeError(
-                "Environment definition not found in container. "
-                "Ensure create_rigid_vsim_envs is listed before dependent modules."
+                "Environment definition not found in container. Ensure create_rigid_vsim_envs is listed before dependent modules."
             )
 
         container.env_def.finalize()
 
         env_set_offsets = self._compute_env_set_offsets()
-        self.env_group = self.gym.create_environment_group(
-            self.env_def_handle, [self.num_envs]
-        )
+        self.env_group = self.gym.create_environment_group(self.env_def_handle, [self.num_envs])
 
         # Arrange environments on a grid inside each environment set.
         self.env_sets = list(self.env_group.get_environment_sets())
@@ -168,9 +155,7 @@ class CreateRigidVsimEnvs(BaseModule):
             for i in range(num_envs_in_set):
                 x = i % grid_size
                 y = i // grid_size
-                env_pos = self.up_axis_rotation.rotate(
-                    self.spacing * v.Vec3(x, 0, y)
-                ) + offset
+                env_pos = self.up_axis_rotation.rotate(self.spacing * v.Vec3(x, 0, y)) + offset
                 env_handle = env_set.get_environment_handle(i)
                 environment = env_set.get_environment(env_handle)
                 environment.set_transform(v.Transform(v.Quat(0, 0, 0, 1), env_pos))

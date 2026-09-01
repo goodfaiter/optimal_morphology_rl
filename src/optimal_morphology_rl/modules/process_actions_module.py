@@ -22,9 +22,7 @@ def _allocate_action_buffers(
     """Allocate action and scaled-action buffers shared with the robot."""
     action_shape = container.env.action_space.shape
 
-    container.actions = torch.zeros(
-        (total_num_envs,) + action_shape, device=device, dtype=torch.float32
-    )
+    container.actions = torch.zeros((total_num_envs,) + action_shape, device=device, dtype=torch.float32)
     container.act_buf = torch.zeros_like(container.actions)
     container.last_act_buf = torch.zeros_like(container.actions)
     container.scaled_act_buf = torch.zeros_like(container.actions)
@@ -69,9 +67,7 @@ class ProcessActionsModule(BaseModule):
                 "Ensure the 'create_robot' module is listed before 'process_actions'."
             )
         if container.get("env") is None:
-            raise RuntimeError(
-                "ProcessActionsModule requires 'env' in the shared container."
-            )
+            raise RuntimeError("ProcessActionsModule requires 'env' in the shared container.")
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate action buffers and attach scaled buffer to the robot."""
@@ -83,9 +79,7 @@ class ProcessActionsModule(BaseModule):
                 "'process_actions' so that its finalize hook runs first."
             )
 
-        _allocate_action_buffers(
-            container, container.total_num_envs, container.device
-        )
+        _allocate_action_buffers(container, container.total_num_envs, container.device)
 
     def step(self, container: ModuleContainer) -> None:
         """Update action history, copy new actions, and scale them."""

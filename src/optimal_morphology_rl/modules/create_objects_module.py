@@ -110,9 +110,7 @@ class LoadedRigidObject(ObjectBase):
         object_root_trans_init = v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, 0))
 
         object_def_handle = env_def.get_rigid_body_def_handle_by_name(self.name)
-        self.handle = env_def.create_rigid_body(
-            object_def_handle, object_root_trans_init, self.name
-        )
+        self.handle = env_def.create_rigid_body(object_def_handle, object_root_trans_init, self.name)
 
         # The friction is average between two objects. Set this one to 0 and the
         # robot hand to desired * 2.
@@ -134,12 +132,8 @@ class LoadedRigidObject(ObjectBase):
         )
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
-        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(
-            _IDENTITY_QUAT, device=reset_buf.device
-        )
-        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor(
-            [[0.0, 0.0, 0.025]], device=reset_buf.device
-        )
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.0, 0.0, 0.025]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
         self.update_goal(reset_buf)
@@ -188,9 +182,7 @@ class LoadedArticulatedObject(ObjectBase):
         for i in range(self.num_links):
             print(self.art_def.get_link_def(i))
         self.link_names = [self.art_def.get_link_def(i).name for i in range(self.num_links)]
-        self.handle = env_def.create_articulation(
-            object_def_handle, object_root_trans_init, self.name
-        )
+        self.handle = env_def.create_articulation(object_def_handle, object_root_trans_init, self.name)
 
         rigid_mat = v.RigidMaterial()
         rigid_mat.static_friction = 0.0
@@ -200,20 +192,14 @@ class LoadedArticulatedObject(ObjectBase):
         rigid_mat.roughness = 0.0
         rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
         for i in range(self.art_def.get_num_link_defs()):
-            env_def.assign_rigid_material_to_articulation_link(
-                object_def_handle, rigid_mat_handle, i
-            )
+            env_def.assign_rigid_material_to_articulation_link(object_def_handle, rigid_mat_handle, i)
 
     def update_goal(self, reset_buf: torch.Tensor) -> None:
         raise NotImplementedError
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
-        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(
-            _IDENTITY_QUAT, device=reset_buf.device
-        )
-        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor(
-            [[0.2, 0.0, 0.1]], device=reset_buf.device
-        )
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         self.set_joint_pos_buf[reset_buf, :] = 0.0
         self.set_joint_vel_buf[reset_buf, :] = 0.0
@@ -232,17 +218,11 @@ class Cube(LoadedRigidObject):
         self.goal_pos_in_world[reset_buf, 0] = 0.0
         self.goal_pos_in_world[reset_buf, 1] = -0.15
         self.goal_pos_in_world[reset_buf, 2] = 0.25
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(
-            _IDENTITY_QUAT, device=reset_buf.device
-        )
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
-        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(
-            [0.7071068, -0.7071068, 0, 0], device=reset_buf.device
-        )
-        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor(
-            [[-0.05, -0.15, 0.15]], device=reset_buf.device
-        )
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor([0.7071068, -0.7071068, 0, 0], device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[-0.05, -0.15, 0.15]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
         self.update_goal(reset_buf)
@@ -258,12 +238,8 @@ class TomatoExtreme(LoadedRigidObject):
         super().__init__(name="tomato_extreme", asset_path=_object_asset_path("tomato_extreme"))
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
-        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(
-            _IDENTITY_QUAT, device=reset_buf.device
-        )
-        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor(
-            [[0.0, 0.0, 0.075]], device=reset_buf.device
-        )
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.0, 0.0, 0.075]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
         self.update_goal(reset_buf)
@@ -393,17 +369,11 @@ class Drawer(LoadedArticulatedObject):
         self.goal_pos_in_world[reset_buf, 2] = 0.1
         half = math.sin(math.pi / 4.0)
         w = math.cos(math.pi / 4.0)
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(
-            [half, 0.0, 0.0, w], device=reset_buf.device
-        )
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor([half, 0.0, 0.0, w], device=reset_buf.device)
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
-        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(
-            _IDENTITY_QUAT, device=reset_buf.device
-        )
-        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor(
-            [[0.2, 0.0, 0.1]], device=reset_buf.device
-        )
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
 
         if self.unlocked_buf is not None:
@@ -453,17 +423,11 @@ class Button(LoadedArticulatedObject):
         self.goal_pos_in_world[reset_buf, 0] = 0.3
         self.goal_pos_in_world[reset_buf, 1] = 0.0
         self.goal_pos_in_world[reset_buf, 2] = 0.1
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(
-            _IDENTITY_QUAT, device=reset_buf.device
-        )
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
-        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(
-            _IDENTITY_QUAT, device=reset_buf.device
-        )
-        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor(
-            [[0.2, 0.0, 0.1]], device=reset_buf.device
-        )
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
 
         if self.button_joint_dof_index is not None:
@@ -484,9 +448,7 @@ class ButtonDifficult(Button):
         self.goal_pos_in_world[reset_buf, 0] = 0.35
         self.goal_pos_in_world[reset_buf, 1] = 0.0
         self.goal_pos_in_world[reset_buf, 2] = 0.1
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(
-            _IDENTITY_QUAT, device=reset_buf.device
-        )
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
 
 
 #: Mapping from object name to object class.
@@ -512,9 +474,7 @@ class ObjectGenerator:
         self.objects: Dict[str, ObjectBase] = {}
         for obj_name in object_names:
             if obj_name not in OBJECT_REGISTRY:
-                raise ValueError(
-                    f"Unknown object: {obj_name}. Available: {list(OBJECT_REGISTRY.keys())}"
-                )
+                raise ValueError(f"Unknown object: {obj_name}. Available: {list(OBJECT_REGISTRY.keys())}")
             self.objects[obj_name] = OBJECT_REGISTRY[obj_name]()
 
     def load(self, env_def) -> None:
@@ -548,26 +508,14 @@ class ObjectGenerator:
 # ---------------------------------------------------------------------------
 def _allocate_set_buffers(obj: ObjectBase, total_num_envs: int, device: torch.device) -> None:
     """Allocate buffers used to reset/write object state."""
-    obj.set_trans_object_to_world_buf = torch.zeros(
-        (total_num_envs, 7), device=device, dtype=torch.float32
-    )
-    obj.set_vel_in_world_buf = torch.zeros(
-        (total_num_envs, 6), device=device, dtype=torch.float32
-    )
-    obj.goal_pos_in_world = torch.zeros(
-        (total_num_envs, 3), device=device, dtype=torch.float32
-    )
-    obj.goal_quat_object_to_world = torch.zeros(
-        (total_num_envs, 4), device=device, dtype=torch.float32
-    )
+    obj.set_trans_object_to_world_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
+    obj.set_vel_in_world_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
+    obj.goal_pos_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
+    obj.goal_quat_object_to_world = torch.zeros((total_num_envs, 4), device=device, dtype=torch.float32)
 
     if isinstance(obj, LoadedArticulatedObject):
-        obj.set_joint_pos_buf = torch.zeros(
-            (total_num_envs, obj.num_joints), device=device, dtype=torch.float32
-        )
-        obj.set_joint_vel_buf = torch.zeros(
-            (total_num_envs, obj.num_joints), device=device, dtype=torch.float32
-        )
+        obj.set_joint_pos_buf = torch.zeros((total_num_envs, obj.num_joints), device=device, dtype=torch.float32)
+        obj.set_joint_vel_buf = torch.zeros((total_num_envs, obj.num_joints), device=device, dtype=torch.float32)
 
 
 def _create_set_gpu_commands(obj: ObjectBase, env_group: Any, gym: v.Gym, reset_buf: torch.Tensor) -> None:
@@ -634,17 +582,11 @@ class CreateObjectsModule(BaseModule):
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate set buffers and create set GPU commands."""
         if container.get("env_group") is None:
-            raise RuntimeError(
-                "CreateObjectsModule requires 'env_group' in the shared container."
-            )
+            raise RuntimeError("CreateObjectsModule requires 'env_group' in the shared container.")
         if container.get("total_num_envs") is None or container.get("device") is None:
-            raise RuntimeError(
-                "CreateObjectsModule requires 'total_num_envs' and 'device' in the shared container."
-            )
+            raise RuntimeError("CreateObjectsModule requires 'total_num_envs' and 'device' in the shared container.")
         if container.get("reset_buf") is None:
-            raise RuntimeError(
-                "CreateObjectsModule requires 'reset_buf' in the shared container."
-            )
+            raise RuntimeError("CreateObjectsModule requires 'reset_buf' in the shared container.")
 
         total_num_envs = container.total_num_envs
         device = container.device
@@ -654,13 +596,8 @@ class CreateObjectsModule(BaseModule):
             _allocate_set_buffers(obj, total_num_envs, device)
             _create_set_gpu_commands(obj, container.env_group, container.gym, reset_buf)
 
-        container.object_link_offsets = {
-            name: self.generator.get_object_link_offset(name)
-            for name in self.generator.object_names
-        }
-        container.reward_object_link_offset = self.generator.get_object_link_offset(
-            self.reward_object_name
-        )
+        container.object_link_offsets = {name: self.generator.get_object_link_offset(name) for name in self.generator.object_names}
+        container.reward_object_link_offset = self.generator.get_object_link_offset(self.reward_object_name)
 
     def reset(self, container: ModuleContainer) -> None:
         """Reset objects selected by the environment's reset buffer."""

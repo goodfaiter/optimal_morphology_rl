@@ -20,20 +20,12 @@ from optimal_morphology_rl.modules.module_manager import register_module
 
 def _allocate_get_buffers(obj: ObjectBase, total_num_envs: int, device: torch.device) -> None:
     """Allocate buffers used to read object state from simulation."""
-    obj.get_trans_object_to_world_buf = torch.zeros(
-        (total_num_envs, 7), device=device, dtype=torch.float32
-    )
-    obj.get_vel_in_world_buf = torch.zeros(
-        (total_num_envs, 6), device=device, dtype=torch.float32
-    )
+    obj.get_trans_object_to_world_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
+    obj.get_vel_in_world_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
 
     if isinstance(obj, LoadedArticulatedObject):
-        obj.get_joint_pos_buf = torch.zeros(
-            (total_num_envs, obj.num_joints), device=device, dtype=torch.float32
-        )
-        obj.get_joint_vel_buf = torch.zeros(
-            (total_num_envs, obj.num_joints), device=device, dtype=torch.float32
-        )
+        obj.get_joint_pos_buf = torch.zeros((total_num_envs, obj.num_joints), device=device, dtype=torch.float32)
+        obj.get_joint_vel_buf = torch.zeros((total_num_envs, obj.num_joints), device=device, dtype=torch.float32)
 
 
 def _create_get_gpu_commands(obj: ObjectBase, env_group: Any, gym: v.Gym) -> None:

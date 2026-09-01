@@ -49,9 +49,7 @@ class ObjectCameraRecorder:
 
     def update(self, gym: Any) -> None:
         """Refresh camera buffers from simulation."""
-        rgb_bindings = [
-            binding for binding in self._bindings if binding.spec.kind == "rgb"
-        ]
+        rgb_bindings = [binding for binding in self._bindings if binding.spec.kind == "rgb"]
         for binding in rgb_bindings:
             gym.get_rgb_camera_images(binding.command_array)
 
@@ -76,9 +74,7 @@ class ObjectCameraRecorder:
     ) -> None:
         """Instantiate camera buffers and GPU commands."""
         for spec in self._specs:
-            self._bindings.append(
-                self._build_camera(spec, env_def, env_group, gym, num_envs, device)
-            )
+            self._bindings.append(self._build_camera(spec, env_def, env_group, gym, num_envs, device))
 
     def _build_spec(self, loaded_object, env_def) -> None:
         rigid_body_def = env_def.get_rigid_body_def_by_name(loaded_object.name)
@@ -87,11 +83,7 @@ class ObjectCameraRecorder:
         num_camera_instances = rigid_body_def.get_num_rgb_cameras()
         for def_index in range(num_camera_defs):
             for instance_index in range(num_camera_instances):
-                self._specs.append(
-                    self._build_rgb_spec(
-                        rigid_body_def, loaded_object.name, def_index, instance_index
-                    )
-                )
+                self._specs.append(self._build_rgb_spec(rigid_body_def, loaded_object.name, def_index, instance_index))
 
     def _build_camera(
         self,
@@ -149,9 +141,7 @@ class ObjectCameraRecorder:
         camera_handle = rigid_body.get_rgb_camera_handle_by_name(spec.instance_name)
         command = env_group.create_rgb_camera_command(v.wrap_gpu_buffer(buffer), camera_handle)
         command_array = gym.create_gpu_array([command])
-        return CameraBinding(
-            spec=spec, buffer=buffer, command=command, command_array=command_array
-        )
+        return CameraBinding(spec=spec, buffer=buffer, command=command, command_array=command_array)
 
     def _save_binding(self, binding: CameraBinding, timestep: int) -> Path:
         spec = binding.spec

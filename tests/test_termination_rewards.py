@@ -33,15 +33,9 @@ class _FakeEnv:
         self.module_manager = _FakeModuleManager(container)
         self.device = container.device
         self.total_num_envs = container.total_num_envs
-        self.rew_buf = torch.zeros(
-            container.total_num_envs, dtype=torch.float32, device=container.device
-        )
-        self.term_buf = torch.zeros(
-            container.total_num_envs, dtype=torch.bool, device=container.device
-        )
-        self.trunc_buf = torch.zeros(
-            container.total_num_envs, dtype=torch.bool, device=container.device
-        )
+        self.rew_buf = torch.zeros(container.total_num_envs, dtype=torch.float32, device=container.device)
+        self.term_buf = torch.zeros(container.total_num_envs, dtype=torch.bool, device=container.device)
+        self.trunc_buf = torch.zeros(container.total_num_envs, dtype=torch.bool, device=container.device)
         self.info: dict[str, Any] = {"rewards": {}}
 
 
@@ -87,9 +81,7 @@ def test_drop_termination_zero_scale_disables_reward() -> None:
     container = ModuleContainer()
     container.device = device
     container.total_num_envs = total_num_envs
-    container.kinematic_sensor = _FakeKinematicSensor(
-        torch.tensor([[0.0, 0.0, -0.2], [0.0, 0.0, 0.0]], dtype=torch.float32, device=device)
-    )
+    container.kinematic_sensor = _FakeKinematicSensor(torch.tensor([[0.0, 0.0, -0.2], [0.0, 0.0, 0.0]], dtype=torch.float32, device=device))
     env = _FakeEnv(container)
     module = DropTermination({"threshold": -0.1, "reward_scale": 0.0})
 
@@ -164,9 +156,7 @@ def test_bounds_termination_zero_scale_disables_reward() -> None:
     container.device = device
     container.total_num_envs = total_num_envs
     container.objects = {"table": _FakeTable(0.5, 0.3)}
-    container.robot = _FakeRobot(
-        torch.tensor([[1.0, 0.0, 0.1], [0.0, 0.0, 0.1]], dtype=torch.float32, device=device)
-    )
+    container.robot = _FakeRobot(torch.tensor([[1.0, 0.0, 0.1], [0.0, 0.0, 0.1]], dtype=torch.float32, device=device))
     env = _FakeEnv(container)
     module = BoundsTermination({"padding": 0.2, "reward_scale": 0.0})
     module.post_finalize(container)
@@ -187,9 +177,7 @@ class _FakeKinematicSensorQuat:
         self.quat_sensor_to_world = quat_sensor_to_world
 
 
-def _make_cube_env(
-    object_quat: torch.Tensor, goal_quat: torch.Tensor
-) -> tuple[_FakeEnv, CubeSuccessTermination]:
+def _make_cube_env(object_quat: torch.Tensor, goal_quat: torch.Tensor) -> tuple[_FakeEnv, CubeSuccessTermination]:
     device = object_quat.device
     total_num_envs = object_quat.shape[0]
     container = ModuleContainer()
@@ -209,9 +197,7 @@ def test_cube_success_termination_adds_success_bonus() -> None:
     device = torch.device("cpu")
     total_num_envs = 2
     # Aligned quaternions.
-    goal_quat = torch.tensor(
-        [[0.0, 0.0, 0.0, 1.0]] * total_num_envs, dtype=torch.float32, device=device
-    )
+    goal_quat = torch.tensor([[0.0, 0.0, 0.0, 1.0]] * total_num_envs, dtype=torch.float32, device=device)
     object_quat = goal_quat.clone()
 
     env, module = _make_cube_env(object_quat, goal_quat)
@@ -262,9 +248,7 @@ def test_cube_success_resets_on_misalignment() -> None:
 def test_cube_success_reports_goal_success_rate() -> None:
     device = torch.device("cpu")
     total_num_envs = 2
-    goal_quat = torch.tensor(
-        [[0.0, 0.0, 0.0, 1.0]] * total_num_envs, dtype=torch.float32, device=device
-    )
+    goal_quat = torch.tensor([[0.0, 0.0, 0.0, 1.0]] * total_num_envs, dtype=torch.float32, device=device)
     object_quat = goal_quat.clone()
 
     env, module = _make_cube_env(object_quat, goal_quat)

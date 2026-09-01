@@ -43,9 +43,7 @@ def task_root() -> Path:
 
 @pytest.mark.parametrize("task", TASKS)
 def test_task_configs_exist(task: str, task_root: Path) -> None:
-    env_path, env_config, ppo_config = load_task_configs(
-        task, task_root, context={"mode": "train"}
-    )
+    env_path, env_config, ppo_config = load_task_configs(task, task_root, context={"mode": "train"})
     assert env_path.exists()
     assert env_config.get("modules")
     assert "create_rigid_vsim_envs" in env_config
@@ -211,13 +209,7 @@ def test_train_two_epochs(task_root: Path, tmp_path: Path) -> None:
     if not os.path.isfile(vsim_path):
         pytest.skip(f"VSIM not found: {vsim_path}")
 
-    runner = (
-        Path(__file__).resolve().parent.parent
-        / "src"
-        / "optimal_morphology_rl"
-        / "runners"
-        / "modular_runner.py"
-    )
+    runner = Path(__file__).resolve().parent.parent / "src" / "optimal_morphology_rl" / "runners" / "modular_runner.py"
     cmd = [
         sys.executable,
         str(runner),
@@ -242,7 +234,4 @@ def test_train_two_epochs(task_root: Path, tmp_path: Path) -> None:
         text=True,
         timeout=180,
     )
-    assert result.returncode == 0, (
-        f"Modular train run failed:\nSTDOUT:\n{result.stdout}\n"
-        f"STDERR:\n{result.stderr}"
-    )
+    assert result.returncode == 0, f"Modular train run failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"

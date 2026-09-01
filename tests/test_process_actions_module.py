@@ -24,23 +24,13 @@ class _FakeRobot:
     def __init__(self, num_actions: int, fixed_hand: bool = False):
         self.fixed_hand = fixed_hand
         self.root_slice = slice(0, 0) if fixed_hand else slice(0, 6)
-        self.dof_slice = (
-            slice(0, num_actions)
-            if fixed_hand
-            else slice(6, 6 + num_actions - 6)
-        )
+        self.dof_slice = slice(0, num_actions) if fixed_hand else slice(6, 6 + num_actions - 6)
         num_dofs = num_actions if fixed_hand else num_actions - 6
         device = torch.device("cpu")
-        self.velocity_scale = torch.tensor(
-            [1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=device
-        )
+        self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=device)
         self.max_velocity = self.velocity_scale * 2.0
-        self.min_revolute_scale = torch.full(
-            (num_dofs,), -0.1, dtype=torch.float32, device=device
-        )
-        self.max_revolute_scale = torch.full(
-            (num_dofs,), 0.1, dtype=torch.float32, device=device
-        )
+        self.min_revolute_scale = torch.full((num_dofs,), -0.1, dtype=torch.float32, device=device)
+        self.max_revolute_scale = torch.full((num_dofs,), 0.1, dtype=torch.float32, device=device)
         self.scaled_act_buf = None
 
 

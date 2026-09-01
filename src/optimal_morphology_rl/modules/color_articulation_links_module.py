@@ -13,9 +13,9 @@ from optimal_morphology_rl.modules.module_manager import register_module
 
 # Default hand coloring used across all hand-object tasks.
 _DEFAULT_HAND_COLOR_MAP = {
-    "palm": (0.95, 0.82, 0.72),      # skin tone
-    "thumb_0": (0.95, 0.60, 0.20),   # orange
-    "thumb_1": (0.75, 0.35, 0.90),   # purple
+    "palm": (0.95, 0.82, 0.72),  # skin tone
+    "thumb_0": (0.95, 0.60, 0.20),  # orange
+    "thumb_1": (0.75, 0.35, 0.90),  # purple
     "finger_0": (0.95, 0.30, 0.30),  # red
     "finger_1": (0.30, 0.70, 0.40),  # green
     "finger_2": (0.25, 0.55, 0.95),  # blue
@@ -57,9 +57,7 @@ class ColorArticulationLinks:
             color_to_handle[color] = env_def.create_rgb_material(rgb_mat)
 
         for i, color in link_colors:
-            env_def.assign_rgb_material_to_articulation_link(
-                arti_def_handle, color_to_handle[color], i
-            )
+            env_def.assign_rgb_material_to_articulation_link(arti_def_handle, color_to_handle[color], i)
 
     def _color_for_link(self, link_name: str) -> tuple[float, float, float] | None:
         """Return the color for a link, or None if the link should be skipped."""
@@ -84,12 +82,8 @@ class ColorArticulationLinksModule(BaseModule):
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
-        color_map = dict(
-            self.config.get("color_map", _DEFAULT_HAND_COLOR_MAP)
-        )
-        exclude_substrings = tuple(
-            self.config.get("exclude_substrings", ("_abd", "_base"))
-        )
+        color_map = dict(self.config.get("color_map", _DEFAULT_HAND_COLOR_MAP))
+        exclude_substrings = tuple(self.config.get("exclude_substrings", ("_abd", "_base")))
         self.colorer = ColorArticulationLinks(color_map, exclude_substrings)
 
     def finalize(self, container: ModuleContainer) -> None:
@@ -101,8 +95,6 @@ class ColorArticulationLinksModule(BaseModule):
                 "Ensure the 'create_robot' module is listed before 'color_articulation_links'."
             )
         if container.get("env_def") is None:
-            raise RuntimeError(
-                "ColorArticulationLinksModule requires 'env_def' in the shared container."
-            )
+            raise RuntimeError("ColorArticulationLinksModule requires 'env_def' in the shared container.")
 
         self.colorer.assign(container.env_def, robot.def_handle, robot.art_def)

@@ -26,18 +26,10 @@ class Contacts:
         self.num_links = self.env.robot.num_links
 
         size = self.max_contact_pairs_per_env * self.total_num_envs
-        self.contact_normals_buf = torch.zeros(
-            (size, 3), dtype=torch.float32, device=self.device
-        )
-        self.contact_point_seps_buf = torch.zeros(
-            (size, 4), dtype=torch.float32, device=self.device
-        )
-        self.contact_id_a_buf = torch.zeros(
-            (size, 4), dtype=torch.uint32, device=self.device
-        )
-        self.contact_id_b_buf = torch.zeros(
-            (size, 4), dtype=torch.uint32, device=self.device
-        )
+        self.contact_normals_buf = torch.zeros((size, 3), dtype=torch.float32, device=self.device)
+        self.contact_point_seps_buf = torch.zeros((size, 4), dtype=torch.float32, device=self.device)
+        self.contact_id_a_buf = torch.zeros((size, 4), dtype=torch.uint32, device=self.device)
+        self.contact_id_b_buf = torch.zeros((size, 4), dtype=torch.uint32, device=self.device)
 
         max_envs_in_set = max(self.env.num_envs)
         self.contact_env_lookup = torch.full(
@@ -59,9 +51,7 @@ class Contacts:
             device=self.device,
         )
 
-        self.hand_transform_indices_by_env[:, :] = torch.arange(
-            self.num_links, dtype=torch.long, device=self.device
-        ).unsqueeze(0)
+        self.hand_transform_indices_by_env[:, :] = torch.arange(self.num_links, dtype=torch.long, device=self.device).unsqueeze(0)
         self.reward_object_transform_index_by_env[:] = self._compute_reward_object_transform_index(
             reward_object,
             reward_object_link_name,
@@ -78,9 +68,7 @@ class Contacts:
         if link_names is None:
             link_names = []
         link_name_set = {name.lower() for name in link_names}
-        self.monitored_link_mask = torch.zeros(
-            self.num_links, dtype=torch.bool, device=self.device
-        )
+        self.monitored_link_mask = torch.zeros(self.num_links, dtype=torch.bool, device=self.device)
         for name in link_name_set:
             for i in range(self.num_links):
                 link_def = self.env.robot.art_def.get_link_def(i)
@@ -89,15 +77,9 @@ class Contacts:
         if not torch.any(self.monitored_link_mask):
             raise ValueError("No monitored hand links were found.")
 
-        self.object_hand_contact_buf = torch.zeros(
-            (self.total_num_envs,), device=self.device, dtype=torch.float32
-        )
-        self.object_hand_contact_count_buf = torch.zeros(
-            (self.total_num_envs,), device=self.device, dtype=torch.float32
-        )
-        self.env_link_touch = torch.zeros(
-            (self.total_num_envs, self.num_links), dtype=torch.bool, device=self.device
-        )
+        self.object_hand_contact_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
+        self.object_hand_contact_count_buf = torch.zeros((self.total_num_envs,), device=self.device, dtype=torch.float32)
+        self.env_link_touch = torch.zeros((self.total_num_envs, self.num_links), dtype=torch.bool, device=self.device)
 
     def _compute_reward_object_transform_index(
         self,
@@ -106,9 +88,7 @@ class Contacts:
         reward_object_link_offset: int | None = None,
     ) -> int:
         if reward_object_link_offset is None:
-            reward_object_link_offset = self.env.objects.get_object_link_offset(
-                reward_object.name
-            )
+            reward_object_link_offset = self.env.objects.get_object_link_offset(reward_object.name)
         num_reward_object_links = reward_object.get_link_offset()
         start_offset = reward_object_link_offset - num_reward_object_links
 
@@ -120,10 +100,7 @@ class Contacts:
                     link_index = i
                     break
             if link_index is None:
-                raise ValueError(
-                    f"Reward object link '{reward_object_link_name}' not found in "
-                    f"object '{reward_object.name}'."
-                )
+                raise ValueError(f"Reward object link '{reward_object_link_name}' not found in object '{reward_object.name}'.")
         else:
             link_index = 0
 

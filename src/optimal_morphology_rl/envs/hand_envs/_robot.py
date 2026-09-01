@@ -90,12 +90,8 @@ class Robot:
             self.get_tendon_vel_buf = torch.zeros((total_num_envs, self.num_tendons), dtype=torch.float32, device=device)
 
         if self.num_distal_links > 0:
-            self.distal_link_transform_buf = torch.zeros(
-                (self.num_distal_links, total_num_envs, 7), device=device, dtype=torch.float32
-            )
-            self.distal_link_pos_buf = torch.zeros(
-                (self.num_distal_links, total_num_envs, 3), device=device, dtype=torch.float32
-            )
+            self.distal_link_transform_buf = torch.zeros((self.num_distal_links, total_num_envs, 7), device=device, dtype=torch.float32)
+            self.distal_link_pos_buf = torch.zeros((self.num_distal_links, total_num_envs, 3), device=device, dtype=torch.float32)
 
         self.scaled_act_buf = torch.zeros((total_num_envs, self.get_num_actions()), dtype=torch.float32, device=device)
 
@@ -127,11 +123,7 @@ class Robot:
         if self.use_tendon:
             self.num_tendons = self.art_def.get_num_spatial_tendon_defs()
 
-        self.distal_link_indices = [
-            i
-            for i in range(self.num_links)
-            if self.art_def.get_link_def(i).name.lower().endswith("distal")
-        ]
+        self.distal_link_indices = [i for i in range(self.num_links) if self.art_def.get_link_def(i).name.lower().endswith("distal")]
         self.num_distal_links = len(self.distal_link_indices)
 
         self.link_masses = torch.zeros(self.num_links, dtype=torch.float32, device=device)
@@ -316,7 +308,9 @@ class Robot:
             state["dof_vel_buf"] = self.get_joint_vel_buf
         return state
 
-    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor, device: torch.device, fric_coeff: float = None, randomize_pose: bool = False) -> None:
+    def reset_idx(
+        self, gym: v.Gym, reset_buf: torch.Tensor, device: torch.device, fric_coeff: float = None, randomize_pose: bool = False
+    ) -> None:
         """Reset robot kinematic state for the given reset indices."""
         self.reset_joint_pos_buf[reset_buf, :] = 0.0
         self.reset_joint_vel_buf[reset_buf, :] = 0.0
@@ -325,7 +319,9 @@ class Robot:
             self.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.6963642, 0.1227878, -0.1227878, 0.6963642], device=device)
         else:
             if randomize_pose:
-                self.reset_root_transform_buf[reset_buf, :4] = random_uniform_quaternion(reset_buf.sum().item(), device=device, dtype=torch.float32)
+                self.reset_root_transform_buf[reset_buf, :4] = random_uniform_quaternion(
+                    reset_buf.sum().item(), device=device, dtype=torch.float32
+                )
                 self.reset_root_transform_buf[reset_buf, 4] = -0.1
                 self.reset_root_transform_buf[reset_buf, 5] = torch.rand(reset_buf.sum().item(), device=device) * 0.3 - 0.15
                 self.reset_root_transform_buf[reset_buf, 6] = torch.rand(reset_buf.sum().item(), device=device) * 0.2 + 0.1

@@ -25,7 +25,7 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         device: torch.device,
         rendering: bool = False,
         enable_scene_query: bool = False,
-        max_episode_length: int = 20 * 20, # 20 seconds at 20Hz control frequency
+        max_episode_length: int = 20 * 20,  # 20 seconds at 20Hz control frequency
         gravity: v.Vec3 = v.Vec3(0, 0, -9.81),
         timestep: float = 0.0125,  # 80Hz sim frequency
         frame_skip: int = 4,  # 20Hz control step
@@ -119,7 +119,7 @@ class FingerEnvironmentGpu(EnvironmentGpu):
             #  v.Vec3(-0.125011, -0.001044, 0.065207), v.Vec3(0.880567, 0.397776, -0.257634)
             self.gym_render.reset_camera(v.Vec3(-0.132636, 0.030610, 0.021915), v.Vec3(0.991742, 0.127220, -0.016226))
 
-        self.info['rewards'] = {}
+        self.info["rewards"] = {}
 
     def create_envs(self):
 
@@ -341,11 +341,19 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         self.act_history.reset(self.reset_buf)
         self.prev_act_history.reset(self.reset_buf)
         self.angle_history.reset(self.reset_buf)
-        
+
         # # radomize radius, offset, and spring
-        self.pully_radius[self.reset_buf, :] = self.default_pully_radius + (torch.rand((self.reset_buf.sum(), self.num_tendons), device=self.device) - 0.5) * 0.2 * self.default_pully_radius
-        self.zero_offset_length[self.reset_buf, :] = self.default_zero_offset_length + (torch.rand((self.reset_buf.sum(), self.num_tendons), device=self.device) - 0.5) * 0.05 * self.default_zero_offset_length
-        self.spring[self.reset_buf, :] = self.default_spring + (torch.rand((self.reset_buf.sum(), self.num_dofs), device=self.device) - 0.5) * 0.2 * self.default_spring
+        self.pully_radius[self.reset_buf, :] = (
+            self.default_pully_radius
+            + (torch.rand((self.reset_buf.sum(), self.num_tendons), device=self.device) - 0.5) * 0.2 * self.default_pully_radius
+        )
+        self.zero_offset_length[self.reset_buf, :] = (
+            self.default_zero_offset_length
+            + (torch.rand((self.reset_buf.sum(), self.num_tendons), device=self.device) - 0.5) * 0.05 * self.default_zero_offset_length
+        )
+        self.spring[self.reset_buf, :] = (
+            self.default_spring + (torch.rand((self.reset_buf.sum(), self.num_dofs), device=self.device) - 0.5) * 0.2 * self.default_spring
+        )
 
         # NOTE(VY): This ONLY works if we reset ALL envs at the same time every time (ie, no termination conditions)
         # Randomize mass
@@ -478,37 +486,39 @@ class FingerEnvironmentGpu(EnvironmentGpu):
         tip_to_goal = self.goal_pose - tip_pose
         tip_to_goal_reward = -5.0 * torch.norm(tip_to_goal, dim=1)
         self.rew_buf[:] += tip_to_goal_reward
-        self.info['rewards']["tip_to_goal_reward"] = tip_to_goal_reward.sum().item() / self.total_num_envs
+        self.info["rewards"]["tip_to_goal_reward"] = tip_to_goal_reward.sum().item() / self.total_num_envs
 
         # Smoothness penalty
         smoothness_penalty = -0.001 * torch.sum((self.act_buf - self.prev_act_buf) ** 2, dim=1)
         self.rew_buf[:] += smoothness_penalty
-        self.info['rewards']["smoothness_penalty"] = smoothness_penalty.sum().item() / self.total_num_envs
+        self.info["rewards"]["smoothness_penalty"] = smoothness_penalty.sum().item() / self.total_num_envs
 
         # Tendon Vel
         tendon_vel_penalty = -50.0 * torch.sum(self.get_tendon_vel_buf**2, dim=1)
         self.rew_buf[:] += tendon_vel_penalty
-        self.info['rewards']["tendon_vel_penalty"] = tendon_vel_penalty.sum().item() / self.total_num_envs
+        self.info["rewards"]["tendon_vel_penalty"] = tendon_vel_penalty.sum().item() / self.total_num_envs
 
         # Add control penalty
         control_penalty = -0.001 * torch.sum(self.act_buf**2, dim=1)
         self.rew_buf[:] += control_penalty
-        self.info['rewards']["control_penalty"] = control_penalty.sum().item() / self.total_num_envs
+        self.info["rewards"]["control_penalty"] = control_penalty.sum().item() / self.total_num_envs
 
         # Termination and truncation conditions
-        self.term_buf[:] = False # No termination condition for now, we will just use truncation based on episode length
+        self.term_buf[:] = False  # No termination condition for now, we will just use truncation based on episode length
         self.trunc_buf[:] = self.progress_buf >= self.max_episode_length
 
 
 if __name__ == "__main__":
-
     from vlearn.utils import get_VL_VISUAL_TESTS
 
     from helpers.mcap_to_pandas import read_mcap_to_dataframe
-    path = "/workspace/data/rosbag2_2026_02_26-15_25_26_0_predicted_0.mcap" # sine
+
+    path = "/workspace/data/rosbag2_2026_02_26-15_25_26_0_predicted_0.mcap"  # sine
     # path = "/workspace/data/mlp_30_model_steps_rosbag2_2026_02_28-09_30_03_0_processed_0.mcap"
     # path = "/workspace/data/mlp_30_pure_rosbag2_2026_02_28-09_41_03_0_processed_0.mcap"
-    data_df = read_mcap_to_dataframe(path, topics=["/desired_position_rad_data", "/measured_position_rad_data", "/desired_ee_angle_rad_data"])
+    data_df = read_mcap_to_dataframe(
+        path, topics=["/desired_position_rad_data", "/measured_position_rad_data", "/desired_ee_angle_rad_data"]
+    )
     data_df = data_df.groupby(data_df.index).first()
 
     des_pos_rad = torch.tensor(data_df["desired_position_rad_data_data"].values, dtype=torch.float32, device="cuda:0")
@@ -593,13 +603,13 @@ if __name__ == "__main__":
         step += 1
         if step >= num_iter:
             done = True
-        
 
     # save tip pose to dataframe and csv
     tip_pose_np = tip_pose[0, :, :].cpu().numpy()
     goal_pose_np = goal_pose[0, :, :].cpu().numpy()
     num_steps, _ = tip_pose_np.shape
     import pandas as pd
+
     tip_pose_df = pd.DataFrame(
         tip_pose_np,
         columns=["tip_x", "tip_y", "tip_z"],

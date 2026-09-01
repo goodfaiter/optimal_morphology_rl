@@ -31,7 +31,5 @@ class ActionPenaltyReward(RewardBaseModule):
         scale = float(self.config.get("scale", 0.01))
         reward, raw = _action_penalty_reward_jit(env.act_buf, scale)
 
-        env.info["rewards"]["action_penalty"] = (
-            raw.sum().item() / env.total_num_envs
-        )
+        env.info["rewards"]["action_penalty"] = raw.sum().item() / env.total_num_envs
         return reward

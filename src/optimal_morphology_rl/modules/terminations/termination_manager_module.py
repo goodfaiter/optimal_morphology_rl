@@ -41,9 +41,7 @@ class TerminationManagerModule(BaseModule):
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
         self.sub_manager = self._build_sub_manager()
-        self._termination_modules: list[TerminationBaseModule] = [
-            m for m in self.sub_manager if isinstance(m, TerminationBaseModule)
-        ]
+        self._termination_modules: list[TerminationBaseModule] = [m for m in self.sub_manager if isinstance(m, TerminationBaseModule)]
 
     def _build_sub_manager(self) -> ModuleManager:
         """Create a ModuleManager for termination sub-modules from config keys."""
@@ -64,18 +62,10 @@ class TerminationManagerModule(BaseModule):
             )
         total_num_envs = container.total_num_envs
         device = container.device
-        container.term_buf = torch.zeros(
-            total_num_envs, dtype=torch.bool, device=device
-        )
-        container.trunc_buf = torch.zeros(
-            total_num_envs, dtype=torch.bool, device=device
-        )
-        container.reset_buf = torch.zeros(
-            total_num_envs, dtype=torch.bool, device=device
-        )
-        container.inverse_reset_buf = torch.zeros(
-            total_num_envs, dtype=torch.bool, device=device
-        )
+        container.term_buf = torch.zeros(total_num_envs, dtype=torch.bool, device=device)
+        container.trunc_buf = torch.zeros(total_num_envs, dtype=torch.bool, device=device)
+        container.reset_buf = torch.zeros(total_num_envs, dtype=torch.bool, device=device)
+        container.inverse_reset_buf = torch.zeros(total_num_envs, dtype=torch.bool, device=device)
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Run post_finalize on termination sub-modules."""
@@ -86,9 +76,7 @@ class TerminationManagerModule(BaseModule):
         """Zero term/trunc, dispatch to sub-modules, then compute reset_buf."""
         env = container.get("env")
         if env is None:
-            raise RuntimeError(
-                "TerminationManagerModule requires 'env' in the shared container."
-            )
+            raise RuntimeError("TerminationManagerModule requires 'env' in the shared container.")
 
         env.term_buf[:] = False
         env.trunc_buf[:] = False

@@ -21,9 +21,7 @@ from optimal_morphology_rl.utils.config import load_yaml_with_context
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run a modular hand-object task from per-task env/ppo configs."
-    )
+    parser = argparse.ArgumentParser(description="Run a modular hand-object task from per-task env/ppo configs.")
     parser.add_argument("task", help="Task name, e.g. hand_cube")
     parser.add_argument(
         "--task-root",
@@ -37,12 +35,8 @@ def parse_args() -> argparse.Namespace:
         default="step",
         help="Execution mode",
     )
-    parser.add_argument(
-        "--num-envs", type=int, help="Number of parallel environments"
-    )
-    parser.add_argument(
-        "--device", type=str, help="CUDA device passed to the env, e.g. cuda:0"
-    )
+    parser.add_argument("--num-envs", type=int, help="Number of parallel environments")
+    parser.add_argument("--device", type=str, help="CUDA device passed to the env, e.g. cuda:0")
     parser.add_argument(
         "--headless",
         choices=["True", "False"],
@@ -50,32 +44,20 @@ def parse_args() -> argparse.Namespace:
         help="Run without rendering",
     )
     parser.add_argument("--seed", type=int, help="Random seed")
-    parser.add_argument(
-        "--max-epochs", type=int, help="Maximum training epochs"
-    )
-    parser.add_argument(
-        "--horizon-length", type=int, help="Number of steps per rollout"
-    )
+    parser.add_argument("--max-epochs", type=int, help="Maximum training epochs")
+    parser.add_argument("--horizon-length", type=int, help="Number of steps per rollout")
     parser.add_argument("--learning-rate", type=float, help="PPO learning rate")
     parser.add_argument("--kl-threshold", type=float, help="PPO KL threshold")
-    parser.add_argument(
-        "--experiment-name", type=str, help="Name of the experiment directory"
-    )
-    parser.add_argument(
-        "--cp", type=str, help="Checkpoint path for play mode"
-    )
-    parser.add_argument(
-        "--vsim-path", type=str, help="Override robot VSIM file path"
-    )
+    parser.add_argument("--experiment-name", type=str, help="Name of the experiment directory")
+    parser.add_argument("--cp", type=str, help="Checkpoint path for play mode")
+    parser.add_argument("--vsim-path", type=str, help="Override robot VSIM file path")
     parser.add_argument(
         "--deterministic",
         choices=["True", "False"],
         default=None,
         help="Deterministic actions during play",
     )
-    parser.add_argument(
-        "--games-num", type=int, help="Number of games in play mode"
-    )
+    parser.add_argument("--games-num", type=int, help="Number of games in play mode")
     parser.add_argument(
         "--steps",
         type=int,
@@ -119,9 +101,7 @@ def load_task_configs(
     return env_path, env_config, ppo_config
 
 
-def apply_env_overrides(
-    env_config: dict[str, Any], args: argparse.Namespace
-) -> dict[str, Any]:
+def apply_env_overrides(env_config: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     env_config = copy.deepcopy(env_config)
     sim = env_config.setdefault("create_rigid_vsim_envs", {})
 
@@ -152,9 +132,7 @@ def apply_env_overrides(
     return env_config
 
 
-def apply_ppo_overrides(
-    ppo_config: dict[str, Any], args: argparse.Namespace, task: str
-) -> dict[str, Any]:
+def apply_ppo_overrides(ppo_config: dict[str, Any], args: argparse.Namespace, task: str) -> dict[str, Any]:
     ppo_config = copy.deepcopy(ppo_config)
     params = ppo_config.setdefault("params", {})
     cfg = params.setdefault("config", {})
@@ -188,9 +166,7 @@ def apply_ppo_overrides(
     return ppo_config
 
 
-def sync_num_envs(
-    env_config: dict[str, Any], ppo_config: dict[str, Any]
-) -> dict[str, Any]:
+def sync_num_envs(env_config: dict[str, Any], ppo_config: dict[str, Any]) -> dict[str, Any]:
     env_config = copy.deepcopy(env_config)
     num_actors = ppo_config.get("params", {}).get("config", {}).get("num_actors")
     if num_actors is not None:
@@ -217,9 +193,7 @@ def adjust_minibatch_size(config_dict: dict, num_envs: int, horizon_len: int) ->
 
 def convert_space(space):
     if isinstance(space, Box):
-        return gym.spaces.Box(
-            low=space.low, high=space.high, shape=space.shape
-        )
+        return gym.spaces.Box(low=space.low, high=space.high, shape=space.shape)
     if isinstance(space, Discrete):
         return gym.spaces.Discrete(n=space.n)
     raise TypeError(f"Unsupported space type: {type(space)}")
@@ -294,9 +268,7 @@ def run_rl_games(
     )
     vecenv.register(
         "VLEARN",
-        lambda config_name, num_actors, **kwargs: VlearnEnv(
-            env_configurations.configurations, config_name, num_actors, **kwargs
-        ),
+        lambda config_name, num_actors, **kwargs: VlearnEnv(env_configurations.configurations, config_name, num_actors, **kwargs),
     )
 
     if mode == "train":
@@ -317,9 +289,7 @@ def run_rl_games(
         try:
             import wandb
         except ImportError as exc:
-            raise RuntimeError(
-                "wandb is requested but not installed."
-            ) from exc
+            raise RuntimeError("wandb is requested but not installed.") from exc
         wandb.init(
             project="optimal_morphology_rl",
             sync_tensorboard=True,
@@ -344,16 +314,9 @@ def run_step(env_config: dict[str, Any], steps: int) -> None:
     action_shape = env.action_space.shape
 
     for i in range(steps):
-        actions = (
-            torch.rand((env.total_num_envs,) + action_shape, device=env.device)
-            * 2.0
-            - 1.0
-        )
+        actions = torch.rand((env.total_num_envs,) + action_shape, device=env.device) * 2.0 - 1.0
         obs, rew, term, trunc, info = env.step(actions)
-        print(
-            f"step {i:4d}: reward_mean={rew.mean().item():.4f} "
-            f"term={term.sum().item()} trunc={trunc.sum().item()}"
-        )
+        print(f"step {i:4d}: reward_mean={rew.mean().item():.4f} term={term.sum().item()} trunc={trunc.sum().item()}")
 
 
 def main() -> None:
@@ -366,9 +329,7 @@ def main() -> None:
         if args.num_envs is None:
             args.num_envs = 4
 
-    _, env_config, ppo_config = load_task_configs(
-        args.task, args.task_root, context={"mode": args.mode}
-    )
+    _, env_config, ppo_config = load_task_configs(args.task, args.task_root, context={"mode": args.mode})
 
     env_config = apply_env_overrides(env_config, args)
     ppo_config = apply_ppo_overrides(ppo_config, args, args.task)

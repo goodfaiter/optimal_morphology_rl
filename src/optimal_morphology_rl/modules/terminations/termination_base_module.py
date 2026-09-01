@@ -21,9 +21,7 @@ def register_termination(name: str | None = None) -> Callable[[type[T]], type[T]
     def decorator(cls: type[T]) -> type[T]:
         registry_name = name if name is not None else cls.__name__
         if registry_name in TERMINATION_REGISTRY:
-            raise ValueError(
-                f"Termination module '{registry_name}' is already registered."
-            )
+            raise ValueError(f"Termination module '{registry_name}' is already registered.")
         TERMINATION_REGISTRY[registry_name] = cls
         return cls
 

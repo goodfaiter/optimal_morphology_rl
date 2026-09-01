@@ -40,15 +40,9 @@ def _update_contacts_jit(
         object_hand_contact_buf: (N,) binary contact indicator.
         object_hand_contact_count_buf: (N,) number of touched monitored links.
     """
-    env_link_touch = torch.zeros(
-        (total_num_envs, num_links), dtype=torch.bool, device=contact_id_a_buf.device
-    )
-    object_hand_contact_buf = torch.zeros(
-        total_num_envs, dtype=torch.float32, device=contact_id_a_buf.device
-    )
-    object_hand_contact_count_buf = torch.zeros(
-        total_num_envs, dtype=torch.float32, device=contact_id_a_buf.device
-    )
+    env_link_touch = torch.zeros((total_num_envs, num_links), dtype=torch.bool, device=contact_id_a_buf.device)
+    object_hand_contact_buf = torch.zeros(total_num_envs, dtype=torch.float32, device=contact_id_a_buf.device)
+    object_hand_contact_count_buf = torch.zeros(total_num_envs, dtype=torch.float32, device=contact_id_a_buf.device)
 
     if num_stored <= 0:
         return env_link_touch, object_hand_contact_buf, object_hand_contact_count_buf

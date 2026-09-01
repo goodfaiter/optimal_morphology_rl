@@ -31,7 +31,7 @@ def test_inline_boolean_expression() -> None:
 
 def test_explicit_eval_expression() -> None:
     config = resolve_config(
-        {"randomize_pose": '${eval:\'mode == "train"\'}'},
+        {"randomize_pose": "${eval:'mode == \"train\"'}"},
         context={"mode": "train"},
     )
     assert config["randomize_pose"] is True
@@ -64,12 +64,12 @@ def test_missing_context_raises() -> None:
 
 def test_invalid_expression_raises() -> None:
     with pytest.raises(ValueError):
-        resolve_config({"x": '${eval:\'import os\'}'}, context={})
+        resolve_config({"x": "${eval:'import os'}"}, context={})
 
 
 def test_arithmetic_expression() -> None:
     config = resolve_config(
-        {"batch": '${num_envs * 2}'},
+        {"batch": "${num_envs * 2}"},
         context={"num_envs": 64},
     )
     assert config["batch"] == 128

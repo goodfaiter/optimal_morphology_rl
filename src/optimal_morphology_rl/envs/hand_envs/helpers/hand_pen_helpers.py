@@ -2,7 +2,6 @@ import torch
 from vlearn.torch_utils.torch_jit_utils import scale, quat_mul, quat_conjugate, v_rpy_from_quat, quat_rotate
 
 
-
 def world_down_in_robot_frame_from_quat_robot_to_world(quat_robot_to_world: torch.Tensor) -> torch.Tensor:
     quat_world_to_robot = quat_conjugate(quat_robot_to_world)
     down_in_world = (

@@ -134,11 +134,7 @@ class Robot:
         if self.use_tendon:
             self.num_tendons = self.art_def.get_num_spatial_tendon_defs()
 
-        self.distal_link_indices = [
-            i
-            for i in range(self.num_links)
-            if self.art_def.get_link_def(i).name.lower().endswith("distal")
-        ]
+        self.distal_link_indices = [i for i in range(self.num_links) if self.art_def.get_link_def(i).name.lower().endswith("distal")]
         self.num_distal_links = len(self.distal_link_indices)
 
         self.link_masses = torch.zeros(self.num_links, dtype=torch.float32, device=device)
@@ -165,14 +161,10 @@ class Robot:
         rigid_mat.damping = 0.0
         rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
         for i in range(self.art_def.get_num_link_defs()):
-            env_def.assign_rigid_material_to_articulation_link(
-                self.def_handle, rigid_mat_handle, i
-            )
+            env_def.assign_rigid_material_to_articulation_link(self.def_handle, rigid_mat_handle, i)
         self.rigid_mat_handle = rigid_mat_handle
 
-        self.velocity_scale = torch.tensor(
-            [1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=device
-        )
+        self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=device)
         self.max_velocity = self.velocity_scale * 2.0
 
         min_scale = -1.0 * self.max_torque
@@ -181,19 +173,11 @@ class Robot:
             min_scale = -0.25 * self.tendon_max_force
             max_scale = 1.0 * self.tendon_max_force
 
-        self.min_revolute_scale = torch.full(
-            (self.get_num_dofs(),), min_scale, device=device
-        )
-        self.max_revolute_scale = torch.full(
-            (self.get_num_dofs(),), max_scale, device=device
-        )
+        self.min_revolute_scale = torch.full((self.get_num_dofs(),), min_scale, device=device)
+        self.max_revolute_scale = torch.full((self.get_num_dofs(),), max_scale, device=device)
 
         self.root_slice = slice(0, 6) if not self.fixed_hand else slice(0, 0)
-        self.dof_slice = (
-            slice(0, self.get_num_dofs())
-            if self.fixed_hand
-            else slice(6, 6 + self.get_num_dofs())
-        )
+        self.dof_slice = slice(0, self.get_num_dofs()) if self.fixed_hand else slice(6, 6 + self.get_num_dofs())
 
     def get_num_dofs(self) -> int:
         """Return the number of degrees of freedom (joints) in the robot."""
@@ -216,13 +200,10 @@ class RobotModule(BaseModule):
         """Load the robot hand into the environment definition."""
         if container.get("env_def") is None:
             raise RuntimeError(
-                "RobotModule requires 'env_def' in the shared container. "
-                "Ensure create_rigid_vsim_envs is listed before create_robot."
+                "RobotModule requires 'env_def' in the shared container. Ensure create_rigid_vsim_envs is listed before create_robot."
             )
         if container.get("device") is None:
-            raise RuntimeError(
-                "RobotModule requires 'device' in the shared container."
-            )
+            raise RuntimeError("RobotModule requires 'device' in the shared container.")
 
         vsim_path = self.config.get("vsim_path")
         if vsim_path is None:
@@ -253,32 +234,18 @@ class RobotModule(BaseModule):
         robot.reset_joint_pos_buf[reset_buf, :] = 0.0
         robot.reset_joint_vel_buf[reset_buf, :] = 0.0
         if self.fixed_hand:
-            robot.reset_root_transform_buf[reset_buf, 4:] = torch.tensor(
-                [[-0.1, -0.15, 0.1]], device=device
-            )
-            robot.reset_root_transform_buf[reset_buf, :4] = torch.tensor(
-                [0.6963642, 0.1227878, -0.1227878, 0.6963642], device=device
-            )
+            robot.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.1]], device=device)
+            robot.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.6963642, 0.1227878, -0.1227878, 0.6963642], device=device)
         else:
             if randomize_pose:
                 n_reset = reset_buf.sum().item()
-                robot.reset_root_transform_buf[reset_buf, :4] = random_uniform_quaternion(
-                    n_reset, device=device, dtype=torch.float32
-                )
+                robot.reset_root_transform_buf[reset_buf, :4] = random_uniform_quaternion(n_reset, device=device, dtype=torch.float32)
                 robot.reset_root_transform_buf[reset_buf, 4] = -0.1
-                robot.reset_root_transform_buf[reset_buf, 5] = (
-                    torch.rand(n_reset, device=device) * 0.3 - 0.15
-                )
-                robot.reset_root_transform_buf[reset_buf, 6] = (
-                    torch.rand(n_reset, device=device) * 0.2 + 0.1
-                )
+                robot.reset_root_transform_buf[reset_buf, 5] = torch.rand(n_reset, device=device) * 0.3 - 0.15
+                robot.reset_root_transform_buf[reset_buf, 6] = torch.rand(n_reset, device=device) * 0.2 + 0.1
             else:
-                robot.reset_root_transform_buf[reset_buf, 4:] = torch.tensor(
-                    [[-0.1, -0.15, 0.2]], device=device
-                )
-                robot.reset_root_transform_buf[reset_buf, :4] = torch.tensor(
-                    [0.0, 0.0, 0.0, 1.0], device=device
-                )
+                robot.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.2]], device=device)
+                robot.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=device)
         robot.reset_root_vel_buf[reset_buf, :] = 0.0
         gym.set_articulation_kinematic_states(robot.gpu_reset_kinematic_state_command_array)
 

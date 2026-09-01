@@ -18,59 +18,27 @@ from optimal_morphology_rl.modules.observations.observation_jit_helpers import (
 )
 
 
-def _allocate_read_buffers(
-    robot: Robot, total_num_envs: int, device: torch.device
-) -> None:
+def _allocate_read_buffers(robot: Robot, total_num_envs: int, device: torch.device) -> None:
     """Allocate buffers used to read robot state from simulation."""
-    robot.get_joint_pos_buf = torch.zeros(
-        (total_num_envs, robot.num_joints), device=device, dtype=torch.float32
-    )
-    robot.get_joint_vel_buf = torch.zeros(
-        (total_num_envs, robot.num_joints), device=device, dtype=torch.float32
-    )
-    robot.get_root_transform_buf = torch.zeros(
-        (total_num_envs, 7), device=device, dtype=torch.float32
-    )
-    robot.get_root_vel_buf = torch.zeros(
-        (total_num_envs, 6), device=device, dtype=torch.float32
-    )
+    robot.get_joint_pos_buf = torch.zeros((total_num_envs, robot.num_joints), device=device, dtype=torch.float32)
+    robot.get_joint_vel_buf = torch.zeros((total_num_envs, robot.num_joints), device=device, dtype=torch.float32)
+    robot.get_root_transform_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
+    robot.get_root_vel_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
 
-    robot.robot_pos_in_world = torch.zeros(
-        (total_num_envs, 3), device=device, dtype=torch.float32
-    )
-    robot.quat_robot_to_world = torch.zeros(
-        (total_num_envs, 4), device=device, dtype=torch.float32
-    )
-    robot._6d_robot_to_world = torch.zeros(
-        (total_num_envs, 6), device=device, dtype=torch.float32
-    )
-    robot.robot_linear_velocity_in_world = torch.zeros(
-        (total_num_envs, 3), device=device, dtype=torch.float32
-    )
-    robot.robot_angular_velocity_in_world = torch.zeros(
-        (total_num_envs, 3), device=device, dtype=torch.float32
-    )
+    robot.robot_pos_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
+    robot.quat_robot_to_world = torch.zeros((total_num_envs, 4), device=device, dtype=torch.float32)
+    robot._6d_robot_to_world = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
+    robot.robot_linear_velocity_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
+    robot.robot_angular_velocity_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
 
-    robot.gravity_direction_world = torch.tensor(
-        [0.0, 0.0, -1.0], device=device, dtype=torch.float32
-    ).repeat(total_num_envs, 1)
-    robot.gravity_vector_in_robot_frame = torch.zeros(
-        (total_num_envs, 3), device=device, dtype=torch.float32
-    )
-    robot.robot_linear_velocity_in_robot_frame = torch.zeros(
-        (total_num_envs, 3), device=device, dtype=torch.float32
-    )
-    robot.robot_angular_velocity_in_robot_frame = torch.zeros(
-        (total_num_envs, 3), device=device, dtype=torch.float32
-    )
+    robot.gravity_direction_world = torch.tensor([0.0, 0.0, -1.0], device=device, dtype=torch.float32).repeat(total_num_envs, 1)
+    robot.gravity_vector_in_robot_frame = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
+    robot.robot_linear_velocity_in_robot_frame = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
+    robot.robot_angular_velocity_in_robot_frame = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
 
     if robot.use_tendon:
-        robot.get_tendon_lengths_buf = torch.zeros(
-            (total_num_envs, robot.num_tendons), dtype=torch.float32, device=device
-        )
-        robot.get_tendon_vel_buf = torch.zeros(
-            (total_num_envs, robot.num_tendons), dtype=torch.float32, device=device
-        )
+        robot.get_tendon_lengths_buf = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
+        robot.get_tendon_vel_buf = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
 
     if robot.num_distal_links > 0:
         robot.distal_link_transform_buf = torch.zeros(
@@ -108,9 +76,7 @@ def _create_read_gpu_commands(robot: Robot, env_group: Any, gym: v.Gym) -> None:
                     (link_index, link_index + 1),
                 )
             )
-        robot.gpu_get_distal_link_transforms_cmd_arr = gym.create_gpu_array(
-            distal_transform_cmds
-        )
+        robot.gpu_get_distal_link_transforms_cmd_arr = gym.create_gpu_array(distal_transform_cmds)
 
     if robot.use_tendon:
         get_tendon_lengths_cmd = env_group.create_spatial_tendon_state_command(
@@ -119,9 +85,7 @@ def _create_read_gpu_commands(robot: Robot, env_group: Any, gym: v.Gym) -> None:
             robot.arti_handle,
             (0, robot.num_tendons),
         )
-        robot.gpu_get_tendon_lengths_command_array = gym.create_gpu_array(
-            [get_tendon_lengths_cmd]
-        )
+        robot.gpu_get_tendon_lengths_command_array = gym.create_gpu_array([get_tendon_lengths_cmd])
 
         get_tendon_vel_cmd = env_group.create_spatial_tendon_state_command(
             v.SpatialTendonState.VELOCITY,
@@ -129,9 +93,7 @@ def _create_read_gpu_commands(robot: Robot, env_group: Any, gym: v.Gym) -> None:
             robot.arti_handle,
             (0, robot.num_tendons),
         )
-        robot.gpu_get_tendon_velocities_command_array = gym.create_gpu_array(
-            [get_tendon_vel_cmd]
-        )
+        robot.gpu_get_tendon_velocities_command_array = gym.create_gpu_array([get_tendon_vel_cmd])
 
 
 def _refresh_buffers(robot: Robot, gym: v.Gym) -> None:
@@ -153,15 +115,9 @@ def _get_state(robot: Robot) -> dict[str, torch.Tensor]:
     robot.robot_linear_velocity_in_world[:] = robot.get_root_vel_buf[:, 3:6]
     robot.robot_angular_velocity_in_world[:] = robot.get_root_vel_buf[:, :3]
 
-    robot.gravity_vector_in_robot_frame[:] = quat_rotate_inverse(
-        robot.quat_robot_to_world, robot.gravity_direction_world
-    )
-    robot.robot_linear_velocity_in_robot_frame[:] = quat_rotate_inverse(
-        robot.quat_robot_to_world, robot.robot_linear_velocity_in_world
-    )
-    robot.robot_angular_velocity_in_robot_frame[:] = quat_rotate_inverse(
-        robot.quat_robot_to_world, robot.robot_angular_velocity_in_world
-    )
+    robot.gravity_vector_in_robot_frame[:] = quat_rotate_inverse(robot.quat_robot_to_world, robot.gravity_direction_world)
+    robot.robot_linear_velocity_in_robot_frame[:] = quat_rotate_inverse(robot.quat_robot_to_world, robot.robot_linear_velocity_in_world)
+    robot.robot_angular_velocity_in_robot_frame[:] = quat_rotate_inverse(robot.quat_robot_to_world, robot.robot_angular_velocity_in_world)
 
     state = {
         "robot_pos_in_world": robot.robot_pos_in_world,

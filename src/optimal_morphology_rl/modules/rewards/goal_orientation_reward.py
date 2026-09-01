@@ -55,7 +55,5 @@ class GoalOrientationReward(RewardBaseModule):
             scale,
         )
 
-        env.info["rewards"]["goal_orientation"] = (
-            raw.sum().item() / env.total_num_envs
-        )
+        env.info["rewards"]["goal_orientation"] = raw.sum().item() / env.total_num_envs
         return reward

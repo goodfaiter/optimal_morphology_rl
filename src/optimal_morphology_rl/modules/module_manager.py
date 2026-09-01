@@ -30,10 +30,7 @@ def register_module(name: str | None = None) -> Callable[[type[T]], type[T]]:
     def decorator(cls: type[T]) -> type[T]:
         registry_name = name if name is not None else cls.__name__
         if registry_name in DEFAULT_REGISTRY:
-            raise ValueError(
-                f"Module '{registry_name}' is already registered "
-                f"({DEFAULT_REGISTRY[registry_name].__name__})."
-            )
+            raise ValueError(f"Module '{registry_name}' is already registered ({DEFAULT_REGISTRY[registry_name].__name__}).")
         DEFAULT_REGISTRY[registry_name] = cls
         return cls
 
@@ -91,16 +88,11 @@ class ModuleManager:
             name_map: Optional mapping from module name to instance.  If not
                 provided it is built from ``module.config.get("_name")``.
         """
-        self._phase_modules: dict[str, list[BaseModule]] = {
-            phase: list(modules) for phase, modules in phase_modules.items()
-        }
+        self._phase_modules: dict[str, list[BaseModule]] = {phase: list(modules) for phase, modules in phase_modules.items()}
         all_modules = self._all_unique_modules()
 
         if name_map is None:
-            name_map = {
-                module.config.get("_name", type(module).__name__): module
-                for module in all_modules
-            }
+            name_map = {module.config.get("_name", type(module).__name__): module for module in all_modules}
         self._name_map: dict[str, BaseModule] = dict(name_map)
         self.container = ModuleContainer()
 
@@ -127,9 +119,7 @@ class ModuleManager:
 
         modules_entry = config.get("modules", {})
         if not isinstance(modules_entry, dict):
-            raise ValueError(
-                f"'modules' must be a dict of phase lists, got {type(modules_entry).__name__}."
-            )
+            raise ValueError(f"'modules' must be a dict of phase lists, got {type(modules_entry).__name__}.")
 
         phase_modules: dict[str, list[BaseModule]] = {}
         name_map: dict[str, BaseModule] = {}
@@ -141,9 +131,7 @@ class ModuleManager:
             if isinstance(phase_list, dict) and not phase_list:
                 phase_list = []
             if not isinstance(phase_list, list):
-                raise ValueError(
-                    f"'{phase}' must be a list, got {type(phase_list).__name__}."
-                )
+                raise ValueError(f"'{phase}' must be a list, got {type(phase_list).__name__}.")
 
             phase_instances: list[BaseModule] = []
             for entry in phase_list:
@@ -151,17 +139,12 @@ class ModuleManager:
                 if name not in name_map:
                     if name not in registry:
                         available = ", ".join(sorted(registry.keys()))
-                        raise KeyError(
-                            f"Module '{name}' is not registered. Available modules: {available}"
-                        )
+                        raise KeyError(f"Module '{name}' is not registered. Available modules: {available}")
 
                     module_cls = registry[name]
                     module_config = config.get(name, {})
                     if not isinstance(module_config, dict):
-                        raise ValueError(
-                            f"Config for module '{name}' must be a dict, got "
-                            f"{type(module_config).__name__}."
-                        )
+                        raise ValueError(f"Config for module '{name}' must be a dict, got {type(module_config).__name__}.")
                     module_config = dict(module_config)
                     module_config.setdefault("_name", name)
 
@@ -203,13 +186,9 @@ class ModuleManager:
             return entry
         if isinstance(entry, dict):
             if "name" not in entry:
-                raise ValueError(
-                    f"Module entry dict must contain a 'name' key, got {entry}."
-                )
+                raise ValueError(f"Module entry dict must contain a 'name' key, got {entry}.")
             return str(entry["name"])
-        raise ValueError(
-            f"Module entry must be a string or a dict, got {type(entry).__name__}: {entry}"
-        )
+        raise ValueError(f"Module entry must be a string or a dict, got {type(entry).__name__}: {entry}")
 
     # ------------------------------------------------------------------
     # Accessors
@@ -218,9 +197,7 @@ class ModuleManager:
         """Return a module by its registered/YAML name."""
         if name not in self._name_map:
             available = ", ".join(sorted(self._name_map.keys()))
-            raise KeyError(
-                f"Module '{name}' is not loaded. Loaded modules: {available}"
-            )
+            raise KeyError(f"Module '{name}' is not loaded. Loaded modules: {available}")
         return self._name_map[name]
 
     def __getitem__(self, name: str) -> BaseModule:

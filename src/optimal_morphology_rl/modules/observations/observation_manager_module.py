@@ -26,9 +26,7 @@ def register_observation(name: str | None = None):
     def decorator(cls: type[ObservationBaseModule]) -> type[ObservationBaseModule]:
         registry_name = name if name is not None else cls.__name__
         if registry_name in OBSERVATION_REGISTRY:
-            raise ValueError(
-                f"Observation module '{registry_name}' is already registered."
-            )
+            raise ValueError(f"Observation module '{registry_name}' is already registered.")
         OBSERVATION_REGISTRY[registry_name] = cls
         return cls
 
@@ -59,9 +57,7 @@ class ObservationManagerModule(BaseModule):
         self.hist_stride = int(self.config.get("hist_stride", 1))
 
         self.sub_manager = self._build_sub_manager()
-        self._obs_modules: list[ObservationBaseModule] = [
-            m for m in self.sub_manager if isinstance(m, ObservationBaseModule)
-        ]
+        self._obs_modules: list[ObservationBaseModule] = [m for m in self.sub_manager if isinstance(m, ObservationBaseModule)]
 
         self.base_obs: torch.Tensor | None = None
         self.obs_history: Any | None = None
@@ -84,9 +80,7 @@ class ObservationManagerModule(BaseModule):
         """Compute obs dims, build slices, and set the env observation space."""
         env = container.get("env")
         if env is None:
-            raise RuntimeError(
-                "ObservationManagerModule requires 'env' in the shared container."
-            )
+            raise RuntimeError("ObservationManagerModule requires 'env' in the shared container.")
 
         offset = 0
         self._obs_slices = {}
@@ -106,11 +100,7 @@ class ObservationManagerModule(BaseModule):
             dtype=np.float32,
         )
 
-        print(
-            f"Observation space size: {num_obs} "
-            f"(base={self._base_obs_dim}, num_hist={self.num_hist}, "
-            f"stride={self.hist_stride})"
-        )
+        print(f"Observation space size: {num_obs} (base={self._base_obs_dim}, num_hist={self.num_hist}, stride={self.hist_stride})")
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate observation buffer, base obs, and history buffers."""
@@ -124,9 +114,7 @@ class ObservationManagerModule(BaseModule):
             dtype=torch.float32,
         )
 
-        self.base_obs = torch.zeros(
-            (total_num_envs, self._base_obs_dim), device=device, dtype=torch.float32
-        )
+        self.base_obs = torch.zeros((total_num_envs, self._base_obs_dim), device=device, dtype=torch.float32)
 
         obs_history_length = 1 + (self.num_hist - 1) * self.hist_stride
         # Lazy import to avoid a hard dependency if history is not used.
@@ -144,9 +132,7 @@ class ObservationManagerModule(BaseModule):
         """Fill ``env.obs_buf`` from sub-module observations and history."""
         env = container.get("env")
         if env is None:
-            raise RuntimeError(
-                "ObservationManagerModule requires 'env' in the shared container."
-            )
+            raise RuntimeError("ObservationManagerModule requires 'env' in the shared container.")
         if self.base_obs is None or self._obs_slices is None:
             raise RuntimeError("ObservationManagerModule has not been finalized.")
 
