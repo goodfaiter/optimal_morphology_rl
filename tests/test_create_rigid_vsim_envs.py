@@ -9,7 +9,7 @@ import vlearn as v
 from optimal_morphology_rl.modules import ModuleManager
 
 
-VSIM_PATH = "/workspace/data/claw_3.vsim"
+VSIM_PATH = "/workspace/optimal_morphology_rl/tests/vsim/claw_3.vsim"
 
 
 @pytest.fixture(scope="module")
@@ -27,6 +27,7 @@ def _manager_session():
                 "create_rigid_vsim_envs",
                 "create_robot",
                 "create_objects",
+                "update_objects",
             ],
         },
         "create_rigid_vsim_envs": {

@@ -3,13 +3,19 @@ import torch
 import numpy as np
 from vlearn.spaces import Box
 import vlearn as v
-from optimal_morphology_rl.modules.contacts import Contacts
-from optimal_morphology_rl.modules.kinematic_sensor import KinematicSensor
-from optimal_morphology_rl.modules.force_sensors import ForceSensors
-from optimal_morphology_rl.modules.robot import Robot
-from optimal_morphology_rl.modules.object_generator import ObjectGenerator, LoadedRigidObject
-from optimal_morphology_rl.modules.object_camera_recorder import ObjectCameraRecorder
-from optimal_morphology_rl.modules.external_force import ExternalForceConfig, ExternalForceModule
+from optimal_morphology_rl.envs.hand_envs._contacts import Contacts
+from optimal_morphology_rl.envs.hand_envs._kinematic_sensor import KinematicSensor
+from optimal_morphology_rl.envs.hand_envs._force_sensors import ForceSensors
+from optimal_morphology_rl.envs.hand_envs._robot import Robot
+from optimal_morphology_rl.envs.hand_envs._object_generator import (
+    ObjectGenerator,
+    LoadedRigidObject,
+)
+from optimal_morphology_rl.envs.hand_envs._object_camera_recorder import ObjectCameraRecorder
+from optimal_morphology_rl.envs.hand_envs._external_force import (
+    ExternalForceConfig,
+    ExternalForceModule,
+)
 
 from pathlib import Path
 

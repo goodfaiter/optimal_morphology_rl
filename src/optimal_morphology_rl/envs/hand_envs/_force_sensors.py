@@ -1,3 +1,5 @@
+"""Legacy force sensor helper used by the old hand-object environments."""
+
 from __future__ import annotations
 
 from typing import Sequence
@@ -7,7 +9,7 @@ import vlearn as v
 
 
 class ForceSensors:
-    """Helper that owns force sensor buffers and GPU commands. Stateless w.r.t. env; callers pass in what's needed."""
+    """Helper that owns force sensor buffers and GPU commands."""
 
     def __init__(self):
         self.num_force_sensors = 0
@@ -74,6 +76,5 @@ class ForceSensors:
 
         gym.get_sensor_forces(self.get_force_sensor_cmd_arr)
 
-        # Not ideal due to for loop but we expect only 4 to 6 sensors per fingertip.
         for sensor_index, sensor_view in enumerate(self.force_sensor_views):
             self.force_sensor_buf[:, sensor_index, :].copy_(sensor_view)

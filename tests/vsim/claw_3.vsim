@@ -1,0 +1,447 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<robot name="hand" version="4">
+    <elasticMaterial name="FingerTendonMaterial" stiffness="0" damping="0" limitStiffness="1e+07" limitDamping="100000"/>
+    <robotProperties maxDepenetrationVelocity="10"/>
+    <link name="palm">
+        <inertial>
+            <origin xyz="0.0 0.00775 -0.006" rpy="0.0 0.0 0.0"/>
+            <mass value="0.01"/>
+            <inertia ixx="0.0001" iyy="0.0001" izz="0.0001" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual name="palm_vis">
+            <geometry>
+                <box size="0.03 0.0105 0.029"/>
+                <queryProperties useQueries="True"/>
+            </geometry>
+            <origin xyz="0.0 0.00775 -0.006" rpy="0.0 0.0 0.0"/>
+            <material name="palm"/>
+        </visual>
+        <collision name="palm_col">
+            <geometry>
+                <box size="0.03 0.0105 0.029"/>
+            </geometry>
+            <origin xyz="0.0 0.00775 -0.006" rpy="0.0 0.0 0.0"/>
+        </collision>
+    </link>
+    <link name="finger_0_metacarpal">
+        <inertial>
+            <origin xyz="0.038 0.006125 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.014896"/>
+            <inertia ixx="0.0001" iyy="0.0001" izz="0.0001" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual name="finger_0_metacarpal_vis">
+            <geometry>
+                <box size="0.076 0.01225 0.016"/>
+                <queryProperties useQueries="True"/>
+            </geometry>
+            <origin xyz="0.038 0.006125 0.0" rpy="0.0 0.0 0.0"/>
+            <material name="finger_0"/>
+        </visual>
+        <collision name="finger_0_metacarpal_col">
+            <geometry>
+                <box size="0.076 0.01225 0.016"/>
+            </geometry>
+            <origin xyz="0.038 0.006125 0.0" rpy="0.0 0.0 0.0"/>
+        </collision>
+    </link>
+    <link name="finger_0_proximal">
+        <inertial>
+            <origin xyz="0.018000000000000002 0.005775000000000001 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.00681912"/>
+            <inertia ixx="0.0001" iyy="0.0001" izz="0.0001" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual name="finger_0_proximal_vis">
+            <geometry>
+                <box size="0.036000000000000004 0.011550000000000001 0.016399999999999998"/>
+                <queryProperties useQueries="True"/>
+            </geometry>
+            <origin xyz="0.018000000000000002 0.005775000000000001 0.0" rpy="0.0 0.0 0.0"/>
+            <material name="finger_0"/>
+        </visual>
+        <collision name="finger_0_proximal_col">
+            <geometry>
+                <box size="0.036000000000000004 0.011550000000000001 0.016399999999999998"/>
+            </geometry>
+            <origin xyz="0.018000000000000002 0.005775000000000001 0.0" rpy="0.0 0.0 0.0"/>
+        </collision>
+    </link>
+    <link name="finger_0_distal">
+        <inertial>
+            <origin xyz="0.018000000000000002 0.00455 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.00497952"/>
+            <inertia ixx="0.0001" iyy="0.0001" izz="0.0001" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual name="finger_0_distal_vis">
+            <geometry>
+                <box size="0.036000000000000004 0.0091 0.0152"/>
+                <queryProperties useQueries="True"/>
+            </geometry>
+            <origin xyz="0.018000000000000002 0.00455 0.0" rpy="0.0 0.0 0.0"/>
+            <material name="finger_0"/>
+        </visual>
+        <collision name="finger_0_distal_col">
+            <geometry>
+                <box size="0.036000000000000004 0.0091 0.0152"/>
+            </geometry>
+            <origin xyz="0.018000000000000002 0.00455 0.0" rpy="0.0 0.0 0.0"/>
+        </collision>
+    </link>
+    <link name="finger_1_metacarpal">
+        <inertial>
+            <origin xyz="0.037 0.006125 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.014504"/>
+            <inertia ixx="0.0001" iyy="0.0001" izz="0.0001" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual name="finger_1_metacarpal_vis">
+            <geometry>
+                <box size="0.074 0.01225 0.016"/>
+                <queryProperties useQueries="True"/>
+            </geometry>
+            <origin xyz="0.037 0.006125 0.0" rpy="0.0 0.0 0.0"/>
+            <material name="finger_1"/>
+        </visual>
+        <collision name="finger_1_metacarpal_col">
+            <geometry>
+                <box size="0.074 0.01225 0.016"/>
+            </geometry>
+            <origin xyz="0.037 0.006125 0.0" rpy="0.0 0.0 0.0"/>
+        </collision>
+    </link>
+    <link name="finger_1_proximal">
+        <inertial>
+            <origin xyz="0.01825 0.005775000000000001 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.00691383"/>
+            <inertia ixx="0.0001" iyy="0.0001" izz="0.0001" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual name="finger_1_proximal_vis">
+            <geometry>
+                <box size="0.0365 0.011550000000000001 0.016399999999999998"/>
+                <queryProperties useQueries="True"/>
+            </geometry>
+            <origin xyz="0.01825 0.005775000000000001 0.0" rpy="0.0 0.0 0.0"/>
+            <material name="finger_1"/>
+        </visual>
+        <collision name="finger_1_proximal_col">
+            <geometry>
+                <box size="0.0365 0.011550000000000001 0.016399999999999998"/>
+            </geometry>
+            <origin xyz="0.01825 0.005775000000000001 0.0" rpy="0.0 0.0 0.0"/>
+        </collision>
+    </link>
+    <link name="finger_1_distal">
+        <inertial>
+            <origin xyz="0.01825 0.00455 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.00504868"/>
+            <inertia ixx="0.0001" iyy="0.0001" izz="0.0001" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual name="finger_1_distal_vis">
+            <geometry>
+                <box size="0.0365 0.0091 0.0152"/>
+                <queryProperties useQueries="True"/>
+            </geometry>
+            <origin xyz="0.01825 0.00455 0.0" rpy="0.0 0.0 0.0"/>
+            <material name="finger_1"/>
+        </visual>
+        <collision name="finger_1_distal_col">
+            <geometry>
+                <box size="0.0365 0.0091 0.0152"/>
+            </geometry>
+            <origin xyz="0.01825 0.00455 0.0" rpy="0.0 0.0 0.0"/>
+        </collision>
+    </link>
+    <link name="thumb_0_metacarpal">
+        <inertial>
+            <origin xyz="0.018000000000000002 0.00675 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.0084564"/>
+            <inertia ixx="0.0001" iyy="0.0001" izz="0.0001" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual name="thumb_0_metacarpal_vis">
+            <geometry>
+                <box size="0.036000000000000004 0.0135 0.0174"/>
+                <queryProperties useQueries="True"/>
+            </geometry>
+            <origin xyz="0.018000000000000002 0.00675 0.0" rpy="0.0 0.0 0.0"/>
+            <material name="thumb"/>
+        </visual>
+        <collision name="thumb_0_metacarpal_col">
+            <geometry>
+                <box size="0.036000000000000004 0.0135 0.0174"/>
+            </geometry>
+            <origin xyz="0.018000000000000002 0.00675 0.0" rpy="0.0 0.0 0.0"/>
+        </collision>
+    </link>
+    <link name="thumb_0_proximal">
+        <inertial>
+            <origin xyz="0.015 0.0063750000000000005 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.0065025"/>
+            <inertia ixx="0.0001" iyy="0.0001" izz="0.0001" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual name="thumb_0_proximal_vis">
+            <geometry>
+                <box size="0.03 0.012750000000000001 0.017"/>
+                <queryProperties useQueries="True"/>
+            </geometry>
+            <origin xyz="0.015 0.0063750000000000005 0.0" rpy="0.0 0.0 0.0"/>
+            <material name="thumb"/>
+        </visual>
+        <collision name="thumb_0_proximal_col">
+            <geometry>
+                <box size="0.03 0.012750000000000001 0.017"/>
+            </geometry>
+            <origin xyz="0.015 0.0063750000000000005 0.0" rpy="0.0 0.0 0.0"/>
+        </collision>
+    </link>
+    <link name="thumb_0_distal">
+        <inertial>
+            <origin xyz="0.015 0.00525 0.0" rpy="0.0 0.0 0.0"/>
+            <mass value="0.0048195"/>
+            <inertia ixx="0.0001" iyy="0.0001" izz="0.0001" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual name="thumb_0_distal_vis">
+            <geometry>
+                <box size="0.03 0.0105 0.015300000000000001"/>
+                <queryProperties useQueries="True"/>
+            </geometry>
+            <origin xyz="0.015 0.00525 0.0" rpy="0.0 0.0 0.0"/>
+            <material name="thumb"/>
+        </visual>
+        <collision name="thumb_0_distal_col">
+            <geometry>
+                <box size="0.03 0.0105 0.015300000000000001"/>
+            </geometry>
+            <origin xyz="0.015 0.00525 0.0" rpy="0.0 0.0 0.0"/>
+        </collision>
+    </link>
+    <joint name="finger_0_base_joint" type="fixed">
+        <parent link="palm"/>
+        <child link="finger_0_metacarpal"/>
+        <origin xyz="0.0 0.0015 -0.006" rpy="0.0 0.0 -2.1932471897982407e-17"/>
+    </joint>
+    <joint name="finger_0_proximal_flex_joint" type="revolute">
+        <parent link="finger_0_metacarpal"/>
+        <child link="finger_0_proximal"/>
+        <origin xyz="0.0766 0.0 0.0" rpy="0.0 0.0 0.0"/>
+        <axis xyz="0.0 0.0 1.0"/>
+        <limit lower="0.0" upper="1.75"/>
+        <dynamics damping="0" friction="0.1"/>
+    </joint>
+    <joint name="finger_0_distal_flex_joint" type="revolute">
+        <parent link="finger_0_proximal"/>
+        <child link="finger_0_distal"/>
+        <origin xyz="0.0366 0.0 0.0" rpy="0.0 0.0 0.0"/>
+        <axis xyz="0.0 0.0 1.0"/>
+        <limit lower="0.0" upper="1.4"/>
+        <dynamics damping="0" friction="0.1"/>
+    </joint>
+    <joint name="finger_1_base_joint" type="fixed">
+        <parent link="palm"/>
+        <child link="finger_1_metacarpal"/>
+        <origin xyz="0.0 0.0025 -0.018000000000000002" rpy="3.141592653589793 7.871877887341986e-17 1.3962634015954638"/>
+    </joint>
+    <joint name="finger_1_proximal_flex_joint" type="revolute">
+        <parent link="finger_1_metacarpal"/>
+        <child link="finger_1_proximal"/>
+        <origin xyz="0.0746 0.0 0.0" rpy="0.0 0.0 0.0"/>
+        <axis xyz="0.0 0.0 1.0"/>
+        <limit lower="0.0" upper="1.75"/>
+        <dynamics damping="0" friction="0.1"/>
+    </joint>
+    <joint name="finger_1_distal_flex_joint" type="revolute">
+        <parent link="finger_1_proximal"/>
+        <child link="finger_1_distal"/>
+        <origin xyz="0.0371 0.0 0.0" rpy="0.0 0.0 0.0"/>
+        <axis xyz="0.0 0.0 1.0"/>
+        <limit lower="0.0" upper="1.4"/>
+        <dynamics damping="0" friction="0.1"/>
+    </joint>
+    <joint name="thumb_0_base_joint" type="fixed">
+        <parent link="palm"/>
+        <child link="thumb_0_metacarpal"/>
+        <origin xyz="-0.004 0.0055 0.006" rpy="-0.9249459290792811 -0.590372367005606 0.30088645048361845"/>
+    </joint>
+    <joint name="thumb_0_proximal_flex_joint" type="revolute">
+        <parent link="thumb_0_metacarpal"/>
+        <child link="thumb_0_proximal"/>
+        <origin xyz="0.0366 0.0 0.0" rpy="0.0 0.0 0.0"/>
+        <axis xyz="0.0 0.0 1.0"/>
+        <limit lower="0.0" upper="1.75"/>
+        <dynamics damping="0" friction="0.1"/>
+    </joint>
+    <joint name="thumb_0_distal_flex_joint" type="revolute">
+        <parent link="thumb_0_proximal"/>
+        <child link="thumb_0_distal"/>
+        <origin xyz="0.030600000000000002 0.0 0.0" rpy="0.0 0.0 0.0"/>
+        <axis xyz="0.0 0.0 1.0"/>
+        <limit lower="0.0" upper="1.4"/>
+        <dynamics damping="0" friction="0.1"/>
+    </joint>
+    <actuator>
+        <motor name="finger_0_proximal_flex_joint" joint="finger_0_proximal_flex_joint" gear="1.0" lowLimit="-0.5" highLimit="0.5"/>
+        <motor name="finger_0_distal_flex_joint" joint="finger_0_distal_flex_joint" gear="1.0" lowLimit="-0.5" highLimit="0.5"/>
+        <motor name="finger_1_proximal_flex_joint" joint="finger_1_proximal_flex_joint" gear="1.0" lowLimit="-0.5" highLimit="0.5"/>
+        <motor name="finger_1_distal_flex_joint" joint="finger_1_distal_flex_joint" gear="1.0" lowLimit="-0.5" highLimit="0.5"/>
+        <motor name="thumb_0_proximal_flex_joint" joint="thumb_0_proximal_flex_joint" gear="1.0" lowLimit="-0.5" highLimit="0.5"/>
+        <motor name="thumb_0_distal_flex_joint" joint="thumb_0_distal_flex_joint" gear="1.0" lowLimit="-0.5" highLimit="0.5"/>
+    </actuator>
+    <forceSensor>
+        <sensor name="finger_0_distal_sensor" link="finger_0_distal" offset="0.0 0.0 0.0" flags="contact"/>
+        <sensor name="finger_1_distal_sensor" link="finger_1_distal" offset="0.0 0.0 0.0" flags="contact"/>
+        <sensor name="thumb_0_distal_sensor" link="thumb_0_distal" offset="0.0 0.0 0.0" flags="contact"/>
+    </forceSensor>
+    <tendon name="finger_0_tendon" type="spatial" offset="0.0" lowLimit="-0.1" highLimit="0.0" materialRef="FingerTendonMaterial">
+        <site name="finger_0_b0_prox" coefficient="0.0" radius="0.0">
+            <origin xyz="0.007 0.0105 0.0" rot="0 0 0 1"/>
+            <host link="finger_0_metacarpal"/>
+        </site>
+        <site name="finger_0_b0_dist" coefficient="0.0" radius="0.0">
+            <origin xyz="0.06899999999999999 0.0105 0.0" rot="0 0 0 1"/>
+            <host link="finger_0_metacarpal"/>
+        </site>
+        <site name="finger_0_b1_prox" coefficient="0.0" radius="0.0">
+            <origin xyz="0.007 0.014 0.0" rot="0 0 0 1"/>
+            <host link="finger_0_proximal"/>
+        </site>
+        <site name="finger_0_b1_dist" coefficient="0.0" radius="0.0">
+            <origin xyz="0.029000000000000005 0.014 0.0" rot="0 0 0 1"/>
+            <host link="finger_0_proximal"/>
+        </site>
+        <site name="finger_0_b2_prox" coefficient="0.0" radius="0.0">
+            <origin xyz="0.007 0.0091 0.0" rot="0 0 0 1"/>
+            <host link="finger_0_distal"/>
+        </site>
+        <site name="finger_0_b2_dist" coefficient="0.0" radius="0.0">
+            <origin xyz="0.029000000000000005 0.0091 0.0" rot="0 0 0 1"/>
+            <host link="finger_0_distal"/>
+        </site>
+        <connection>
+            <parent site="finger_0_b0_prox"/>
+            <child site="finger_0_b0_dist"/>
+        </connection>
+        <connection>
+            <parent site="finger_0_b0_dist"/>
+            <child site="finger_0_b1_prox"/>
+        </connection>
+        <connection>
+            <parent site="finger_0_b1_prox"/>
+            <child site="finger_0_b1_dist"/>
+        </connection>
+        <connection>
+            <parent site="finger_0_b1_dist"/>
+            <child site="finger_0_b2_prox"/>
+        </connection>
+        <connection>
+            <parent site="finger_0_b2_prox"/>
+            <child site="finger_0_b2_dist"/>
+        </connection>
+    </tendon>
+    <tendon name="finger_1_tendon" type="spatial" offset="0.0" lowLimit="-0.1" highLimit="0.0" materialRef="FingerTendonMaterial">
+        <site name="finger_1_b0_prox" coefficient="0.0" radius="0.0">
+            <origin xyz="0.007 0.0105 0.0" rot="0 0 0 1"/>
+            <host link="finger_1_metacarpal"/>
+        </site>
+        <site name="finger_1_b0_dist" coefficient="0.0" radius="0.0">
+            <origin xyz="0.06699999999999999 0.0105 0.0" rot="0 0 0 1"/>
+            <host link="finger_1_metacarpal"/>
+        </site>
+        <site name="finger_1_b1_prox" coefficient="0.0" radius="0.0">
+            <origin xyz="0.007 0.014 0.0" rot="0 0 0 1"/>
+            <host link="finger_1_proximal"/>
+        </site>
+        <site name="finger_1_b1_dist" coefficient="0.0" radius="0.0">
+            <origin xyz="0.0295 0.014 0.0" rot="0 0 0 1"/>
+            <host link="finger_1_proximal"/>
+        </site>
+        <site name="finger_1_b2_prox" coefficient="0.0" radius="0.0">
+            <origin xyz="0.007 0.0091 0.0" rot="0 0 0 1"/>
+            <host link="finger_1_distal"/>
+        </site>
+        <site name="finger_1_b2_dist" coefficient="0.0" radius="0.0">
+            <origin xyz="0.0295 0.0091 0.0" rot="0 0 0 1"/>
+            <host link="finger_1_distal"/>
+        </site>
+        <connection>
+            <parent site="finger_1_b0_prox"/>
+            <child site="finger_1_b0_dist"/>
+        </connection>
+        <connection>
+            <parent site="finger_1_b0_dist"/>
+            <child site="finger_1_b1_prox"/>
+        </connection>
+        <connection>
+            <parent site="finger_1_b1_prox"/>
+            <child site="finger_1_b1_dist"/>
+        </connection>
+        <connection>
+            <parent site="finger_1_b1_dist"/>
+            <child site="finger_1_b2_prox"/>
+        </connection>
+        <connection>
+            <parent site="finger_1_b2_prox"/>
+            <child site="finger_1_b2_dist"/>
+        </connection>
+    </tendon>
+    <tendon name="thumb_0_tendon" type="spatial" offset="0.0" lowLimit="-0.1" highLimit="0.0" materialRef="FingerTendonMaterial">
+        <site name="thumb_0_b0_prox" coefficient="0.0" radius="0.0">
+            <origin xyz="0.007 0.012 0.0" rot="0 0 0 1"/>
+            <host link="thumb_0_metacarpal"/>
+        </site>
+        <site name="thumb_0_b0_dist" coefficient="0.0" radius="0.0">
+            <origin xyz="0.029000000000000005 0.012 0.0" rot="0 0 0 1"/>
+            <host link="thumb_0_metacarpal"/>
+        </site>
+        <site name="thumb_0_b1_prox" coefficient="0.0" radius="0.0">
+            <origin xyz="0.007 0.015 0.0" rot="0 0 0 1"/>
+            <host link="thumb_0_proximal"/>
+        </site>
+        <site name="thumb_0_b1_dist" coefficient="0.0" radius="0.0">
+            <origin xyz="0.023 0.015 0.0" rot="0 0 0 1"/>
+            <host link="thumb_0_proximal"/>
+        </site>
+        <site name="thumb_0_b2_prox" coefficient="0.0" radius="0.0">
+            <origin xyz="0.007 0.0105 0.0" rot="0 0 0 1"/>
+            <host link="thumb_0_distal"/>
+        </site>
+        <site name="thumb_0_b2_dist" coefficient="0.0" radius="0.0">
+            <origin xyz="0.023 0.0105 0.0" rot="0 0 0 1"/>
+            <host link="thumb_0_distal"/>
+        </site>
+        <connection>
+            <parent site="thumb_0_b0_prox"/>
+            <child site="thumb_0_b0_dist"/>
+        </connection>
+        <connection>
+            <parent site="thumb_0_b0_dist"/>
+            <child site="thumb_0_b1_prox"/>
+        </connection>
+        <connection>
+            <parent site="thumb_0_b1_prox"/>
+            <child site="thumb_0_b1_dist"/>
+        </connection>
+        <connection>
+            <parent site="thumb_0_b1_dist"/>
+            <child site="thumb_0_b2_prox"/>
+        </connection>
+        <connection>
+            <parent site="thumb_0_b2_prox"/>
+            <child site="thumb_0_b2_dist"/>
+        </connection>
+    </tendon>
+    <material name="palm">
+        <color rgba="0.95 0.82 0.72 1.0"/>
+    </material>
+    <material name="thumb">
+        <color rgba="0.95 0.6 0.2 1.0"/>
+    </material>
+    <material name="finger_0">
+        <color rgba="0.95 0.3 0.3 1.0"/>
+    </material>
+    <material name="finger_1">
+        <color rgba="0.3 0.7 0.4 1.0"/>
+    </material>
+    <material name="finger_2">
+        <color rgba="0.25 0.55 0.95 1.0"/>
+    </material>
+    <material name="finger_3">
+        <color rgba="0.75 0.35 0.9 1.0"/>
+    </material>
+</robot>

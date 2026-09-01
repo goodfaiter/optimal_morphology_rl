@@ -1,16 +1,9 @@
-"""Module that applies random external forces to the reward object."""
-
-from __future__ import annotations
+"""Legacy external force helper used by the old hand-object environments."""
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
-
 import torch
 import vlearn as v
-
-from optimal_morphology_rl.modules.base_module import BaseModule
-from optimal_morphology_rl.modules.module_container import ModuleContainer
-from optimal_morphology_rl.modules.module_manager import register_module
 
 
 @dataclass
@@ -35,7 +28,7 @@ def _uniform_sphere(n: int, device: torch.device) -> torch.Tensor:
     return torch.stack([x, y, z], dim=-1)
 
 
-class _BodyForceEntry:
+class BodyForceEntry:
     """Holds GPU buffer and command for a single body."""
 
     def __init__(
@@ -54,9 +47,7 @@ class _BodyForceEntry:
         self.device = device
         self.config = config
 
-        self.force_buf = torch.zeros(
-            (num_envs, 1, 6), dtype=torch.float32, device=device
-        )
+        self.force_buf = torch.zeros((num_envs, 1, 6), dtype=torch.float32, device=device)
         self.cmd = env_group.create_rigid_body_external_force_command(
             v.wrap_gpu_buffer(self.force_buf),
             handle,
@@ -64,7 +55,7 @@ class _BodyForceEntry:
         )
         self.cmd_array = gym.create_gpu_array([self.cmd])
 
-    def sample_and_apply(self, gym: v.Gym) -> None:
+    def sample_and_apply(self, gym: v.Gym):
         """Sample and apply a random external force/torque."""
         apply_mask = torch.rand(self.num_envs, device=self.device) < self.config.apply_prob
         self.force_buf.zero_()
@@ -85,7 +76,7 @@ class _BodyForceEntry:
         gym.set_rigid_body_external_forces(self.cmd_array)
 
 
-class _ExternalForceApplier:
+class ExternalForceModule:
     """Applies random external forces to a set of rigid bodies."""
 
     def __init__(
@@ -98,8 +89,8 @@ class _ExternalForceApplier:
         config: Optional[ExternalForceConfig] = None,
     ):
         self.config = config or ExternalForceConfig()
-        self._entries: Dict[str, _BodyForceEntry] = {
-            name: _BodyForceEntry(
+        self._entries: Dict[str, BodyForceEntry] = {
+            name: BodyForceEntry(
                 name=name,
                 handle=handle,
                 num_envs=total_num_envs,
@@ -114,53 +105,3 @@ class _ExternalForceApplier:
     def step(self, gym: v.Gym) -> None:
         for entry in self._entries.values():
             entry.sample_and_apply(gym)
-
-
-@register_module("external_force")
-class ExternalForceModule(BaseModule):
-    """Applies random external forces to the reward object.
-
-    Only active when the reward object is a loaded rigid object that is not the
-    cube (matching the legacy behavior).
-    """
-
-    def __init__(self, config: dict[str, Any] | None = None):
-        super().__init__(config)
-        self.apply_prob = float(self.config.get("apply_prob", 0.02))
-        self.force_max = float(self.config.get("force_max", 2.0))
-        self.torque_max = float(self.config.get("torque_max", 0.0))
-        self.force_module: _ExternalForceApplier | None = None
-
-    def post_finalize(self, container: ModuleContainer) -> None:
-        """Create the external force applier if the reward object is eligible."""
-        reward_object = container.get("reward_object")
-        if reward_object is None:
-            return
-
-        from optimal_morphology_rl.modules.create_objects_module import LoadedRigidObject
-
-        reward_object_name = container.get("reward_object_name", "")
-        if reward_object_name == "cube" or not isinstance(
-            reward_object, LoadedRigidObject
-        ):
-            return
-
-        config = ExternalForceConfig(
-            apply_prob=self.apply_prob,
-            force_max=self.force_max,
-            torque_max=self.torque_max,
-        )
-        self.force_module = _ExternalForceApplier(
-            body_handles={reward_object_name: reward_object.handle},
-            total_num_envs=container.total_num_envs,
-            device=container.device,
-            env_group=container.env_group,
-            gym=container.gym,
-            config=config,
-        )
-        container.external_force = self.force_module
-
-    def step(self, container: ModuleContainer) -> None:
-        """Apply a random external force/torque to the reward object."""
-        if self.force_module is not None:
-            self.force_module.step(container.gym)

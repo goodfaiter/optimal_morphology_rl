@@ -1,3 +1,5 @@
+"""Legacy kinematic sensor helper used by the old hand-object environments."""
+
 from __future__ import annotations
 
 import torch
@@ -5,15 +7,14 @@ import vlearn as v
 
 
 class KinematicSensor:
-    """Helper that owns kinematic sensor buffers and GPU commands. Stateless w.r.t. env; callers pass in what's needed.
-
-    The source handle is resolved automatically by trying rigid body first and then articulation.
-    """
+    """Helper that owns kinematic sensor buffers and GPU commands."""
 
     def __init__(self):
         self.kinematic_sensor_handle = None
-        self.pose_buf = None
-        self.velocity_buf = None
+        self.pose_in_world_buf = None
+        self.velocity_in_world_buf = None
+        self.pose_in_object_buf = None
+        self.velocity_in_object_buf = None
         self.get_kinematic_sensor_cmd = None
         self.get_kinematic_sensor_cmd_arr = None
 
@@ -27,8 +28,6 @@ class KinematicSensor:
     ) -> None:
         """Resolve the sensor handle and allocate state buffers."""
         source = None
-
-        # Prefer rigid body when a handle could refer to multiple source types.
         try:
             source = env_def.get_rigid_body(handle)
         except Exception:
@@ -38,7 +37,7 @@ class KinematicSensor:
             source = env_def.get_articulation(handle)
 
         if source is None:
-            raise ValueError(f"Handle {handle} is neither a rigid body nor an articulation in this environment definition.")
+            raise ValueError(f"Handle {handle} is neither a rigid body nor an articulation.")
 
         self.kinematic_sensor_handle = source.get_kinematic_sensor_handle(sensor_index)
 
@@ -62,7 +61,9 @@ class KinematicSensor:
             self.kinematic_sensor_handle,
             frame_type=v.FrameType.LOCAL,
         )
-        self.get_kinematic_sensor_cmd_arr = gym.create_gpu_array([self.get_kinematic_sensor_in_world_cmd, self.get_kinematic_sensor_in_object_cmd])
+        self.get_kinematic_sensor_cmd_arr = gym.create_gpu_array(
+            [self.get_kinematic_sensor_in_world_cmd, self.get_kinematic_sensor_in_object_cmd]
+        )
 
     def update(self, gym: v.Gym) -> None:
         """Read the latest kinematic sensor data into the dense buffers."""
@@ -87,23 +88,23 @@ class KinematicSensor:
     @property
     def linear_velocity_world(self) -> torch.Tensor:
         return self.velocity_in_world_buf[:, 3:6]
-    
+
     @property
     def pose_in_object(self) -> torch.Tensor:
         return self.pose_in_object_buf
-    
+
     @property
     def quat_sensor_to_object(self) -> torch.Tensor:
         return self.pose_in_object_buf[:, :4]
-    
+
     @property
     def pos_in_object(self) -> torch.Tensor:
         return self.pose_in_object_buf[:, 4:7]
-    
+
     @property
     def angular_velocity_object(self) -> torch.Tensor:
         return self.velocity_in_object_buf[:, :3]
-    
+
     @property
     def linear_velocity_object(self) -> torch.Tensor:
         return self.velocity_in_object_buf[:, 3:6]

@@ -1,3 +1,5 @@
+"""Legacy robot helper used by the old hand-object environments."""
+
 from __future__ import annotations
 
 import torch
@@ -5,8 +7,10 @@ import vlearn as v
 
 from vlearn.torch_utils.torch_jit_utils import scale, quat_rotate, quat_rotate_inverse
 
-from optimal_morphology_rl.helpers.numpy_vlearn import random_uniform_quaternion, quaternion_to_6d
-
+from optimal_morphology_rl.helpers.numpy_vlearn import (
+    random_uniform_quaternion,
+    quaternion_to_6d,
+)
 
 
 class Robot:
@@ -77,8 +81,6 @@ class Robot:
         self.set_force_torque_buf = torch.zeros((total_num_envs, self.num_links, 6), dtype=torch.float32, device=device)
 
         # Rigid Material Buffers
-        # Rigid material properties are scalar per material, so these buffers hold a
-        # single value that is applied to the environments selected by the reset mask.
         self.set_static_friction_buf = torch.zeros(1, dtype=torch.float32, device=device)
         self.set_dynamic_friction_buf = torch.zeros(1, dtype=torch.float32, device=device)
 
@@ -88,7 +90,6 @@ class Robot:
             self.get_tendon_vel_buf = torch.zeros((total_num_envs, self.num_tendons), dtype=torch.float32, device=device)
 
         if self.num_distal_links > 0:
-            # Link-first shape so each per-link slice (i, :, :) is contiguous.
             self.distal_link_transform_buf = torch.zeros(
                 (self.num_distal_links, total_num_envs, 7), device=device, dtype=torch.float32
             )
@@ -126,7 +127,6 @@ class Robot:
         if self.use_tendon:
             self.num_tendons = self.art_def.get_num_spatial_tendon_defs()
 
-        # Identify distal links for fingertip-position tracking.
         self.distal_link_indices = [
             i
             for i in range(self.num_links)
@@ -178,7 +178,6 @@ class Robot:
 
     def create_gpu_commands(self, env_group, gym: v.Gym, reset_buf: torch.Tensor, inverse_reset_buf: torch.Tensor) -> None:
         """Create GPU commands for robot state and control."""
-
         reset_kin_cmd = env_group.create_articulation_kinematic_state_command(
             v.wrap_gpu_buffer(self.reset_joint_pos_buf),
             v.wrap_gpu_buffer(self.reset_joint_vel_buf),
@@ -214,7 +213,6 @@ class Robot:
         )
         self.gpu_get_kinematic_state_command_array = gym.create_gpu_array([get_kin_cmd])
 
-        # Distal link transform commands for fingertip-position tracking.
         if self.num_distal_links > 0:
             distal_transform_cmds = []
             for i, link_index in enumerate(self.distal_link_indices):
@@ -248,15 +246,11 @@ class Robot:
             )
             self.gpu_get_tendon_velocities_command_array = gym.create_gpu_array([get_tendon_vel_cmd])
 
-        ### Gravity Comp Commands
-        # Create external force command
         set_force_torque_cmd = env_group.create_link_external_force_command(
             v.wrap_gpu_buffer(self.set_force_torque_buf), self.arti_handle, [0, self.num_links], force_type=v.ForceType.FORCE_TORQUE
         )
-
         self.set_force_torque_cmd_arr = gym.create_gpu_array([set_force_torque_cmd])
 
-        ### Rigid Material Commands
         set_static_friction_cmd = env_group.create_rigid_material_property_command(
             v.RigidMaterialProperty.STATIC_FRICTION,
             v.wrap_gpu_buffer(self.set_static_friction_buf),
@@ -291,7 +285,6 @@ class Robot:
 
     def get_state(self) -> dict[str, torch.Tensor]:
         """Update and return the robot-derived observation tensors."""
-
         self.robot_pos_in_world[:] = self.get_root_transform_buf[:, 4:7]
         self.quat_robot_to_world[:] = self.get_root_transform_buf[:, 0:4]
         self._6d_robot_to_world[:] = quaternion_to_6d(self.quat_robot_to_world)
@@ -342,8 +335,6 @@ class Robot:
         self.reset_root_vel_buf[reset_buf, :] = 0.0
         gym.set_articulation_kinematic_states(self.gpu_reset_kinematic_state_command_array)
 
-        # Randomize rigid body material.  The rigid material property command expects
-        # a scalar value buffer, so we draw one value per reset call.
         total_num_envs = reset_buf.shape[0]
         if total_num_envs != 1 and fric_coeff is None:
             static_friction = torch.rand(1, device=device).item() * 0.9 + 0.1
@@ -351,8 +342,6 @@ class Robot:
             static_friction = 0.1 if fric_coeff is None else fric_coeff
         dynamic_friction = static_friction * 0.75
 
-        # The friction is average between two objects. So we set object friction to 0
-        # and the robot hand to desired * 2.
         self.set_static_friction_buf[0] = static_friction * 2.0
         self.set_dynamic_friction_buf[0] = dynamic_friction * 2.0
         gym.set_rigid_material_properties(self.gpu_set_friction_cmd)
@@ -368,7 +357,6 @@ class Robot:
         )
         self.scaled_act_buf[:, self.dof_slice] = scale(act_buf[:, self.dof_slice], self.min_revolute_scale, self.max_revolute_scale)
 
-        # Apply wrist velocity commands (commanded in the robot's local frame, rotated to world for the sim).
         if not self.fixed_hand:
             self.set_root_transform_buf[:] = self.get_root_transform_buf
             local_root_vel = torch.clamp(self.scaled_act_buf[:, self.root_slice], -self.max_velocity, self.max_velocity)
@@ -380,18 +368,13 @@ class Robot:
         self.set_motor_cmd_buf[:] = 0.0
 
         if self.use_tendon:
-            # Apply tendon forces directly from the action
             self.set_tendon_controls_buf[:] = torch.clamp(self.scaled_act_buf[:, self.dof_slice], 0.0, None)
             gym.set_spatial_tendon_forces(self.gpu_set_tendon_control_command_array)
         else:
-            # Apply joint motor commands
             self.set_motor_cmd_buf[:] = torch.clamp(self.scaled_act_buf[:, self.dof_slice], 0.0, None)
 
-        # Apply anatgonistic spring to all joints
         self.set_motor_cmd_buf[:] += -0.1 * self.get_joint_pos_buf
-
         gym.set_motor_forces(self.gpu_set_motor_control_command_array)
 
-        # Gravity compensation on base link
         self.set_force_torque_buf[:, :, 2] = 9.81 * self.link_masses
         gym.set_link_external_forces(self.set_force_torque_cmd_arr)

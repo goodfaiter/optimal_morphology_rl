@@ -12,7 +12,7 @@ import vlearn as v
 from optimal_morphology_rl.envs.hand_envs.hand_object_env import HandObjectEnvironmentGpu
 
 
-VSIM_PATH = "/workspace/data/vsim/claw_3_tendon.vsim"
+VSIM_PATH = "/workspace/optimal_morphology_rl/tests/vsim/claw_3.vsim"
 
 
 def _make_env(max_episode_length: int = 10):
