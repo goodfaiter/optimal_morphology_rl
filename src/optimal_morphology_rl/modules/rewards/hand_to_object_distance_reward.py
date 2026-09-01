@@ -39,13 +39,15 @@ class HandToObjectDistanceReward(RewardBaseModule):
         scale = float(self.config.get("scale", 0.1))
         link_positions = robot.distal_link_pos_buf.transpose(0, 1)
 
+        # link_dists = torch.norm(link_positions - object_pos_in_world.unsqueeze(1), dim=-1)
+        # avg_dist = link_dists.mean(dim=-1)
+        # print(f"avg_dist: {avg_dist[0]}")
+
         reward, raw = _hand_to_object_distance_reward_jit(
             link_positions,
             object_pos_in_world,
             scale,
         )
 
-        env.info["rewards"]["hand_to_object_distance"] = (
-            raw.sum().item() / env.total_num_envs
-        )
+        env.info["rewards"]["hand_to_object_distance"] = raw.sum().item() / env.total_num_envs
         return reward

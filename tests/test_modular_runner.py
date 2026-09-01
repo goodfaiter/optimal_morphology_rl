@@ -68,6 +68,7 @@ def test_apply_env_overrides_num_envs() -> None:
         seed=42,
         mode="train",
         headless="True",
+        vsim_path=None,
     )
     out = apply_env_overrides(env_config, args)
     sim = out["create_rigid_vsim_envs"]
@@ -76,6 +77,20 @@ def test_apply_env_overrides_num_envs() -> None:
     assert sim["seed"] == 42
     assert sim["rendering"] is False
     assert sim["with_window"] is False
+
+
+def test_apply_env_overrides_vsim_path() -> None:
+    env_config = {"create_robot": {"vsim_path": "/old/path.vsim"}}
+    args = argparse.Namespace(
+        num_envs=None,
+        device=None,
+        seed=None,
+        mode="train",
+        headless="True",
+        vsim_path="/new/path.vsim",
+    )
+    out = apply_env_overrides(env_config, args)
+    assert out["create_robot"]["vsim_path"] == "/new/path.vsim"
 
 
 def test_apply_ppo_overrides() -> None:
@@ -179,6 +194,7 @@ def test_play_mode_sets_capped_step() -> None:
         seed=None,
         mode="play",
         headless="False",
+        vsim_path=None,
     )
     out = apply_env_overrides(env_config, args)
     assert out["create_rigid_vsim_envs"]["rendering"] is True

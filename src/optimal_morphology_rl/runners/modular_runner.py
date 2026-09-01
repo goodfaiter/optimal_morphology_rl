@@ -65,6 +65,9 @@ def parse_args() -> argparse.Namespace:
         "--cp", type=str, help="Checkpoint path for play mode"
     )
     parser.add_argument(
+        "--vsim-path", type=str, help="Override robot VSIM file path"
+    )
+    parser.add_argument(
         "--deterministic",
         choices=["True", "False"],
         default=None,
@@ -139,6 +142,9 @@ def apply_env_overrides(
     render_cfg = env_config.setdefault("render", {})
     render_cfg["capped_step"] = rendering
     render_cfg["paused"] = False
+
+    if args.vsim_path is not None:
+        env_config.setdefault("create_robot", {})["vsim_path"] = args.vsim_path
 
     return env_config
 

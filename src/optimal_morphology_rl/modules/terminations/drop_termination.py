@@ -20,6 +20,13 @@ class DropTermination(TerminationBaseModule):
         container = env.module_manager.container
         object_pos_in_world = container.kinematic_sensor.pos_in_world
         threshold = float(self.config.get("threshold", -0.1))
+        reward_scale = float(self.config.get("reward_scale", -20.0))
 
         drop = object_pos_in_world[:, 2] < threshold
         env.term_buf[:] = torch.logical_or(env.term_buf, drop)
+
+        if reward_scale != 0.0:
+            env.rew_buf[:] += reward_scale * drop.float()
+            env.info["rewards"]["drop_penalty"] = (
+                -drop.float().sum().item() / env.total_num_envs
+            )
