@@ -424,3 +424,4 @@ assets/
 data/
 imgui.ini
 build/
+.pytest_cache/
