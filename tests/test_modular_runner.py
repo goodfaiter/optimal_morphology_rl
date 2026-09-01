@@ -10,8 +10,8 @@ import pytest
 import torch
 import yaml
 
-from optimal_morphology_rl.modules.articulation_link_colorer_module import (
-    ArticulationLinkColorerModule,
+from optimal_morphology_rl.modules.color_articulation_links_module import (
+    ColorArticulationLinksModule,
 )
 from optimal_morphology_rl.modules.visualization.goal_visualization_module import (
     GoalVisualizationModule,
@@ -175,8 +175,8 @@ def test_goal_visualization_module_defaults() -> None:
     assert module.axis_length == 0.1
 
 
-def test_articulation_link_colorer_module_defaults() -> None:
-    module = ArticulationLinkColorerModule({})
+def test_color_articulation_links_module_defaults() -> None:
+    module = ColorArticulationLinksModule({})
     assert "palm" in module.colorer.color_map
     assert "finger_0" in module.colorer.color_map
 

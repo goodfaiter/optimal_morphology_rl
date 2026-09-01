@@ -24,7 +24,7 @@ _DEFAULT_HAND_COLOR_MAP = {
 }
 
 
-class ArticulationLinkColorer:
+class ColorArticulationLinks:
     """Assign RGB materials to articulation links based on link-name matching."""
 
     def __init__(
@@ -72,8 +72,8 @@ class ArticulationLinkColorer:
         return None
 
 
-@register_module("articulation_link_colorer")
-class ArticulationLinkColorerModule(BaseModule):
+@register_module("color_articulation_links")
+class ColorArticulationLinksModule(BaseModule):
     """Colors articulation links based on their names.
 
     The module expects ``container.robot`` to be populated by the ``create_robot``
@@ -90,19 +90,19 @@ class ArticulationLinkColorerModule(BaseModule):
         exclude_substrings = tuple(
             self.config.get("exclude_substrings", ("_abd", "_base"))
         )
-        self.colorer = ArticulationLinkColorer(color_map, exclude_substrings)
+        self.colorer = ColorArticulationLinks(color_map, exclude_substrings)
 
     def finalize(self, container: ModuleContainer) -> None:
         """Assign colors to the robot articulation links."""
         robot = container.get("robot")
         if robot is None:
             raise RuntimeError(
-                "ArticulationLinkColorerModule requires 'robot' in the shared container. "
-                "Ensure the 'create_robot' module is listed before 'articulation_link_colorer'."
+                "ColorArticulationLinksModule requires 'robot' in the shared container. "
+                "Ensure the 'create_robot' module is listed before 'color_articulation_links'."
             )
         if container.get("env_def") is None:
             raise RuntimeError(
-                "ArticulationLinkColorerModule requires 'env_def' in the shared container."
+                "ColorArticulationLinksModule requires 'env_def' in the shared container."
             )
 
         self.colorer.assign(container.env_def, robot.def_handle, robot.art_def)

@@ -17,8 +17,8 @@ from optimal_morphology_rl.modules.module_manager import (
     ModuleManager,
     register_module,
 )
-from optimal_morphology_rl.modules.articulation_link_colorer_module import (
-    ArticulationLinkColorerModule,
+from optimal_morphology_rl.modules.color_articulation_links_module import (
+    ColorArticulationLinksModule,
 )
 from optimal_morphology_rl.modules.create_objects_module import CreateObjectsModule
 from optimal_morphology_rl.modules.object_control_module import ObjectControlModule
@@ -61,7 +61,7 @@ from optimal_morphology_rl.envs.hand_cube import rewards as _hand_cube_rewards
 from optimal_morphology_rl.envs.hand_cube import terminations as _hand_cube_terminations
 
 __all__ = [
-    "ArticulationLinkColorerModule",
+    "ColorArticulationLinksModule",
     "BaseModule",
     "CameraRecorderModule",
     "CreateContactsModule",
