@@ -73,6 +73,9 @@ class TerminationManagerModule(BaseModule):
         container.reset_buf = torch.zeros(
             total_num_envs, dtype=torch.bool, device=device
         )
+        container.inverse_reset_buf = torch.zeros(
+            total_num_envs, dtype=torch.bool, device=device
+        )
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Run post_finalize on termination sub-modules."""
@@ -94,6 +97,7 @@ class TerminationManagerModule(BaseModule):
             module.compute(env)
 
         container.reset_buf[:] = torch.logical_or(env.term_buf, env.trunc_buf)
+        container.inverse_reset_buf[:] = ~container.reset_buf
 
     def reset(self, container: ModuleContainer) -> None:
         """Reset termination state for the environments selected by reset_buf."""

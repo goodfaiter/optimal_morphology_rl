@@ -281,19 +281,20 @@ class RobotControlModule(BaseModule):
                 "shared container. Ensure 'process_actions' is listed before "
                 "'robot_control' in pre_physics_step_modules."
             )
+        if container.get("inverse_reset_buf") is None:
+            raise RuntimeError(
+                "RobotControlModule requires 'inverse_reset_buf' in the shared "
+                "container. Ensure 'termination' is loaded."
+            )
 
         _allocate_control_buffers(robot, total_num_envs, device)
-
-        env.inverse_reset_buf = torch.zeros(
-            total_num_envs, device=device, dtype=torch.bool
-        )
 
         _create_control_gpu_commands(
             robot,
             container.env_group,
             container.gym,
             container.reset_buf,
-            env.inverse_reset_buf,
+            container.inverse_reset_buf,
         )
 
         # Bind control methods onto the robot so legacy callers keep working.
