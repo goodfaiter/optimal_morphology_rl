@@ -199,7 +199,6 @@ class RobotControlModule(BaseModule):
     def step(self, container: ModuleContainer) -> None:
         """Apply wrist velocity, joint motor commands, and gravity compensation."""
         robot = container.robot
-        robot.pre_physics_step(container.gym)
         gym = container.gym
 
         if not robot.fixed_hand:

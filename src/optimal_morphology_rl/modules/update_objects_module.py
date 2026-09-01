@@ -75,10 +75,10 @@ class UpdateObjectsModule(BaseModule):
         objects = container.get("objects")
         if objects is None:
             return
-        total_num_envs = container.total_num_envs
-        device = container.device
+        self.total_num_envs = container.total_num_envs
+        self.device = container.device
         for obj in objects.values():
-            _allocate_get_buffers(obj, total_num_envs, device)
+            _allocate_get_buffers(obj, self.total_num_envs, self.device)
             _create_get_gpu_commands(obj, container.env_group, container.gym)
             obj.refresh_buffers = partial(_refresh_buffers, obj)
 
@@ -89,3 +89,9 @@ class UpdateObjectsModule(BaseModule):
             return
         for obj in objects.values():
             obj.refresh_buffers(container.gym)
+
+        # Resample goal
+        reward_object = container.get("reward_object")
+        sample_new_goal = torch.rand(self.total_num_envs, device=self.device) < 0.005
+        if sample_new_goal.any():
+            reward_object.update_goal(sample_new_goal)
