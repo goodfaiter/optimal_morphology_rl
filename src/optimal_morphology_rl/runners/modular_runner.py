@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
         "--experiment-name", type=str, help="Name of the experiment directory"
     )
     parser.add_argument(
-        "--checkpoint", type=str, help="Checkpoint path for play mode"
+        "--cp", type=str, help="Checkpoint path for play mode"
     )
     parser.add_argument(
         "--deterministic",
@@ -372,7 +372,7 @@ def main() -> None:
             env_config,
             ppo_config,
             args.mode,
-            args.checkpoint,
+            args.cp,
             experiment_name=args.experiment_name,
             wandb=args.wandb,
         )
