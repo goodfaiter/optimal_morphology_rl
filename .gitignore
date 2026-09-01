@@ -425,3 +425,4 @@ data/
 imgui.ini
 build/
 .pytest_cache/
+.ruff_cache/
