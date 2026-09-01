@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 import torch
 from vlearn.spaces import Box
-from vlearn.torch_utils.torch_jit_utils import scale, quat_rotate
+from vlearn.torch_utils.torch_jit_utils import quat_rotate
 import vlearn as v
 
 from optimal_morphology_rl.modules.base_module import BaseModule
@@ -203,20 +203,8 @@ def _reset_idx(
 def _pre_physics_step(
     robot: Robot,
     gym: v.Gym,
-    act_buf: torch.Tensor,
 ) -> None:
     """Apply wrist velocity, joint motor commands, and gravity compensation."""
-    robot.scaled_act_buf[:, robot.root_slice] = scale(
-        act_buf[:, robot.root_slice],
-        -robot.velocity_scale[robot.root_slice],
-        robot.velocity_scale[robot.root_slice],
-    )
-    robot.scaled_act_buf[:, robot.dof_slice] = scale(
-        act_buf[:, robot.dof_slice],
-        robot.min_revolute_scale,
-        robot.max_revolute_scale,
-    )
-
     if not robot.fixed_hand:
         robot.set_root_transform_buf[:] = robot.get_root_transform_buf
         local_root_vel = torch.clamp(
@@ -256,9 +244,10 @@ def _pre_physics_step(
 
 @register_module("robot_control")
 class RobotControlModule(BaseModule):
-    """Owns robot action scaling, control buffer allocation, and per-step control.
+    """Owns robot control buffer allocation and per-step control commands.
 
-    Expects ``container.robot`` to be populated by the ``create_robot`` module.
+    Expects ``container.robot`` to be populated by the ``create_robot`` module
+    and ``container.scaled_act_buf`` to be populated by ``process_actions``.
     """
 
     def finalize(self, container: ModuleContainer) -> None:
@@ -280,26 +269,24 @@ class RobotControlModule(BaseModule):
         )
 
     def post_finalize(self, container: ModuleContainer) -> None:
-        """Allocate action/control buffers and create GPU commands."""
+        """Allocate control buffers and create GPU commands."""
         env = container.env
         robot = container.robot
         total_num_envs = container.total_num_envs
         device = container.device
 
-        container.act_buf = torch.zeros(
-            (total_num_envs,) + env.action_space.shape,
-            device=device,
-            dtype=torch.float32,
-        )
+        if container.get("act_buf") is None or container.get("scaled_act_buf") is None:
+            raise RuntimeError(
+                "RobotControlModule requires 'act_buf' and 'scaled_act_buf' in the "
+                "shared container. Ensure 'process_actions' is listed before "
+                "'robot_control' in pre_physics_step_modules."
+            )
 
         _allocate_control_buffers(robot, total_num_envs, device)
 
         env.inverse_reset_buf = torch.zeros(
             total_num_envs, device=device, dtype=torch.bool
         )
-        env.last_act_buf = torch.zeros_like(env.act_buf)
-        env.scaled_act_buf = torch.zeros_like(env.act_buf)
-        robot.scaled_act_buf = env.scaled_act_buf
 
         _create_control_gpu_commands(
             robot,
@@ -315,19 +302,13 @@ class RobotControlModule(BaseModule):
 
     def step(self, container: ModuleContainer) -> None:
         """Apply wrist velocity, joint motor commands, and gravity compensation."""
-        env = container.env
         robot = container.robot
-        env.last_act_buf[:] = env.act_buf[:]
-        robot.pre_physics_step(container.gym, env.act_buf)
+        robot.pre_physics_step(container.gym)
 
     def reset(self, container: ModuleContainer) -> None:
         """Reset robot state for the environments selected by the reset buffer."""
-        env = container.env
         robot = container.robot
         reset_config = container.get("robot_reset_config", {})
-
-        env.act_buf[container.reset_buf, :] = 0.0
-        env.last_act_buf[container.reset_buf, :] = 0.0
 
         robot.reset_idx(
             container.gym,

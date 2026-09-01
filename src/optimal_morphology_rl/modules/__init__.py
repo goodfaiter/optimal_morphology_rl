@@ -22,6 +22,7 @@ from optimal_morphology_rl.modules.articulation_link_colorer_module import (
 )
 from optimal_morphology_rl.modules.create_objects_module import CreateObjectsModule
 from optimal_morphology_rl.modules.object_control_module import ObjectControlModule
+from optimal_morphology_rl.modules.process_actions_module import ProcessActionsModule
 from optimal_morphology_rl.modules.update_objects_module import UpdateObjectsModule
 
 # Observation sub-modules and manager.
@@ -79,6 +80,7 @@ __all__ = [
     "UpdateObjectsModule",
     "ObservationBaseModule",
     "ObservationManagerModule",
+    "ProcessActionsModule",
     "RenderModule",
     "RewardBaseModule",
     "RewardManagerModule",

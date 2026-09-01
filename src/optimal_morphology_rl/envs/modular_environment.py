@@ -104,6 +104,14 @@ class ModularEnvironment:
         return self.module_manager.container.act_buf
 
     @property
+    def last_act_buf(self) -> torch.Tensor:
+        return self.module_manager.container.last_act_buf
+
+    @property
+    def scaled_act_buf(self) -> torch.Tensor:
+        return self.module_manager.container.scaled_act_buf
+
+    @property
     def info(self) -> dict[str, Any]:
         return self._info
 
@@ -178,9 +186,7 @@ class ModularEnvironment:
         self, actions: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, Any]]:
         """Step the physics and return obs, reward, term, trunc, info."""
-        if actions.device != self.device:
-            actions = actions.to(self.device)
-        self.act_buf[:] = actions
+        self.module_manager.container.actions[:] = actions
 
         self.module_manager.pre_physics_step()
 
