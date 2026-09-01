@@ -43,7 +43,9 @@ def task_root() -> Path:
 
 @pytest.mark.parametrize("task", TASKS)
 def test_task_configs_exist(task: str, task_root: Path) -> None:
-    env_path, env_config, ppo_config = load_task_configs(task, task_root)
+    env_path, env_config, ppo_config = load_task_configs(
+        task, task_root, context={"mode": "train"}
+    )
     assert env_path.exists()
     assert env_config.get("modules")
     assert "create_rigid_vsim_envs" in env_config
@@ -52,7 +54,7 @@ def test_task_configs_exist(task: str, task_root: Path) -> None:
 
 @pytest.mark.parametrize("task", TASKS)
 def test_ppo_name_matches_task(task: str, task_root: Path) -> None:
-    _, _, ppo_config = load_task_configs(task, task_root)
+    _, _, ppo_config = load_task_configs(task, task_root, context={"mode": "train"})
     cfg = ppo_config["params"]["config"]
     assert cfg["name"] == task
     assert cfg["env_name"] == f"{task}_env"

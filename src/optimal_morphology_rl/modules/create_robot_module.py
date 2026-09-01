@@ -10,6 +10,7 @@ import vlearn as v
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
+from optimal_morphology_rl.helpers.numpy_vlearn import random_uniform_quaternion
 
 
 class Robot:
@@ -227,11 +228,67 @@ class RobotModule(BaseModule):
         if vsim_path is None:
             raise ValueError("create_robot config missing 'vsim_path'")
 
-        fixed_hand = bool(self.config.get("fixed_hand", False))
-        use_tendon = bool(self.config.get("use_tendon", True))
+        self.fixed_hand = bool(self.config.get("fixed_hand", False))
+        self.use_tendon = bool(self.config.get("use_tendon", True))
 
-        self.robot = Robot(fixed_hand=fixed_hand, use_tendon=use_tendon)
+        self.robot = Robot(fixed_hand=self.fixed_hand, use_tendon=self.use_tendon)
         self.robot.create_envs(container.env_def, vsim_path, container.device)
+
+        self.randomize_pose = bool(self.config.get("randomize_pose", False))
+        self.fric_coeff = self.config.get("friction_coefficient", None)
 
         container.robot = self.robot
         container.robot_vsim_path = vsim_path
+
+    def reset(self, container: ModuleContainer) -> None:
+        """Reset the robot hand to its initial state."""
+        robot = container.robot
+        reset_buf = container.reset_buf
+        device = container.device
+        gym = container.gym
+
+        randomize_pose = bool(self.config.get("randomize_pose", False))
+        fric_coeff = self.config.get("friction_coefficient", None)
+
+        robot.reset_joint_pos_buf[reset_buf, :] = 0.0
+        robot.reset_joint_vel_buf[reset_buf, :] = 0.0
+        if self.fixed_hand:
+            robot.reset_root_transform_buf[reset_buf, 4:] = torch.tensor(
+                [[-0.1, -0.15, 0.1]], device=device
+            )
+            robot.reset_root_transform_buf[reset_buf, :4] = torch.tensor(
+                [0.6963642, 0.1227878, -0.1227878, 0.6963642], device=device
+            )
+        else:
+            if randomize_pose:
+                n_reset = reset_buf.sum().item()
+                robot.reset_root_transform_buf[reset_buf, :4] = random_uniform_quaternion(
+                    n_reset, device=device, dtype=torch.float32
+                )
+                robot.reset_root_transform_buf[reset_buf, 4] = -0.1
+                robot.reset_root_transform_buf[reset_buf, 5] = (
+                    torch.rand(n_reset, device=device) * 0.3 - 0.15
+                )
+                robot.reset_root_transform_buf[reset_buf, 6] = (
+                    torch.rand(n_reset, device=device) * 0.2 + 0.1
+                )
+            else:
+                robot.reset_root_transform_buf[reset_buf, 4:] = torch.tensor(
+                    [[-0.1, -0.15, 0.2]], device=device
+                )
+                robot.reset_root_transform_buf[reset_buf, :4] = torch.tensor(
+                    [0.0, 0.0, 0.0, 1.0], device=device
+                )
+        robot.reset_root_vel_buf[reset_buf, :] = 0.0
+        gym.set_articulation_kinematic_states(robot.gpu_reset_kinematic_state_command_array)
+
+        total_num_envs = reset_buf.shape[0]
+        if total_num_envs != 1 and fric_coeff is None:
+            static_friction = torch.rand(1, device=device).item() * 0.9 + 0.1
+        else:
+            static_friction = 0.1 if fric_coeff is None else fric_coeff
+        dynamic_friction = static_friction * 0.75
+
+        robot.set_static_friction_buf[0] = static_friction * 2.0
+        robot.set_dynamic_friction_buf[0] = dynamic_friction * 2.0
+        gym.set_rigid_material_properties(robot.gpu_set_friction_cmd)

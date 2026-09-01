@@ -141,107 +141,6 @@ def _create_control_gpu_commands(
     )
 
 
-# ---------------------------------------------------------------------------
-# Reset
-# ---------------------------------------------------------------------------
-def _reset_idx(
-    robot: Robot,
-    gym: v.Gym,
-    reset_buf: torch.Tensor,
-    device: torch.device,
-    fric_coeff: float | None = None,
-    randomize_pose: bool = False,
-) -> None:
-    """Reset robot kinematic state for the given reset indices."""
-    robot.reset_joint_pos_buf[reset_buf, :] = 0.0
-    robot.reset_joint_vel_buf[reset_buf, :] = 0.0
-    if robot.fixed_hand:
-        robot.reset_root_transform_buf[reset_buf, 4:] = torch.tensor(
-            [[-0.1, -0.15, 0.1]], device=device
-        )
-        robot.reset_root_transform_buf[reset_buf, :4] = torch.tensor(
-            [0.6963642, 0.1227878, -0.1227878, 0.6963642], device=device
-        )
-    else:
-        if randomize_pose:
-            n_reset = reset_buf.sum().item()
-            robot.reset_root_transform_buf[reset_buf, :4] = random_uniform_quaternion(
-                n_reset, device=device, dtype=torch.float32
-            )
-            robot.reset_root_transform_buf[reset_buf, 4] = -0.1
-            robot.reset_root_transform_buf[reset_buf, 5] = (
-                torch.rand(n_reset, device=device) * 0.3 - 0.15
-            )
-            robot.reset_root_transform_buf[reset_buf, 6] = (
-                torch.rand(n_reset, device=device) * 0.2 + 0.1
-            )
-        else:
-            robot.reset_root_transform_buf[reset_buf, 4:] = torch.tensor(
-                [[-0.1, -0.15, 0.2]], device=device
-            )
-            robot.reset_root_transform_buf[reset_buf, :4] = torch.tensor(
-                [0.0, 0.0, 0.0, 1.0], device=device
-            )
-    robot.reset_root_vel_buf[reset_buf, :] = 0.0
-    gym.set_articulation_kinematic_states(robot.gpu_reset_kinematic_state_command_array)
-
-    total_num_envs = reset_buf.shape[0]
-    if total_num_envs != 1 and fric_coeff is None:
-        static_friction = torch.rand(1, device=device).item() * 0.9 + 0.1
-    else:
-        static_friction = 0.1 if fric_coeff is None else fric_coeff
-    dynamic_friction = static_friction * 0.75
-
-    robot.set_static_friction_buf[0] = static_friction * 2.0
-    robot.set_dynamic_friction_buf[0] = dynamic_friction * 2.0
-    gym.set_rigid_material_properties(robot.gpu_set_friction_cmd)
-
-
-# ---------------------------------------------------------------------------
-# Pre-physics step
-# ---------------------------------------------------------------------------
-def _pre_physics_step(
-    robot: Robot,
-    gym: v.Gym,
-) -> None:
-    """Apply wrist velocity, joint motor commands, and gravity compensation."""
-    if not robot.fixed_hand:
-        robot.set_root_transform_buf[:] = robot.get_root_transform_buf
-        local_root_vel = torch.clamp(
-            robot.scaled_act_buf[:, robot.root_slice],
-            -robot.max_velocity,
-            robot.max_velocity,
-        )
-        quat_robot_to_world = robot.get_root_transform_buf[:, 0:4]
-        robot.set_root_vel_buf[:, :3] = quat_rotate(
-            quat_robot_to_world, local_root_vel[:, :3]
-        )
-        robot.set_root_vel_buf[:, 3:] = quat_rotate(
-            quat_robot_to_world, local_root_vel[:, 3:]
-        )
-        gym.set_articulation_kinematic_states(robot.gpu_set_kinematic_state_command_array)
-
-    robot.set_motor_cmd_buf[:] = 0.0
-
-    if robot.use_tendon:
-        robot.set_tendon_controls_buf[:] = torch.clamp(
-            robot.scaled_act_buf[:, robot.dof_slice], 0.0, None
-        )
-        gym.set_spatial_tendon_forces(robot.gpu_set_tendon_control_command_array)
-    else:
-        robot.set_motor_cmd_buf[:] = torch.clamp(
-            robot.scaled_act_buf[:, robot.dof_slice], 0.0, None
-        )
-
-    # Antagonistic spring on all joints.
-    robot.set_motor_cmd_buf[:] += -0.1 * robot.get_joint_pos_buf
-    gym.set_motor_forces(robot.gpu_set_motor_control_command_array)
-
-    # Gravity compensation on base link.
-    robot.set_force_torque_buf[:, :, 2] = 9.81 * robot.link_masses
-    gym.set_link_external_forces(robot.set_force_torque_cmd_arr)
-
-
 @register_module("robot_control")
 class RobotControlModule(BaseModule):
     """Owns robot control buffer allocation and per-step control commands.
@@ -297,24 +196,44 @@ class RobotControlModule(BaseModule):
             container.inverse_reset_buf,
         )
 
-        # Bind control methods onto the robot so legacy callers keep working.
-        robot.reset_idx = partial(_reset_idx, robot)
-        robot.pre_physics_step = partial(_pre_physics_step, robot)
-
     def step(self, container: ModuleContainer) -> None:
         """Apply wrist velocity, joint motor commands, and gravity compensation."""
         robot = container.robot
         robot.pre_physics_step(container.gym)
+        gym = container.gym
 
-    def reset(self, container: ModuleContainer) -> None:
-        """Reset robot state for the environments selected by the reset buffer."""
-        robot = container.robot
-        reset_config = container.get("robot_reset_config", {})
+        if not robot.fixed_hand:
+            robot.set_root_transform_buf[:] = robot.get_root_transform_buf
+            local_root_vel = torch.clamp(
+                robot.scaled_act_buf[:, robot.root_slice],
+                -robot.max_velocity,
+                robot.max_velocity,
+            )
+            quat_robot_to_world = robot.get_root_transform_buf[:, 0:4]
+            robot.set_root_vel_buf[:, :3] = quat_rotate(
+                quat_robot_to_world, local_root_vel[:, :3]
+            )
+            robot.set_root_vel_buf[:, 3:] = quat_rotate(
+                quat_robot_to_world, local_root_vel[:, 3:]
+            )
+            gym.set_articulation_kinematic_states(robot.gpu_set_kinematic_state_command_array)
 
-        robot.reset_idx(
-            container.gym,
-            container.reset_buf,
-            container.device,
-            fric_coeff=reset_config.get("fric_coeff", None),
-            randomize_pose=reset_config.get("randomize_pose", False),
-        )
+        robot.set_motor_cmd_buf[:] = 0.0
+
+        if robot.use_tendon:
+            robot.set_tendon_controls_buf[:] = torch.clamp(
+                robot.scaled_act_buf[:, robot.dof_slice], 0.0, None
+            )
+            gym.set_spatial_tendon_forces(robot.gpu_set_tendon_control_command_array)
+        else:
+            robot.set_motor_cmd_buf[:] = torch.clamp(
+                robot.scaled_act_buf[:, robot.dof_slice], 0.0, None
+            )
+
+        # Antagonistic spring on all joints.
+        robot.set_motor_cmd_buf[:] += -0.1 * robot.get_joint_pos_buf
+        gym.set_motor_forces(robot.gpu_set_motor_control_command_array)
+
+        # Gravity compensation on base link.
+        robot.set_force_torque_buf[:, :, 2] = 9.81 * robot.link_masses
+        gym.set_link_external_forces(robot.set_force_torque_cmd_arr)

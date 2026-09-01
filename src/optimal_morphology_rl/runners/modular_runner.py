@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-import yaml
 from rl_games.common import env_configurations, vecenv
 from rl_games.common.algo_observer import VlearnAlgoObserver
 from rl_games.common.ivecenv import IVecEnv
@@ -18,6 +17,7 @@ from vlearn.torch_utils.wrappers import NewToOldAPICompatilibity
 import gymnasium as gym
 
 from optimal_morphology_rl.envs.modular_environment import ModularEnvironment
+from optimal_morphology_rl.utils.config import load_yaml_with_context
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,7 +92,9 @@ def str_to_bool(value: str) -> bool:
 
 
 def load_task_configs(
-    task: str, task_root: Path
+    task: str,
+    task_root: Path,
+    context: dict[str, Any] | None = None,
 ) -> tuple[Path, dict[str, Any], dict[str, Any]]:
     task_dir = task_root / task
     if not task_dir.is_dir():
@@ -105,10 +107,8 @@ def load_task_configs(
     if not ppo_path.exists():
         raise FileNotFoundError(f"Missing ppo config: {ppo_path}")
 
-    with open(env_path, "r") as f:
-        env_config = yaml.safe_load(f) or {}
-    with open(ppo_path, "r") as f:
-        ppo_config = yaml.safe_load(f) or {}
+    env_config = load_yaml_with_context(env_path, context=context)
+    ppo_config = load_yaml_with_context(ppo_path, context=context)
 
     return env_path, env_config, ppo_config
 
@@ -357,7 +357,9 @@ def main() -> None:
         if args.num_envs is None:
             args.num_envs = 4
 
-    _, env_config, ppo_config = load_task_configs(args.task, args.task_root)
+    _, env_config, ppo_config = load_task_configs(
+        args.task, args.task_root, context={"mode": args.mode}
+    )
 
     env_config = apply_env_overrides(env_config, args)
     ppo_config = apply_ppo_overrides(ppo_config, args, args.task)

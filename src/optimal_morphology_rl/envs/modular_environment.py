@@ -8,10 +8,10 @@ from typing import Any
 import numpy as np
 import torch
 import vlearn as v
-import yaml
 from vlearn.spaces import Box
 
 from optimal_morphology_rl.modules.module_manager import ModuleManager
+from optimal_morphology_rl.utils.config import load_yaml_with_context, resolve_config
 
 
 class ModularEnvironment:
@@ -23,14 +23,17 @@ class ModularEnvironment:
     Args:
         config: Path to a YAML file or a configuration dictionary.
         registry: Optional module registry.  Uses the global default if ``None``.
+        context: Optional runtime variables exposed to OmegaConf interpolations
+            and expressions (e.g. ``{"mode": "train"}``).
     """
 
     def __init__(
         self,
         config: str | Path | dict[str, Any],
         registry: dict[str, type] | None = None,
+        context: dict[str, Any] | None = None,
     ):
-        self.raw_config = self._load_config(config)
+        self.raw_config = self._load_config(config, context=context)
 
         # Spaces (populated by modules during finalize).
         self._observation_space: Box | None = None
@@ -52,13 +55,14 @@ class ModularEnvironment:
     # Config loading
     # ------------------------------------------------------------------
     @staticmethod
-    def _load_config(config: str | Path | dict[str, Any]) -> dict[str, Any]:
+    def _load_config(
+        config: str | Path | dict[str, Any],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if isinstance(config, (str, Path)):
-            with open(config, "r") as f:
-                loaded = yaml.safe_load(f)
-            if loaded is None:
-                loaded = {}
-            return loaded
+            return load_yaml_with_context(config, context=context)
+        if context is not None:
+            return resolve_config(config, context=context)
         return dict(config)
 
     # ------------------------------------------------------------------

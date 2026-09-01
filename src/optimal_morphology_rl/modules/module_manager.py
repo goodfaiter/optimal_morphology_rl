@@ -5,10 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
-import yaml
-
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
+from optimal_morphology_rl.utils.config import load_yaml_with_context
 
 
 T = TypeVar("T", bound=BaseModule)
@@ -180,6 +179,7 @@ class ModuleManager:
         cls,
         path: str | Path,
         registry: dict[str, type[BaseModule]] | None = None,
+        context: dict[str, Any] | None = None,
     ) -> ModuleManager:
         """Build a manager from a YAML configuration file.
 
@@ -187,14 +187,13 @@ class ModuleManager:
             path: Path to the YAML file.
             registry: Optional registry; uses :data:`DEFAULT_REGISTRY` if
                 ``None``.
+            context: Optional runtime variables exposed to OmegaConf
+                interpolations and expressions.
 
         Returns:
             A :class:`ModuleManager` configured by the YAML file.
         """
-        with open(path, "r") as f:
-            config = yaml.safe_load(f)
-        if config is None:
-            config = {}
+        config = load_yaml_with_context(path, context=context)
         return cls.from_config(config, registry=registry)
 
     @staticmethod
