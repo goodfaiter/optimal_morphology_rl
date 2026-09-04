@@ -35,16 +35,9 @@ class Robot:
         self.link_masses: torch.Tensor | None = None
         self.rigid_mat_handle: int | None = None
 
-        self.max_torque: float = 0.1
-        self.tendon_max_force: float = 10.0
-
         # Distal link indices for fingertip-position tracking.
         self.distal_link_indices: list[int] = []
         self.num_distal_links: int = 0
-
-        # Velocity scaling (filled during load).
-        self.velocity_scale: torch.Tensor | None = None
-        self.max_velocity: torch.Tensor | None = None
 
         # Motor metadata.
         self.motor_to_joint_dof_index: torch.Tensor | None = None
@@ -144,9 +137,6 @@ class Robot:
         for i in range(self.art_def.get_num_link_defs()):
             env_def.assign_rigid_material_to_articulation_link(self.def_handle, rigid_mat_handle, i)
         self.rigid_mat_handle = rigid_mat_handle
-
-        self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=device)
-        self.max_velocity = self.velocity_scale * 2.0
 
         # Per-motor passive spring constants. All motors get the same constant for now.
         self.spring_constants = torch.full((self.num_motors,), 0.1, dtype=torch.float32, device=device)

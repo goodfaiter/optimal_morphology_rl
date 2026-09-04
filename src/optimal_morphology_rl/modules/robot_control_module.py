@@ -42,10 +42,6 @@ def build_active_motor_mask(container: ModuleContainer, config: dict[str, Any]) 
         container.num_active_motors = num_active
         container.active_motor_mask = torch.ones(num_active, dtype=torch.bool, device=device)
         container.active_motor_indices = torch.arange(num_active, device=device)
-        min_scale = -0.25 * robot.tendon_max_force
-        max_scale = 1.0 * robot.tendon_max_force
-        container.min_active_motor_scale = torch.full((num_active,), min_scale, device=device)
-        container.max_active_motor_scale = torch.full((num_active,), max_scale, device=device)
         if robot.fixed_hand:
             container.active_motor_slice = slice(0, num_active)
         else:
@@ -66,12 +62,6 @@ def build_active_motor_mask(container: ModuleContainer, config: dict[str, Any]) 
     container.active_motor_mask = mask
     container.active_motor_indices = torch.nonzero(mask, as_tuple=False).flatten()
     container.num_active_motors = int(mask.sum().item())
-
-    min_scale = -1.0 * robot.max_torque
-    max_scale = 1.0 * robot.max_torque
-
-    container.min_active_motor_scale = torch.full((container.num_active_motors,), min_scale, device=device)
-    container.max_active_motor_scale = torch.full((container.num_active_motors,), max_scale, device=device)
 
     if robot.fixed_hand:
         container.active_motor_slice = slice(0, container.num_active_motors)
@@ -243,11 +233,7 @@ class RobotControlModule(BaseModule):
 
         if not robot.fixed_hand:
             container.set_root_transform_buf[:] = robot.get_root_transform_buf
-            local_root_vel = torch.clamp(
-                container.scaled_act_buf[:, container.root_slice],
-                -robot.max_velocity,
-                robot.max_velocity,
-            )
+            local_root_vel = container.scaled_act_buf[:, container.root_slice]
             quat_robot_to_world = robot.get_root_transform_buf[:, 0:4]
             container.set_root_vel_buf[:, :3] = quat_rotate(quat_robot_to_world, local_root_vel[:, :3])
             container.set_root_vel_buf[:, 3:] = quat_rotate(quat_robot_to_world, local_root_vel[:, 3:])

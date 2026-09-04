@@ -35,7 +35,12 @@ from optimal_morphology_rl.modules.observations import (
     RobotStateObservation,
     register_observation,
 )
-from optimal_morphology_rl.modules.process_actions_module import ProcessActionsModule
+from optimal_morphology_rl.modules.process_fixed_actions_module import (
+    ProcessFixedActionsModule,
+)
+from optimal_morphology_rl.modules.process_variable_actions_module import (
+    ProcessVariableActionsModule,
+)
 from optimal_morphology_rl.modules.rewards import (
     REWARD_REGISTRY,
     RewardBaseModule,
@@ -85,7 +90,8 @@ __all__ = [
     "ObjectStateObservation",
     "ObservationBaseModule",
     "ObservationManagerModule",
-    "ProcessActionsModule",
+    "ProcessFixedActionsModule",
+    "ProcessVariableActionsModule",
     "RenderModule",
     "RewardBaseModule",
     "RewardManagerModule",
