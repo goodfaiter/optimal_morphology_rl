@@ -29,22 +29,6 @@ def _quaternion_to_6d_jit(q: torch.Tensor) -> torch.Tensor:
 
 
 @torch.jit.script
-def _robot_state_obs_jit(
-    gravity: torch.Tensor,
-    lin_vel: torch.Tensor,
-    ang_vel: torch.Tensor,
-    dof_pos: torch.Tensor,
-    dof_vel: torch.Tensor,
-    actions: torch.Tensor,
-    fixed_hand: bool,
-) -> torch.Tensor:
-    """Concatenate robot-state observation components."""
-    if fixed_hand:
-        return torch.cat([dof_pos, dof_vel, actions], dim=-1)
-    return torch.cat([gravity, lin_vel, ang_vel, dof_pos, dof_vel, actions], dim=-1)
-
-
-@torch.jit.script
 def _object_state_obs_jit(
     quat_robot_to_world: torch.Tensor,
     robot_pos_in_world: torch.Tensor,
