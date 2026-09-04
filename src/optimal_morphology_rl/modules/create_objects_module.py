@@ -228,6 +228,25 @@ class Cube(LoadedRigidObject):
         self.update_goal(reset_buf)
 
 
+
+class CubeSmall(LoadedRigidObject):
+    def __init__(self):
+        super().__init__(name="cube", asset_path=_object_asset_path("cube_small"))
+
+    def update_goal(self, reset_buf: torch.Tensor) -> None:
+        self.goal_pos_in_world[reset_buf, 0] = 0.0
+        self.goal_pos_in_world[reset_buf, 1] = -0.15
+        self.goal_pos_in_world[reset_buf, 2] = 0.25
+        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+
+    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
+        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor([0.7071068, -0.7071068, 0, 0], device=reset_buf.device)
+        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[-0.05, -0.15, 0.15]], device=reset_buf.device)
+        self.set_vel_in_world_buf[reset_buf, :] = 0.0
+        gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
+        self.update_goal(reset_buf)
+
+
 class Tomato(LoadedRigidObject):
     def __init__(self):
         super().__init__(name="tomato", asset_path=_object_asset_path("tomato"))

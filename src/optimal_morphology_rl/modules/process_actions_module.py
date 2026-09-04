@@ -38,11 +38,11 @@ def _scale_actions(robot: Robot, act_buf: torch.Tensor, scaled_act_buf: torch.Te
             -robot.velocity_scale[robot.root_slice],
             robot.velocity_scale[robot.root_slice],
         )
-    if robot.dof_slice.stop > robot.dof_slice.start:
-        scaled_act_buf[:, robot.dof_slice] = scale(
-            act_buf[:, robot.dof_slice],
-            robot.min_revolute_scale,
-            robot.max_revolute_scale,
+    if robot.active_motor_slice.stop > robot.active_motor_slice.start:
+        scaled_act_buf[:, robot.active_motor_slice] = scale(
+            act_buf[:, robot.active_motor_slice],
+            robot.min_active_motor_scale,
+            robot.max_active_motor_scale,
         )
 
 

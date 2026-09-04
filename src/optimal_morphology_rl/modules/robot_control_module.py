@@ -189,13 +189,18 @@ class RobotControlModule(BaseModule):
         robot.set_motor_cmd_buf[:] = 0.0
 
         if robot.use_tendon:
-            robot.set_tendon_controls_buf[:] = torch.clamp(robot.scaled_act_buf[:, robot.dof_slice], 0.0, None)
+            robot.set_tendon_controls_buf[:] = torch.clamp(robot.scaled_act_buf[:, robot.active_motor_slice], 0.0, None)
             gym.set_spatial_tendon_forces(robot.gpu_set_tendon_control_command_array)
         else:
-            robot.set_motor_cmd_buf[:] = torch.clamp(robot.scaled_act_buf[:, robot.dof_slice], 0.0, None)
+            # Policy actions are applied only to the active motors.
+            robot.set_motor_cmd_buf[:, robot.active_motor_mask] = torch.clamp(
+                robot.scaled_act_buf[:, robot.active_motor_slice], 0.0, None
+            )
 
-        # Antagonistic spring on all joints.
-        robot.set_motor_cmd_buf[:] += -0.1 * robot.get_joint_pos_buf
+        # Per-motor passive spring on all motors.
+        robot.set_motor_cmd_buf[:] += (
+            -robot.spring_constants * robot.get_joint_pos_buf[:, robot.motor_to_joint_dof_index]
+        )
         gym.set_motor_forces(robot.gpu_set_motor_control_command_array)
 
         # Gravity compensation on base link.

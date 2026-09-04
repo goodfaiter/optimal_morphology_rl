@@ -44,13 +44,20 @@ class Robot:
 
         # Slices used by the control module.
         self.root_slice: slice = slice(0, 0)
-        self.dof_slice: slice = slice(0, 0)
+        self.active_motor_slice: slice = slice(0, 0)
 
         # Velocity scaling (filled during load).
         self.velocity_scale: torch.Tensor | None = None
         self.max_velocity: torch.Tensor | None = None
-        self.min_revolute_scale: torch.Tensor | None = None
-        self.max_revolute_scale: torch.Tensor | None = None
+        self.min_active_motor_scale: torch.Tensor | None = None
+        self.max_active_motor_scale: torch.Tensor | None = None
+
+        # Motor metadata.
+        self.motor_to_joint_dof_index: torch.Tensor | None = None
+        self.active_motor_mask: torch.Tensor | None = None
+        self.active_motor_indices: torch.Tensor | None = None
+        self.num_active_motors: int = 0
+        self.spring_constants: torch.Tensor | None = None
 
         # Buffers and GPU command arrays are attached by control/update modules.
         self.reset_joint_pos_buf: torch.Tensor | None = None
@@ -142,13 +149,20 @@ class Robot:
             link_def = self.art_def.get_link_def(i)
             self.link_masses[i] = link_def.mass
 
+        self.motor_to_joint_dof_index = torch.zeros(
+            self.num_motors, dtype=torch.long, device=device
+        )
+        for i in range(self.num_motors):
+            motor_def = self.art_def.get_motor_def(i)
+            self.motor_to_joint_dof_index[i] = motor_def.dof_index
+
         for i in range(self.num_joints):
             print(self.art_def.get_joint_def(i))
 
         for i in range(self.num_links):
             print(self.art_def.get_link_def(i))
 
-        for i in range(self.num_joints):
+        for i in range(self.num_motors):
             print(i, self.art_def.get_motor_def(i))
 
         for i in range(self.num_sensors):
@@ -167,25 +181,66 @@ class Robot:
         self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=device)
         self.max_velocity = self.velocity_scale * 2.0
 
+        # Per-motor passive spring constants. All motors get the same constant for now.
+        self.spring_constants = torch.full((self.num_motors,), 0.1, dtype=torch.float32, device=device)
+
+        # Active motor mask must be built from config after create_envs.
+        self.build_active_motor_mask({})
+
+    def build_active_motor_mask(self, config: dict[str, Any]) -> None:
+        """Build the mask selecting which motors receive policy actions.
+
+        By default motors whose names contain any of the substrings in
+        ``passive_motor_substrings`` are passive (spring only); everything else
+        is active. Alternatively ``active_motor_substrings`` can be provided to
+        explicitly select active motors.
+        """
+        if self.art_def is None or self.num_motors is None:
+            raise RuntimeError("create_envs must be called before build_active_motor_mask")
+
+        device = self.motor_to_joint_dof_index.device
+
+        active_substrings = config.get("active_motor_substrings")
+        passive_substrings = config.get("passive_motor_substrings", ["abd"])
+
+        mask = torch.ones(self.num_motors, dtype=torch.bool, device=device)
+        for i in range(self.num_motors):
+            name = self.art_def.get_motor_def(i).name.lower()
+            if active_substrings is not None:
+                mask[i] = any(sub.lower() in name for sub in active_substrings)
+            else:
+                mask[i] = not any(sub.lower() in name for sub in passive_substrings)
+
+        self.active_motor_mask = mask
+        self.active_motor_indices = torch.nonzero(mask, as_tuple=False).flatten()
+        self.num_active_motors = int(mask.sum().item())
+
         min_scale = -1.0 * self.max_torque
         max_scale = 1.0 * self.max_torque
         if self.use_tendon:
             min_scale = -0.25 * self.tendon_max_force
             max_scale = 1.0 * self.tendon_max_force
 
-        self.min_revolute_scale = torch.full((self.get_num_dofs(),), min_scale, device=device)
-        self.max_revolute_scale = torch.full((self.get_num_dofs(),), max_scale, device=device)
+        self.min_active_motor_scale = torch.full((self.num_active_motors,), min_scale, device=device)
+        self.max_active_motor_scale = torch.full((self.num_active_motors,), max_scale, device=device)
 
         self.root_slice = slice(0, 6) if not self.fixed_hand else slice(0, 0)
-        self.dof_slice = slice(0, self.get_num_dofs()) if self.fixed_hand else slice(6, 6 + self.get_num_dofs())
+        if self.fixed_hand:
+            self.active_motor_slice = slice(0, self.num_active_motors)
+        else:
+            self.active_motor_slice = slice(6, 6 + self.num_active_motors)
 
     def get_num_dofs(self) -> int:
         """Return the number of degrees of freedom (joints) in the robot."""
-        return self.num_tendons if self.use_tendon else self.num_motors
+        return self.num_tendons if self.use_tendon else self.num_joints
+
+    def get_num_active_motors(self) -> int:
+        """Return the number of motors that receive policy actions."""
+        return self.num_tendons if self.use_tendon else self.num_active_motors
 
     def get_num_actions(self) -> int:
         """Return the number of actions for the robot."""
-        return self.get_num_dofs() if self.fixed_hand else 6 + self.get_num_dofs()
+        return self.get_num_active_motors() if self.fixed_hand else 6 + self.get_num_active_motors()
 
 
 @register_module("create_robot")
@@ -214,9 +269,22 @@ class RobotModule(BaseModule):
 
         self.robot = Robot(fixed_hand=self.fixed_hand, use_tendon=self.use_tendon)
         self.robot.create_envs(container.env_def, vsim_path, container.device)
+        self.robot.build_active_motor_mask(self.config)
 
         self.randomize_pose = bool(self.config.get("randomize_pose", False))
         self.fric_coeff = self.config.get("friction_coefficient", None)
+
+        default_quat = [0.6963642, 0.1227878, -0.1227878, 0.6963642]
+        quat = self.config.get("fixed_hand_root_quat", default_quat)
+        if not (isinstance(quat, (list, tuple)) and len(quat) == 4):
+            raise ValueError("fixed_hand_root_quat must be a list/tuple of 4 floats")
+        self.fixed_hand_root_quat = torch.tensor(quat, dtype=torch.float32, device=container.device)
+
+        default_pos = [-0.1, -0.15, 0.1]
+        pos = self.config.get("fixed_hand_root_pos", default_pos)
+        if not (isinstance(pos, (list, tuple)) and len(pos) == 3):
+            raise ValueError("fixed_hand_root_pos must be a list/tuple of 3 floats")
+        self.fixed_hand_root_pos = torch.tensor(pos, dtype=torch.float32, device=container.device)
 
         container.robot = self.robot
         container.robot_vsim_path = vsim_path
@@ -234,8 +302,8 @@ class RobotModule(BaseModule):
         robot.reset_joint_pos_buf[reset_buf, :] = 0.0
         robot.reset_joint_vel_buf[reset_buf, :] = 0.0
         if self.fixed_hand:
-            robot.reset_root_transform_buf[reset_buf, 4:] = torch.tensor([[-0.1, -0.15, 0.1]], device=device)
-            robot.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.6963642, 0.1227878, -0.1227878, 0.6963642], device=device)
+            robot.reset_root_transform_buf[reset_buf, 4:] = self.fixed_hand_root_pos
+            robot.reset_root_transform_buf[reset_buf, :4] = self.fixed_hand_root_quat
         else:
             if randomize_pose:
                 n_reset = reset_buf.sum().item()
