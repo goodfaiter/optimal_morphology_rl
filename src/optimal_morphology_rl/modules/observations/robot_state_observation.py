@@ -6,15 +6,28 @@ from typing import Any
 
 import torch
 
-from optimal_morphology_rl.modules.observations.observation_jit_helpers import (
-    _robot_state_obs_jit,
-)
 from optimal_morphology_rl.modules.observations.observation_base_module import (
     ObservationBaseModule,
 )
 from optimal_morphology_rl.modules.observations.observation_manager_module import (
     register_observation,
 )
+
+
+@torch.jit.script
+def _robot_state_obs_jit(
+    gravity: torch.Tensor,
+    lin_vel: torch.Tensor,
+    ang_vel: torch.Tensor,
+    dof_pos: torch.Tensor,
+    dof_vel: torch.Tensor,
+    actions: torch.Tensor,
+    fixed_hand: bool,
+) -> torch.Tensor:
+    """Concatenate robot-state observation components."""
+    if fixed_hand:
+        return torch.cat([dof_pos, dof_vel, actions], dim=-1)
+    return torch.cat([gravity, lin_vel, ang_vel, dof_pos, dof_vel, actions], dim=-1)
 
 
 @register_observation("robot_state")
@@ -26,8 +39,8 @@ class RobotStateObservation(ObservationBaseModule):
         dim = 0
         if not robot.fixed_hand:
             dim += 9  # gravity (3) + lin vel (3) + ang vel (3)
-        dim += robot.get_num_dofs()  # dof pos
-        dim += robot.get_num_dofs()  # dof vel
+        dim += robot.num_joints  # dof pos
+        dim += robot.num_joints  # dof vel
         dim += robot.get_num_actions()  # last action
         return dim
 
