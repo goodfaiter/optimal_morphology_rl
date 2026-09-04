@@ -15,7 +15,6 @@ from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
-
 _IDENTITY_QUAT = (0.0, 0.0, 0.0, 1.0)
 
 
@@ -26,8 +25,9 @@ def _object_asset_path(name: str) -> str:
 class ObjectBase(ABC):
     """Abstract base class for objects in the environment."""
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, config: dict[str, Any] | None = None):
         self.name = name
+        self.config = config if config is not None else {}
         self.handle: Any = None
 
         # State buffers attached by update/create_objects modules.
@@ -92,8 +92,14 @@ class ObjectBase(ABC):
 class LoadedRigidObject(ObjectBase):
     """Object loaded from a file (URDF/VSIM)."""
 
-    def __init__(self, name: str, asset_path: str, fixed: bool = False):
-        super().__init__(name)
+    def __init__(
+        self,
+        name: str,
+        asset_path: str,
+        fixed: bool = False,
+        config: dict[str, Any] | None = None,
+    ):
+        super().__init__(name, config=config)
         self.asset_path = asset_path
         self.fixed = fixed
 
@@ -145,8 +151,14 @@ class LoadedRigidObject(ObjectBase):
 class LoadedArticulatedObject(ObjectBase):
     """Articulated object loaded from a file (URDF/VSIM)."""
 
-    def __init__(self, name: str, asset_path: str, fixed: bool = False):
-        super().__init__(name)
+    def __init__(
+        self,
+        name: str,
+        asset_path: str,
+        fixed: bool = False,
+        config: dict[str, Any] | None = None,
+    ):
+        super().__init__(name, config=config)
         self.asset_path = asset_path
         self.fixed = fixed
         self.art_def: Any = None
@@ -211,13 +223,14 @@ class LoadedArticulatedObject(ObjectBase):
 
 
 class Cube(LoadedRigidObject):
-    def __init__(self):
-        super().__init__(name="cube", asset_path=_object_asset_path("cube_mid"))
+    def __init__(self, config: dict[str, Any] | None = None):
+        super().__init__(name="cube", asset_path=_object_asset_path("cube_mid"), config=config)
+        self.goal_position = self.config.get("goal_position", [0.0, -0.15, 0.25])
 
     def update_goal(self, reset_buf: torch.Tensor) -> None:
-        self.goal_pos_in_world[reset_buf, 0] = 0.0
-        self.goal_pos_in_world[reset_buf, 1] = -0.15
-        self.goal_pos_in_world[reset_buf, 2] = 0.25
+        self.goal_pos_in_world[reset_buf, 0] = self.goal_position[0]
+        self.goal_pos_in_world[reset_buf, 1] = self.goal_position[1]
+        self.goal_pos_in_world[reset_buf, 2] = self.goal_position[2]
         self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
@@ -230,13 +243,14 @@ class Cube(LoadedRigidObject):
 
 
 class CubeSmall(LoadedRigidObject):
-    def __init__(self):
-        super().__init__(name="cube", asset_path=_object_asset_path("cube_small"))
+    def __init__(self, config: dict[str, Any] | None = None):
+        super().__init__(name="cube", asset_path=_object_asset_path("cube_small"), config=config)
+        self.goal_position = self.config.get("goal_position", [0.0, -0.15, 0.25])
 
     def update_goal(self, reset_buf: torch.Tensor) -> None:
-        self.goal_pos_in_world[reset_buf, 0] = 0.0
-        self.goal_pos_in_world[reset_buf, 1] = -0.15
-        self.goal_pos_in_world[reset_buf, 2] = 0.25
+        self.goal_pos_in_world[reset_buf, 0] = self.goal_position[0]
+        self.goal_pos_in_world[reset_buf, 1] = self.goal_position[1]
+        self.goal_pos_in_world[reset_buf, 2] = self.goal_position[2]
         self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
@@ -248,13 +262,13 @@ class CubeSmall(LoadedRigidObject):
 
 
 class Tomato(LoadedRigidObject):
-    def __init__(self):
-        super().__init__(name="tomato", asset_path=_object_asset_path("tomato"))
+    def __init__(self, config: dict[str, Any] | None = None):
+        super().__init__(name="tomato", asset_path=_object_asset_path("tomato"), config=config)
 
 
 class TomatoExtreme(LoadedRigidObject):
-    def __init__(self):
-        super().__init__(name="tomato_extreme", asset_path=_object_asset_path("tomato_extreme"))
+    def __init__(self, config: dict[str, Any] | None = None):
+        super().__init__(name="tomato_extreme", asset_path=_object_asset_path("tomato_extreme"), config=config)
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
         self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
@@ -265,13 +279,13 @@ class TomatoExtreme(LoadedRigidObject):
 
 
 class Knife(LoadedRigidObject):
-    def __init__(self):
-        super().__init__(name="knife", asset_path=_object_asset_path("kitchen_knife"))
+    def __init__(self, config: dict[str, Any] | None = None):
+        super().__init__(name="knife", asset_path=_object_asset_path("kitchen_knife"), config=config)
 
 
 class Mug(LoadedRigidObject):
-    def __init__(self):
-        super().__init__(name="mug", asset_path=_object_asset_path("mug"))
+    def __init__(self, config: dict[str, Any] | None = None):
+        super().__init__(name="mug", asset_path=_object_asset_path("mug"), config=config)
 
 
 def _assign_teal_material(env_def, object_name: str) -> None:
@@ -286,8 +300,8 @@ def _assign_teal_material(env_def, object_name: str) -> None:
 
 
 class Table(LoadedRigidObject):
-    def __init__(self):
-        super().__init__(name="table", asset_path=_object_asset_path("table"), fixed=True)
+    def __init__(self, config: dict[str, Any] | None = None):
+        super().__init__(name="table", asset_path=_object_asset_path("table"), fixed=True, config=config)
 
     def load(self, env_def) -> None:
         super().load(env_def)
@@ -307,11 +321,12 @@ class Table(LoadedRigidObject):
 
 
 class TableWithCamera(LoadedRigidObject):
-    def __init__(self):
+    def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(
             name="table_with_camera",
             asset_path=_object_asset_path("table_with_camera"),
             fixed=True,
+            config=config,
         )
 
     def load(self, env_def) -> None:
@@ -342,8 +357,9 @@ class Drawer(LoadedArticulatedObject):
         lock_damping: float = 10.0,
         max_lock_force: float = 5.0,
         unlock_angle_threshold: float = math.radians(60.0),
+        config: dict[str, Any] | None = None,
     ):
-        super().__init__(name="drawer", asset_path=_object_asset_path("drawer"), fixed=True)
+        super().__init__(name="drawer", asset_path=_object_asset_path("drawer"), fixed=True, config=config)
         self.spring_stiffness = spring_stiffness
         self.spring_damping = spring_damping
         self.spring_rest_angle = spring_rest_angle
@@ -409,8 +425,9 @@ class Button(LoadedArticulatedObject):
         spring_damping: float = 0.01,
         spring_rest_position: float = 0.0,
         max_spring_force: float = 5.0,
+        config: dict[str, Any] | None = None,
     ):
-        super().__init__(name="button", asset_path=_object_asset_path("button"), fixed=True)
+        super().__init__(name="button", asset_path=_object_asset_path("button"), fixed=True, config=config)
         self.spring_stiffness = spring_stiffness
         self.spring_damping = spring_damping
         self.spring_rest_position = spring_rest_position
@@ -458,8 +475,8 @@ class Button(LoadedArticulatedObject):
 
 
 class ButtonDifficult(Button):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, config: dict[str, Any] | None = None, **kwargs):
+        super().__init__(config=config, **kwargs)
         self.name = "button_difficult"
         self.asset_path = _object_asset_path("button_difficult")
 
@@ -488,13 +505,19 @@ OBJECT_REGISTRY: Dict[str, type] = {
 class ObjectGenerator:
     """Container for all objects in the environment."""
 
-    def __init__(self, object_names: List[str]):
+    def __init__(
+        self,
+        object_names: List[str],
+        object_configs: Dict[str, dict[str, Any]] | None = None,
+    ):
         self.object_names = object_names
+        self.object_configs = object_configs if object_configs is not None else {}
         self.objects: Dict[str, ObjectBase] = {}
         for obj_name in object_names:
             if obj_name not in OBJECT_REGISTRY:
                 raise ValueError(f"Unknown object: {obj_name}. Available: {list(OBJECT_REGISTRY.keys())}")
-            self.objects[obj_name] = OBJECT_REGISTRY[obj_name]()
+            config = self.object_configs.get(obj_name, {})
+            self.objects[obj_name] = OBJECT_REGISTRY[obj_name](config)
 
     def load(self, env_def) -> None:
         """Load objects into environment definition."""
@@ -568,9 +591,25 @@ class CreateObjectsModule(BaseModule):
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
         self.reward_object_name: str = self.config.get("reward_object", "drawer")
-        self.objects_list: List[str] = list(self.config.get("objects", []))
+        self.objects_list: List[str]
+        self.object_configs: Dict[str, dict[str, Any]]
+        self._parse_objects_config(self.config.get("objects", []))
         self.record_output_path = self.config.get("record_output_path", None)
         self.generator: ObjectGenerator | None = None
+
+    def _parse_objects_config(self, objects_cfg: List[str] | Dict[str, Any]) -> None:
+        """Support both list and dict object specifications."""
+        if isinstance(objects_cfg, dict):
+            self.objects_list = list(objects_cfg.keys())
+            self.object_configs = {}
+            for name, cfg in objects_cfg.items():
+                if isinstance(cfg, dict):
+                    self.object_configs[name] = cfg
+                else:
+                    self.object_configs[name] = {}
+        else:
+            self.objects_list = list(objects_cfg)
+            self.object_configs = {name: {} for name in self.objects_list}
 
     def finalize(self, container: ModuleContainer) -> None:
         """Instantiate and load requested objects into the environment definition."""
@@ -586,12 +625,9 @@ class CreateObjectsModule(BaseModule):
                 object_names.append(obj)
 
         if self.reward_object_name not in object_names:
-            raise ValueError(
-                f"reward_object '{self.reward_object_name}' must be present in objects list. "
-                f"Got objects={object_names}"
-            )
+            raise ValueError(f"reward_object '{self.reward_object_name}' must be present in objects list. " f"Got objects={object_names}")
 
-        self.generator = ObjectGenerator(object_names)
+        self.generator = ObjectGenerator(object_names, self.object_configs)
         self.generator.load(container.env_def)
 
         container.objects = self.generator.objects
