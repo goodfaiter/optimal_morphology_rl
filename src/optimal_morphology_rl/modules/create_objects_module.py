@@ -568,7 +568,7 @@ class CreateObjectsModule(BaseModule):
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
         self.reward_object_name: str = self.config.get("reward_object", "drawer")
-        self.scene_objects: List[str] = list(self.config.get("scene_objects", []))
+        self.objects_list: List[str] = list(self.config.get("objects", []))
         self.record_output_path = self.config.get("record_output_path", None)
         self.generator: ObjectGenerator | None = None
 
@@ -580,14 +580,16 @@ class CreateObjectsModule(BaseModule):
                 "Ensure create_rigid_vsim_envs is listed before create_objects."
             )
 
-        table_name = "table" if self.record_output_path is None else "table_with_camera"
-
-        object_names: List[str] = [self.reward_object_name]
-        for obj in self.scene_objects:
+        object_names: List[str] = []
+        for obj in self.objects_list:
             if obj not in object_names:
                 object_names.append(obj)
-        if table_name not in object_names:
-            object_names.append(table_name)
+
+        if self.reward_object_name not in object_names:
+            raise ValueError(
+                f"reward_object '{self.reward_object_name}' must be present in objects list. "
+                f"Got objects={object_names}"
+            )
 
         self.generator = ObjectGenerator(object_names)
         self.generator.load(container.env_def)
