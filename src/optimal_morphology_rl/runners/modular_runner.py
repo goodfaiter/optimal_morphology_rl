@@ -7,6 +7,7 @@ import copy
 from pathlib import Path
 from typing import Any
 
+import gymnasium as gym
 import torch
 from rl_games.common import env_configurations, vecenv
 from rl_games.common.algo_observer import VlearnAlgoObserver
@@ -14,7 +15,6 @@ from rl_games.common.ivecenv import IVecEnv
 from rl_games.torch_runner import Runner
 from vlearn.spaces import Box, Discrete
 from vlearn.torch_utils.wrappers import NewToOldAPICompatilibity
-import gymnasium as gym
 
 from optimal_morphology_rl.envs.modular_environment import ModularEnvironment
 from optimal_morphology_rl.utils.config import load_yaml_with_context
@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=["train", "play", "step"],
+        choices=["train", "play", "step", "interactive"],
         default="step",
         help="Execution mode",
     )
@@ -114,7 +114,7 @@ def apply_env_overrides(env_config: dict[str, Any], args: argparse.Namespace) ->
 
     headless = args.headless
     if headless is None:
-        headless = "False" if args.mode == "play" else "True"
+        headless = "False" if args.mode in ("play", "interactive") else "True"
 
     # Single source of truth: --headless drives all rendering settings.
     rendering = not str_to_bool(headless)
@@ -319,15 +319,51 @@ def run_step(env_config: dict[str, Any], steps: int) -> None:
         print(f"step {i:4d}: reward_mean={rew.mean().item():.4f} term={term.sum().item()} trunc={trunc.sum().item()}")
 
 
+def run_interactive(env_config: dict[str, Any]) -> None:
+    """Run an interactive GUI test using sliders from ``interactive_slider_control``."""
+    env = ModularEnvironment(env_config)
+    action_shape = env.action_space.shape
+
+    slider_module = env.module_manager.get("interactive_slider_control")
+    reset_box = getattr(slider_module, "reset_checkbox", None)
+
+    print("Interactive mode started. Close the render window to exit.", flush=True)
+
+    try:
+        while True:
+            if reset_box is not None and reset_box.get_value():
+                env.reset()
+                reset_box.set_value(False)
+
+            actions = torch.zeros((env.total_num_envs,) + action_shape, device=env.device)
+            env.step(actions)
+    except RuntimeError as exc:
+        if "Render window was closed" in str(exc):
+            print("Render window closed, exiting interactive mode.")
+        else:
+            raise
+
+
 def main() -> None:
     args = parse_args()
 
-    # Play mode defaults: windowed, 4 parallel environments for visualization.
-    if args.mode == "play":
+    # Play/interactive mode defaults: windowed visualization.
+    if args.mode in ("play", "interactive"):
         if args.headless is None:
             args.headless = "False"
         if args.num_envs is None:
-            args.num_envs = 4
+            args.num_envs = 1 if args.mode == "interactive" else 4
+
+    if args.mode == "interactive":
+        task_dir = args.task_root / args.task
+        env_path = task_dir / "test_env.yaml"
+        if not env_path.exists():
+            raise FileNotFoundError(f"Interactive test config not found: {env_path}")
+
+        env_config = load_yaml_with_context(env_path, context={"mode": args.mode})
+        env_config = apply_env_overrides(env_config, args)
+        run_interactive(env_config)
+        return
 
     _, env_config, ppo_config = load_task_configs(args.task, args.task_root, context={"mode": args.mode})
 

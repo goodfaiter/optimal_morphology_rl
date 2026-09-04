@@ -1,0 +1,75 @@
+modules:
+  init_modules:
+    - create_rigid_vsim_envs
+    - create_robot
+    - termination
+    # Render is listed in init_modules so its post_finalize (which creates the
+    # renderer handle) runs before interactive_slider_control creates UI widgets.
+    - render
+  pre_physics_step_modules:
+    # interactive_slider_control writes container.actions before process_actions
+    # scales them and robot_control applies them.
+    - interactive_slider_control
+    - process_actions
+    - robot_control
+  pre_gym_step_modules: []
+  post_gym_step_modules: []
+  post_physics_step_modules:
+    - update_robot
+    - observation
+    - reward
+    - termination
+    - render
+
+create_rigid_vsim_envs:
+  num_envs: 1
+  device: cuda:0
+  rendering: true
+  with_window: true
+  enable_scene_query: true
+  timestep: ${1/120}
+  frame_skip: 2
+  spacing: 0.75
+  gravity: [0.0, 0.0, -9.81]
+  up_axis: [0.0, 0.0, 1.0]
+  max_contact_pairs_per_env: 64
+  max_contact_points_per_patch: 4
+
+create_robot:
+  vsim_path: /workspace/optimal_morphology_rl_assets/optimal_morphology_rl_assets/assets/hands/Adapt_Hand_v4/Hand_GeomOpt_MJCF_Short.vsim
+  fixed_hand: true
+  fixed_hand_root_pos: [0.0, 0.0, 0.2]
+  fixed_hand_root_quat: [-0.5, 0.5, -0.5, 0.5]
+  use_tendon: false
+  randomize_pose: false
+  friction_coefficient: 0.8
+  # Make every motor controllable from the UI (no passive motors).
+  passive_motor_substrings: []
+
+robot_control: {}
+
+process_actions: {}
+
+observation:
+  num_hist: 1
+  hist_stride: 1
+  modules:
+    - robot_state
+
+reward: {}
+
+termination:
+  progress:
+    max_episode_length: 1000000
+
+render:
+  capped_step: false
+  paused: false
+  raise_exception: true
+  camera:
+    eye: [-0.671139, 0.073098, 0.726423]
+    target: [0.755459, -0.009100, -0.655133]
+
+interactive_slider_control:
+  enabled: true
+  reset_name: "Reset"

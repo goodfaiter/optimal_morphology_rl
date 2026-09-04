@@ -31,6 +31,10 @@ class RenderModule(BaseModule):
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
+        self.render_substep = bool(self.config.get("render_substep", True))
+        self.capped_step = bool(self.config.get("capped_step", False))
+        self.paused = bool(self.config.get("paused", False))
+        self.raise_exception = self.config.get("raise_exception", None)
         self.camera = dict(
             self.config.get(
                 "camera",
