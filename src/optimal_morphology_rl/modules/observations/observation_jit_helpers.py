@@ -30,22 +30,13 @@ def _quaternion_to_6d_jit(q: torch.Tensor) -> torch.Tensor:
 
 @torch.jit.script
 def _object_state_obs_jit(
-    quat_robot_to_world: torch.Tensor,
-    robot_pos_in_world: torch.Tensor,
-    object_pos_in_world: torch.Tensor,
-    object_quat_in_world: torch.Tensor,
-    object_lin_vel_in_world: torch.Tensor,
-    object_ang_vel_in_world: torch.Tensor,
+    object_pos_in_robot: torch.Tensor,
+    object_quat_in_robot: torch.Tensor,
+    object_lin_vel_in_robot: torch.Tensor,
+    object_ang_vel_in_robot: torch.Tensor,
 ) -> torch.Tensor:
     """Compute object-state observation in the robot frame."""
-    quat_world_to_robot = quat_conjugate(quat_robot_to_world)
-
-    object_pos_in_robot = quat_rotate_inverse(quat_robot_to_world, object_pos_in_world - robot_pos_in_world)
-    object_quat_in_robot = quat_mul(quat_world_to_robot, object_quat_in_world)
     _6d_object_to_robot = _quaternion_to_6d_jit(object_quat_in_robot)
-
-    object_lin_vel_in_robot = quat_rotate_inverse(quat_robot_to_world, object_lin_vel_in_world)
-    object_ang_vel_in_robot = quat_rotate_inverse(quat_robot_to_world, object_ang_vel_in_world)
 
     return torch.cat(
         [

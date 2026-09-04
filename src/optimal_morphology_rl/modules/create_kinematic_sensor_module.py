@@ -6,6 +6,11 @@ from typing import Any
 
 import torch
 import vlearn as v
+from vlearn.torch_utils.torch_jit_utils import (
+    quat_conjugate,
+    quat_mul,
+    quat_rotate_inverse,
+)
 
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
@@ -22,6 +27,12 @@ class KinematicSensor:
         self.pose_in_object_buf: torch.Tensor | None = None
         self.velocity_in_object_buf: torch.Tensor | None = None
         self.get_kinematic_sensor_cmd_arr: Any = None
+
+        # Object state expressed in the robot base frame.
+        self.pos_in_robot_buf: torch.Tensor | None = None
+        self.quat_sensor_to_robot_buf: torch.Tensor | None = None
+        self.linear_velocity_in_robot_buf: torch.Tensor | None = None
+        self.angular_velocity_in_robot_buf: torch.Tensor | None = None
 
     def allocate_buffers(
         self,
@@ -51,6 +62,11 @@ class KinematicSensor:
         self.pose_in_object_buf = torch.zeros((total_num_envs, 7), dtype=torch.float32, device=device)
         self.velocity_in_object_buf = torch.zeros((total_num_envs, 6), dtype=torch.float32, device=device)
 
+        self.pos_in_robot_buf = torch.zeros((total_num_envs, 3), dtype=torch.float32, device=device)
+        self.quat_sensor_to_robot_buf = torch.zeros((total_num_envs, 4), dtype=torch.float32, device=device)
+        self.linear_velocity_in_robot_buf = torch.zeros((total_num_envs, 3), dtype=torch.float32, device=device)
+        self.angular_velocity_in_robot_buf = torch.zeros((total_num_envs, 3), dtype=torch.float32, device=device)
+
     def create_gpu_commands(self, env_group: Any, gym: v.Gym) -> None:
         """Create GPU commands for reading kinematic sensor state."""
         in_world_cmd = env_group.create_kinematic_sensor_state_command(
@@ -70,6 +86,29 @@ class KinematicSensor:
     def update(self, gym: v.Gym) -> None:
         """Read the latest kinematic sensor data into the dense buffers."""
         gym.get_kinematic_sensor_states(self.get_kinematic_sensor_cmd_arr)
+
+    def update_robot_frame(self, robot_state: dict[str, torch.Tensor]) -> None:
+        """Express object pose and velocity in the robot base frame.
+
+        Must be called after :meth:`update` and after ``robot_state`` has been
+        refreshed by ``update_robot``.
+        """
+        quat_robot_to_world = robot_state["quat_robot_to_world"]
+        robot_pos_in_world = robot_state["robot_pos_in_world"]
+
+        quat_world_to_robot = quat_conjugate(quat_robot_to_world)
+
+        self.pos_in_robot_buf[:] = quat_rotate_inverse(
+            quat_robot_to_world, self.pose_in_world_buf[:, 4:7] - robot_pos_in_world
+        )
+        self.quat_sensor_to_robot_buf[:] = quat_mul(quat_world_to_robot, self.pose_in_world_buf[:, :4])
+
+        self.linear_velocity_in_robot_buf[:] = quat_rotate_inverse(
+            quat_robot_to_world, self.velocity_in_world_buf[:, 3:6]
+        )
+        self.angular_velocity_in_robot_buf[:] = quat_rotate_inverse(
+            quat_robot_to_world, self.velocity_in_world_buf[:, :3]
+        )
 
     @property
     def pose_in_world(self) -> torch.Tensor:
@@ -110,6 +149,22 @@ class KinematicSensor:
     @property
     def linear_velocity_object(self) -> torch.Tensor:
         return self.velocity_in_object_buf[:, 3:6]
+
+    @property
+    def pos_in_robot(self) -> torch.Tensor:
+        return self.pos_in_robot_buf
+
+    @property
+    def quat_sensor_to_robot(self) -> torch.Tensor:
+        return self.quat_sensor_to_robot_buf
+
+    @property
+    def linear_velocity_in_robot(self) -> torch.Tensor:
+        return self.linear_velocity_in_robot_buf
+
+    @property
+    def angular_velocity_in_robot(self) -> torch.Tensor:
+        return self.angular_velocity_in_robot_buf
 
 
 @register_module("create_kinematic_sensor")

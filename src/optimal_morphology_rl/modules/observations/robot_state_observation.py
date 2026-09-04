@@ -15,19 +15,26 @@ from optimal_morphology_rl.modules.observations.observation_manager_module impor
 
 
 @torch.jit.script
-def _robot_state_obs_jit(
+def _robot_state_obs_extended_jit(
     gravity: torch.Tensor,
     lin_vel: torch.Tensor,
     ang_vel: torch.Tensor,
     dof_pos: torch.Tensor,
     dof_vel: torch.Tensor,
     actions: torch.Tensor,
-    fixed_hand: bool,
 ) -> torch.Tensor:
     """Concatenate robot-state observation components."""
-    if fixed_hand:
-        return torch.cat([dof_pos, dof_vel, actions], dim=-1)
     return torch.cat([gravity, lin_vel, ang_vel, dof_pos, dof_vel, actions], dim=-1)
+
+
+@torch.jit.script
+def _robot_state_obs_jit(
+    dof_pos: torch.Tensor,
+    dof_vel: torch.Tensor,
+    actions: torch.Tensor,
+) -> torch.Tensor:
+    """Concatenate robot-state observation components."""
+    return torch.cat([dof_pos, dof_vel, actions], dim=-1)
 
 
 @register_observation("robot_state")
@@ -51,21 +58,12 @@ class RobotStateObservation(ObservationBaseModule):
         robot = container.robot
         robot_state = container.robot_state
 
-        if robot.fixed_hand:
-            gravity = torch.empty((env.total_num_envs, 0), device=env.device, dtype=torch.float32)
-            lin_vel = gravity
-            ang_vel = gravity
-        else:
+        if not robot.fixed_hand:
             gravity = robot_state["gravity_vector_in_robot_frame"]
             lin_vel = robot_state["robot_linear_velocity_in_robot_frame"]
             ang_vel = robot_state["robot_angular_velocity_in_robot_frame"]
-
-        out[:] = _robot_state_obs_jit(
-            gravity,
-            lin_vel,
-            ang_vel,
-            robot_state["dof_pos_buf"],
-            robot_state["dof_vel_buf"],
-            env.act_buf,
-            robot.fixed_hand,
-        )
+            out[:] = _robot_state_obs_extended_jit(
+                gravity, lin_vel, ang_vel, robot_state["dof_pos_buf"], robot_state["dof_vel_buf"], env.act_buf
+            )
+        else:
+            out[:] = _robot_state_obs_jit(robot_state["dof_pos_buf"], robot_state["dof_vel_buf"], env.act_buf)
