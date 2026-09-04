@@ -9,7 +9,6 @@ from vlearn.spaces import Box
 from vlearn.torch_utils.torch_jit_utils import scale
 
 from optimal_morphology_rl.modules.base_module import BaseModule
-from optimal_morphology_rl.modules.create_robot_module import Robot
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
@@ -27,22 +26,24 @@ def _allocate_action_buffers(
     container.last_act_buf = torch.zeros_like(container.actions)
     container.scaled_act_buf = torch.zeros_like(container.actions)
 
-    container.robot.scaled_act_buf = container.scaled_act_buf
 
-
-def _scale_actions(robot: Robot, act_buf: torch.Tensor, scaled_act_buf: torch.Tensor) -> None:
+def _scale_actions(container: ModuleContainer) -> None:
     """Scale raw actions into the robot's control ranges."""
-    if robot.root_slice.stop > robot.root_slice.start:
-        scaled_act_buf[:, robot.root_slice] = scale(
-            act_buf[:, robot.root_slice],
-            -robot.velocity_scale[robot.root_slice],
-            robot.velocity_scale[robot.root_slice],
+    robot = container.robot
+    act_buf = container.act_buf
+    scaled_act_buf = container.scaled_act_buf
+
+    if container.root_slice.stop > container.root_slice.start:
+        scaled_act_buf[:, container.root_slice] = scale(
+            act_buf[:, container.root_slice],
+            -robot.velocity_scale[container.root_slice],
+            robot.velocity_scale[container.root_slice],
         )
-    if robot.active_motor_slice.stop > robot.active_motor_slice.start:
-        scaled_act_buf[:, robot.active_motor_slice] = scale(
-            act_buf[:, robot.active_motor_slice],
-            robot.min_active_motor_scale,
-            robot.max_active_motor_scale,
+    if container.active_motor_slice.stop > container.active_motor_slice.start:
+        scaled_act_buf[:, container.active_motor_slice] = scale(
+            act_buf[:, container.active_motor_slice],
+            container.min_active_motor_scale,
+            container.max_active_motor_scale,
         )
 
 
@@ -70,7 +71,7 @@ class ProcessActionsModule(BaseModule):
             raise RuntimeError("ProcessActionsModule requires 'env' in the shared container.")
 
     def post_finalize(self, container: ModuleContainer) -> None:
-        """Allocate action buffers and attach scaled buffer to the robot."""
+        """Allocate action buffers."""
         env = container.env
         if not isinstance(env.action_space, Box):
             raise RuntimeError(
@@ -85,7 +86,7 @@ class ProcessActionsModule(BaseModule):
         """Update action history, copy new actions, and scale them."""
         container.last_act_buf[:] = container.act_buf[:]
         container.act_buf[:] = container.actions
-        _scale_actions(container.robot, container.act_buf, container.scaled_act_buf)
+        _scale_actions(container)
 
     def reset(self, container: ModuleContainer) -> None:
         """Zero action buffers for the environments selected by reset_buf."""

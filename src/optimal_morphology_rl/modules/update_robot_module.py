@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from functools import partial
 from typing import Any
 
 import torch
@@ -107,8 +106,10 @@ def _refresh_buffers(robot: Robot, gym: v.Gym) -> None:
         gym.get_spatial_tendon_states(robot.gpu_get_tendon_velocities_command_array)
 
 
-def _get_state(robot: Robot) -> dict[str, torch.Tensor]:
+def _get_state(container: ModuleContainer) -> dict[str, torch.Tensor]:
     """Update and return robot-derived observation tensors."""
+    robot = container.robot
+
     robot.robot_pos_in_world[:] = robot.get_root_transform_buf[:, 4:7]
     robot.quat_robot_to_world[:] = robot.get_root_transform_buf[:, 0:4]
     robot._6d_robot_to_world[:] = _quaternion_to_6d_jit(robot.quat_robot_to_world)
@@ -130,7 +131,7 @@ def _get_state(robot: Robot) -> dict[str, torch.Tensor]:
         "robot_angular_velocity_in_robot_frame": robot.robot_angular_velocity_in_robot_frame,
         "get_root_transform_buf": robot.get_root_transform_buf,
         "get_root_vel_buf": robot.get_root_vel_buf,
-        "set_motor_cmd_buf": robot.set_motor_cmd_buf,
+        "set_motor_cmd_buf": container.set_motor_cmd_buf,
     }
     if robot.use_tendon:
         state["dof_pos_buf"] = robot.get_tendon_lengths_buf
@@ -151,13 +152,10 @@ class UpdateRobotModule(BaseModule):
         _allocate_read_buffers(robot, container.total_num_envs, container.device)
         _create_read_gpu_commands(robot, container.env_group, container.gym)
 
-        # Bind state methods onto the robot so legacy callers keep working.
-        robot.refresh_buffers = partial(_refresh_buffers, robot)
-        robot.get_state = partial(_get_state, robot)
-
     def step(self, container: ModuleContainer) -> None:
-        """Refresh robot state buffers."""
+        """Refresh robot state buffers and publish the robot state dict."""
         robot = container.get("robot")
         if robot is None:
             return
-        robot.refresh_buffers(container.gym)
+        _refresh_buffers(robot, container.gym)
+        container.robot_state = _get_state(container)

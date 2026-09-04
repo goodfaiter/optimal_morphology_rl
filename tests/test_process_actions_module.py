@@ -21,17 +21,20 @@ class _FakeEnv:
 
 
 class _FakeRobot:
-    def __init__(self, num_actions: int, fixed_hand: bool = False):
-        self.fixed_hand = fixed_hand
-        self.root_slice = slice(0, 0) if fixed_hand else slice(0, 6)
-        self.active_motor_slice = slice(0, num_actions) if fixed_hand else slice(6, 6 + num_actions - 6)
-        num_active_motors = num_actions if fixed_hand else num_actions - 6
+    def __init__(self):
         device = torch.device("cpu")
+        self.fixed_hand = False
         self.velocity_scale = torch.tensor([1.0, 1.0, 1.0, 0.2, 0.2, 0.2], dtype=torch.float32, device=device)
         self.max_velocity = self.velocity_scale * 2.0
-        self.min_active_motor_scale = torch.full((num_active_motors,), -0.1, dtype=torch.float32, device=device)
-        self.max_active_motor_scale = torch.full((num_active_motors,), 0.1, dtype=torch.float32, device=device)
-        self.scaled_act_buf = None
+
+
+def _setup_control_attrs(container: ModuleContainer, num_actions: int) -> None:
+    num_active_motors = num_actions - 6
+    container.root_slice = slice(0, 6)
+    container.active_motor_slice = slice(6, 6 + num_active_motors)
+    device = container.device
+    container.min_active_motor_scale = torch.full((num_active_motors,), -0.1, dtype=torch.float32, device=device)
+    container.max_active_motor_scale = torch.full((num_active_motors,), 0.1, dtype=torch.float32, device=device)
 
 
 @pytest.fixture
@@ -40,7 +43,8 @@ def container() -> ModuleContainer:
     cont.total_num_envs = 4
     cont.device = torch.device("cpu")
     cont.env = _FakeEnv(num_actions=8)
-    cont.robot = _FakeRobot(num_actions=8, fixed_hand=False)
+    cont.robot = _FakeRobot()
+    _setup_control_attrs(cont, num_actions=8)
     cont.reset_buf = torch.zeros(4, dtype=torch.bool)
     return cont
 
@@ -54,7 +58,6 @@ def test_post_finalize_allocates_buffers(container: ModuleContainer) -> None:
     assert container.act_buf is not None
     assert container.last_act_buf is not None
     assert container.scaled_act_buf is not None
-    assert container.robot.scaled_act_buf is container.scaled_act_buf
     assert container.actions.shape == (4, 8)
     assert container.act_buf.shape == (4, 8)
     assert container.last_act_buf.shape == (4, 8)
@@ -99,7 +102,7 @@ def test_step_updates_buffers(container: ModuleContainer) -> None:
 
     # Scaling: root DOFs scaled by velocity_scale, joint DOFs by revolute scale.
     expected_root = container.robot.velocity_scale[:6] * 0.5
-    expected_dof = container.robot.max_active_motor_scale * 0.5
+    expected_dof = container.max_active_motor_scale * 0.5
     assert torch.allclose(container.scaled_act_buf[:, :6], expected_root)
     assert torch.allclose(container.scaled_act_buf[:, 6:], expected_dof)
 

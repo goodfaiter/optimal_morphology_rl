@@ -26,9 +26,8 @@ class ObjectStateObservation(ObservationBaseModule):
 
     def compute_observation(self, env: Any, out: torch.Tensor) -> None:
         container = env.module_manager.container
-        robot = container.robot
         sensor = container.kinematic_sensor
-        robot_state = robot.get_state()
+        robot_state = container.robot_state
 
         out[:] = _object_state_obs_jit(
             robot_state["quat_robot_to_world"],

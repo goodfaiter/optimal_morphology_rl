@@ -35,18 +35,21 @@ class RobotStateObservation(ObservationBaseModule):
     """Robot state: optional base velocity, DOF positions/velocities, last action."""
 
     def get_obs_dim(self, env: Any) -> int:
-        robot = env.module_manager.container.robot
+        container = env.module_manager.container
+        robot = container.robot
+        num_dof_states = robot.num_tendons if robot.use_tendon else robot.num_joints
         dim = 0
         if not robot.fixed_hand:
             dim += 9  # gravity (3) + lin vel (3) + ang vel (3)
-        dim += robot.num_joints  # dof pos
-        dim += robot.num_joints  # dof vel
-        dim += robot.get_num_actions()  # last action
+        dim += num_dof_states  # dof pos
+        dim += num_dof_states  # dof vel
+        dim += container.num_actions  # last action
         return dim
 
     def compute_observation(self, env: Any, out: torch.Tensor) -> None:
-        robot = env.module_manager.container.robot
-        robot_state = robot.get_state()
+        container = env.module_manager.container
+        robot = container.robot
+        robot_state = container.robot_state
 
         if robot.fixed_hand:
             gravity = torch.empty((env.total_num_envs, 0), device=env.device, dtype=torch.float32)

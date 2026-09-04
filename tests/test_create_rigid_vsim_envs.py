@@ -43,8 +43,8 @@ def _manager_session():
             "use_tendon": True,
         },
         "create_objects": {
+            "objects": ["table", "drawer"],
             "reward_object": "drawer",
-            "scene_objects": ["table"],
         },
     }
 
