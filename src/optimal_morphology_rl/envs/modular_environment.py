@@ -197,6 +197,12 @@ class ModularEnvironment:
             self.gym.step()
             self.module_manager.post_gym_step()
 
+        # Block the renderer from advancing once the frame-skip block is done;
+        # this mirrors EnvironmentGpu.step and keeps rendering on the control
+        # timestep rather than the physics timestep.
+        if self.rendering and self.gym_render is not None:
+            self.gym_render.set_step(False)
+
         # Reset loop: envs that terminated/truncated in the previous step are reset.
         if self.reset_buf.any():
             self.module_manager.reset()

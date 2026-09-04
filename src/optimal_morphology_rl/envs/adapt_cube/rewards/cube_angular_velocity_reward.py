@@ -27,7 +27,9 @@ class CubeAngularVelocityReward(RewardBaseModule):
 
         container = env.module_manager.container
         angular_velocity_world = container.kinematic_sensor.angular_velocity_world
-        angular_velocity_y_world = angular_velocity_world[:, 1]
+        angular_velocity_y_world = torch.sum(angular_velocity_world, dim=1)
+        # angular_velocity_y_world = angular_velocity_world[:, 1]
+        angular_velocity_y_world = torch.clamp(angular_velocity_y_world, None, 0.5)
 
         raw_reward = angular_velocity_y_world / 0.1
         scale = float(self.config.get("scale", 1.0))

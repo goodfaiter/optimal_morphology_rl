@@ -7,6 +7,7 @@ modules:
     # renderer handle) runs before interactive_slider_control creates UI widgets.
     - render
   pre_physics_step_modules:
+    - render
     # interactive_slider_control writes container.actions before process_fixed_actions
     # scales them and robot_control applies them.
     - interactive_slider_control
@@ -19,7 +20,6 @@ modules:
     - observation
     - reward
     - termination
-    - render
 
 create_rigid_vsim_envs:
   num_envs: 1

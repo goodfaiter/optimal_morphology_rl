@@ -226,36 +226,111 @@ class Cube(LoadedRigidObject):
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(name="cube", asset_path=_object_asset_path("cube_mid"), config=config)
         self.goal_position = self.config.get("goal_position", [0.0, -0.15, 0.25])
+        self.goal_orientation = self.config.get("goal_orientation", "random")
+        self.init_position = self.config.get("init_position", [-0.05, -0.15, 0.15])
+        self.init_orientation = self.config.get("init_orientation", [0.7071068, -0.7071068, 0.0, 0.0])
+
+    def _sample_random_positions(self, n: int, device: torch.device) -> torch.Tensor:
+        """Sample n random positions in the workspace above the table."""
+        positions = torch.zeros((n, 3), device=device, dtype=torch.float32)
+        positions[:, 0] = torch.rand(n, device=device) * 0.2 - 0.1
+        positions[:, 1] = torch.rand(n, device=device) * 0.2 - 0.25
+        positions[:, 2] = torch.rand(n, device=device) * 0.2 + 0.15
+        return positions
+
+    def _apply_position(
+        self,
+        target_buf: torch.Tensor,
+        reset_buf: torch.Tensor,
+        position_config: Any,
+    ) -> None:
+        if position_config == "random":
+            n = reset_buf.sum().item()
+            target_buf[reset_buf] = self._sample_random_positions(n, reset_buf.device)
+        else:
+            target_buf[reset_buf, 0] = position_config[0]
+            target_buf[reset_buf, 1] = position_config[1]
+            target_buf[reset_buf, 2] = position_config[2]
+
+    def _apply_orientation(
+        self,
+        target_buf: torch.Tensor,
+        reset_buf: torch.Tensor,
+        orientation_config: Any,
+    ) -> None:
+        if orientation_config == "random":
+            target_buf[reset_buf, :] = random_uniform_quaternion(
+                reset_buf.sum().item(), device=reset_buf.device, dtype=torch.float32
+            )
+        else:
+            target_buf[reset_buf, :] = torch.tensor(
+                orientation_config, device=reset_buf.device, dtype=torch.float32
+            )
 
     def update_goal(self, reset_buf: torch.Tensor) -> None:
-        self.goal_pos_in_world[reset_buf, 0] = self.goal_position[0]
-        self.goal_pos_in_world[reset_buf, 1] = self.goal_position[1]
-        self.goal_pos_in_world[reset_buf, 2] = self.goal_position[2]
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        self._apply_position(self.goal_pos_in_world, reset_buf, self.goal_position)
+        self._apply_orientation(self.goal_quat_object_to_world, reset_buf, self.goal_orientation)
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
-        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor([0.7071068, -0.7071068, 0, 0], device=reset_buf.device)
-        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[-0.05, -0.15, 0.15]], device=reset_buf.device)
+        self._apply_orientation(self.set_trans_object_to_world_buf[:, :4], reset_buf, self.init_orientation)
+        self._apply_position(self.set_trans_object_to_world_buf[:, 4:], reset_buf, self.init_position)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
         self.update_goal(reset_buf)
-
 
 
 class CubeSmall(LoadedRigidObject):
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(name="cube", asset_path=_object_asset_path("cube_small"), config=config)
         self.goal_position = self.config.get("goal_position", [0.0, -0.15, 0.25])
+        self.goal_orientation = self.config.get("goal_orientation", _IDENTITY_QUAT)
+        self.init_position = self.config.get("init_position", [-0.05, -0.15, 0.15])
+        self.init_orientation = self.config.get("init_orientation", [0.7071068, -0.7071068, 0.0, 0.0])
+
+    def _sample_random_positions(self, n: int, device: torch.device) -> torch.Tensor:
+        """Sample n random positions in the workspace above the table."""
+        positions = torch.zeros((n, 3), device=device, dtype=torch.float32)
+        positions[:, 0] = torch.rand(n, device=device) * 0.2 - 0.1
+        positions[:, 1] = torch.rand(n, device=device) * 0.2 - 0.25
+        positions[:, 2] = torch.rand(n, device=device) * 0.2 + 0.15
+        return positions
+
+    def _apply_position(
+        self,
+        target_buf: torch.Tensor,
+        reset_buf: torch.Tensor,
+        position_config: Any,
+    ) -> None:
+        if position_config == "random":
+            n = reset_buf.sum().item()
+            target_buf[reset_buf] = self._sample_random_positions(n, reset_buf.device)
+        else:
+            target_buf[reset_buf, 0] = position_config[0]
+            target_buf[reset_buf, 1] = position_config[1]
+            target_buf[reset_buf, 2] = position_config[2]
+
+    def _apply_orientation(
+        self,
+        target_buf: torch.Tensor,
+        reset_buf: torch.Tensor,
+        orientation_config: Any,
+    ) -> None:
+        if orientation_config == "random":
+            target_buf[reset_buf, :] = random_uniform_quaternion(
+                reset_buf.sum().item(), device=reset_buf.device, dtype=torch.float32
+            )
+        else:
+            target_buf[reset_buf, :] = torch.tensor(
+                orientation_config, device=reset_buf.device, dtype=torch.float32
+            )
 
     def update_goal(self, reset_buf: torch.Tensor) -> None:
-        self.goal_pos_in_world[reset_buf, 0] = self.goal_position[0]
-        self.goal_pos_in_world[reset_buf, 1] = self.goal_position[1]
-        self.goal_pos_in_world[reset_buf, 2] = self.goal_position[2]
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
+        self._apply_position(self.goal_pos_in_world, reset_buf, self.goal_position)
+        self._apply_orientation(self.goal_quat_object_to_world, reset_buf, self.goal_orientation)
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
-        self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor([0.7071068, -0.7071068, 0, 0], device=reset_buf.device)
-        self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[-0.05, -0.15, 0.15]], device=reset_buf.device)
+        self._apply_orientation(self.set_trans_object_to_world_buf[:, :4], reset_buf, self.init_orientation)
+        self._apply_position(self.set_trans_object_to_world_buf[:, 4:], reset_buf, self.init_position)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
         self.update_goal(reset_buf)

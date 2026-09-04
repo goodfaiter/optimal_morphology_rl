@@ -160,8 +160,7 @@ def test_adjust_minibatch_size_division() -> None:
 
 def test_render_module_defaults() -> None:
     module = RenderModule({})
-    assert module.render_substep is True
-    assert module.capped_step is False
+    assert module.capped_step is True
     assert module.paused is False
     assert module.raise_exception is None
     assert module.camera["eye"] == [-0.671139, 0.073098, 0.726423]

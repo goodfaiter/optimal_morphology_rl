@@ -76,7 +76,7 @@ class Robot:
         env_def.import_definitions(
             vsim_path,
             fixed=self.fixed_hand,
-            use_visual_mesh=False,
+            use_visual_mesh=True,
             merge_fixed_joints=True,
             force_mass_computation=False,
             force_inertia_computation=False,

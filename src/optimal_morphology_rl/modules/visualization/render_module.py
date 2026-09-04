@@ -31,10 +31,10 @@ class RenderModule(BaseModule):
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
-        self.render_substep = bool(self.config.get("render_substep", True))
-        self.capped_step = bool(self.config.get("capped_step", False))
+        self.capped_step = bool(self.config.get("capped_step", True))
         self.paused = bool(self.config.get("paused", False))
         self.raise_exception = self.config.get("raise_exception", None)
+        self.render_timestep: float | None = None
         self.camera = dict(
             self.config.get(
                 "camera",
@@ -62,11 +62,16 @@ class RenderModule(BaseModule):
         eye = self.camera.get("eye", [-0.671139, 0.073098, 0.726423])
         target = self.camera.get("target", [0.755459, -0.009100, -0.655133])
         gym_render.reset_camera(v.Vec3(*eye), v.Vec3(*target))
-        gym_render.capped_step = False
+        gym_render.capped_step = self.capped_step
+
+        # Control timestep = physics timestep * frames per policy step.
+        self.render_timestep = container.timestep * container.frame_skip
+        gym_render.render_timestep = self.render_timestep
+
         gym_render.set_paused(False)
 
     def step(self, container: ModuleContainer) -> None:
-        """Render the environment and mark the simulation step as finished."""
+        """Render the environment at the start of the control step."""
         env = container.env
         gym_render = container.get("gym_render", None)
         if not getattr(env, "rendering", False) or gym_render is None:
@@ -75,4 +80,3 @@ class RenderModule(BaseModule):
         finished = gym_render.render(lambda: None)
         if finished and self.raise_exception:
             raise RuntimeError("Render window was closed.")
-        gym_render.set_step(False)
