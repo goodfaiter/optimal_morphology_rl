@@ -11,7 +11,7 @@ modules:
     # interactive_slider_control writes container.actions before process_fixed_actions
     # scales them and robot_control applies them.
     - interactive_slider_control
-    - process_fixed_actions
+    - process_variable_actions
     - robot_control
   pre_gym_step_modules: []
   post_gym_step_modules: []
@@ -36,7 +36,7 @@ create_rigid_vsim_envs:
   max_contact_points_per_patch: 4
 
 create_robot:
-  vsim_path: /workspace/optimal_morphology_rl_assets/optimal_morphology_rl_assets/assets/hands/Adapt_Hand_v4/Hand_GeomOpt_MJCF_Short.vsim
+  vsim_path: /workspace/optimal_morphology_rl_assets/optimal_morphology_rl_assets/assets/hands/Adapt_Hand_v4/Hand_GeomOpt_MJCF_Short_one_finger.vsim
   fixed_hand: true
   fixed_hand_root_pos: [0.0, 0.0, 0.2]
   fixed_hand_root_quat: [-0.5, 0.5, -0.5, 0.5]
@@ -48,9 +48,9 @@ create_robot:
 
 robot_control: {}
 
-process_fixed_actions:
-  min_action_scale: [-0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1]
-  max_action_scale: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+process_variable_actions:
+  min_dof_scale: -0.2
+  max_dof_scale: 0.2
 
 observation:
   num_hist: 1
