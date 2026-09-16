@@ -7,10 +7,10 @@ from typing import Any
 import torch
 import vlearn as v
 
+from optimal_morphology_rl.helpers.numpy_vlearn import random_uniform_quaternion
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
-from optimal_morphology_rl.helpers.numpy_vlearn import random_uniform_quaternion
 
 
 class Robot:
@@ -41,7 +41,6 @@ class Robot:
 
         # Motor metadata.
         self.motor_to_joint_dof_index: torch.Tensor | None = None
-        self.spring_constants: torch.Tensor | None = None
 
         # Read-state buffers are attached by update_robot.
         self.get_joint_pos_buf: torch.Tensor | None = None
@@ -137,9 +136,6 @@ class Robot:
         for i in range(self.art_def.get_num_link_defs()):
             env_def.assign_rigid_material_to_articulation_link(self.def_handle, rigid_mat_handle, i)
         self.rigid_mat_handle = rigid_mat_handle
-
-        # Per-motor passive spring constants. All motors get the same constant for now.
-        self.spring_constants = torch.full((self.num_motors,), 0.1, dtype=torch.float32, device=device)
 
 
 @register_module("create_robot")

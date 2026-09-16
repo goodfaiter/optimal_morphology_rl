@@ -5,6 +5,7 @@
 # register even when only the module registry is imported.
 from optimal_morphology_rl.envs.hand_cube import rewards as _hand_cube_rewards
 from optimal_morphology_rl.envs.hand_cube import terminations as _hand_cube_terminations
+from optimal_morphology_rl.modules.antagonistic_spring_module import AntagonisticSpring
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.camera_recorder_module import CameraRecorderModule
 from optimal_morphology_rl.modules.color_articulation_links_module import (
@@ -47,7 +48,9 @@ from optimal_morphology_rl.modules.rewards import (
     RewardManagerModule,
     register_reward,
 )
+from optimal_morphology_rl.modules.rigid_tendons_module import RigidTendons
 from optimal_morphology_rl.modules.robot_control_module import RobotControlModule
+from optimal_morphology_rl.modules.tendon_est_module import TendonEstModule
 from optimal_morphology_rl.modules.terminations import (
     TERMINATION_REGISTRY,
     TerminationBaseModule,
@@ -72,6 +75,7 @@ __all__ = [
     "OBSERVATION_REGISTRY",
     "REWARD_REGISTRY",
     "TERMINATION_REGISTRY",
+    "AntagonisticSpring",
     "BaseModule",
     "CameraRecorderModule",
     "ColorArticulationLinksModule",
@@ -95,9 +99,11 @@ __all__ = [
     "RenderModule",
     "RewardBaseModule",
     "RewardManagerModule",
+    "RigidTendons",
     "RobotControlModule",
     "RobotModule",
     "RobotStateObservation",
+    "TendonEstModule",
     "TerminationBaseModule",
     "TerminationManagerModule",
     "UpdateContactsModule",

@@ -3,15 +3,14 @@ modules:
     - create_rigid_vsim_envs
     - create_robot
     - termination
-    # Render is listed in init_modules so its post_finalize (which creates the
-    # renderer handle) runs before interactive_slider_control creates UI widgets.
     - render
   pre_physics_step_modules:
     - render
-    # interactive_slider_control writes container.actions before process_fixed_actions
-    # scales them and robot_control applies them.
     - interactive_slider_control
     - process_variable_actions
+    - tendon_est
+    - rigid_tendons
+    - antagonistic_spring
     - robot_control
   pre_gym_step_modules: []
   post_gym_step_modules: []
@@ -48,9 +47,19 @@ create_robot:
 
 robot_control: {}
 
+antagonistic_spring:
+  spring_constants: 0.1
+
 process_variable_actions:
   min_dof_scale: -5.0
   max_dof_scale: 5.0
+
+tendon_est:
+  pully_radius: 0.011
+  model_tendon_indices: [0, 1]
+
+rigid_tendons:
+  rigid_tendon_indices: [-1]
 
 observation:
   num_hist: 1

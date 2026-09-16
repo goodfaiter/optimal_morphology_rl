@@ -20,6 +20,7 @@ dependencies = [
     "time_series_buffer",
     "vlearn_train",
     "optimal_morphology_rl_assets",
+    "tendon_est",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +32,7 @@ omrl = "optimal_morphology_rl.runners.modular_runner:main"
 [tool.uv.sources]
 vlearn_train = { workspace = true, editable = true }
 optimal_morphology_rl_assets = { workspace = true, editable = true }
+tendon_est = { workspace = true, editable = true }
 time_series_buffer = { git = "https://github.com/goodfaiter/time_series_buffer.git", branch = "main" }
 
 [tool.hatch.build.targets.wheel]

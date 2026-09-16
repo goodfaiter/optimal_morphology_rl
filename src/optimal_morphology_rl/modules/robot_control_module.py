@@ -6,9 +6,9 @@ from typing import Any
 
 import numpy as np
 import torch
+import vlearn as v
 from vlearn.spaces import Box
 from vlearn.torch_utils.torch_jit_utils import quat_rotate
-import vlearn as v
 
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
@@ -243,6 +243,17 @@ class RobotControlModule(BaseModule):
 
         if robot.use_tendon:
             container.set_tendon_controls_buf[:] = torch.clamp(container.scaled_act_buf[:, container.active_motor_slice], 0.0, None)
+
+            if container.get("tendon_force_buf") is not None and container.get("tendon_model_indices") is not None:
+                # Model-driven tendons (see the 'tendon_est' module) are overridden with the model forces.
+                tendon_indices = container.tendon_model_indices
+                container.set_tendon_controls_buf[:, tendon_indices] = container.tendon_force_buf[:, tendon_indices]
+
+            if container.get("rigid_tendon_force_buf") is not None and container.get("rigid_tendon_indices") is not None:
+                # Rigid tendons (see the 'rigid_tendons' module) add a stretch-restoring force.
+                rigid_indices = container.rigid_tendon_indices
+                container.set_tendon_controls_buf[:, rigid_indices] += container.rigid_tendon_force_buf[:, rigid_indices]
+
             gym.set_spatial_tendon_forces(container.gpu_set_tendon_control_command_array)
         else:
             # Policy actions are applied only to the active motors.
@@ -250,12 +261,12 @@ class RobotControlModule(BaseModule):
                 container.scaled_act_buf[:, container.active_motor_slice], 0.0, None
             )
 
-        # Per-motor passive spring on all motors.
-        container.set_motor_cmd_buf[:] += (
-            -robot.spring_constants * robot.get_joint_pos_buf[:, robot.motor_to_joint_dof_index]
-        )
+        if container.get("antagonistic_spring_force_buf") is not None:
+            # Antagonistic spring forces (see the 'antagonistic_spring' module) are applied to all motors.
+            container.set_motor_cmd_buf[:] += container.antagonistic_spring_force_buf
         gym.set_motor_forces(container.gpu_set_motor_control_command_array)
 
         # Gravity compensation on base link.
-        container.set_force_torque_buf[:, :, 2] = 9.81 * robot.link_masses
-        gym.set_link_external_forces(container.set_force_torque_cmd_arr)
+        if robot.fixed_hand:
+            container.set_force_torque_buf[:, :, 2] = 9.81 * robot.link_masses
+            gym.set_link_external_forces(container.set_force_torque_cmd_arr)
