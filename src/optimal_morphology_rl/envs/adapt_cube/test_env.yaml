@@ -40,7 +40,7 @@ create_robot:
   fixed_hand: true
   fixed_hand_root_pos: [0.0, 0.0, 0.2]
   fixed_hand_root_quat: [-0.5, 0.5, -0.5, 0.5]
-  use_tendon: false
+  use_tendon: true
   randomize_pose: false
   friction_coefficient: 0.8
   # Make every motor controllable from the UI (no passive motors).
@@ -49,8 +49,8 @@ create_robot:
 robot_control: {}
 
 process_variable_actions:
-  min_dof_scale: -0.2
-  max_dof_scale: 0.2
+  min_dof_scale: -5.0
+  max_dof_scale: 5.0
 
 observation:
   num_hist: 1
@@ -69,8 +69,8 @@ render:
   paused: false
   raise_exception: true
   camera:
-    eye: [-0.671139, 0.073098, 0.726423]
-    target: [0.755459, -0.009100, -0.655133]
+    eye: [0.049792, 0.161890, 0.291726]
+    target: [0.586387, -0.742233, -0.324408]
 
 interactive_slider_control:
   enabled: true

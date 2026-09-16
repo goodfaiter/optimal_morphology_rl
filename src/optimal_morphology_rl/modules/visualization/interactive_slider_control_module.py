@@ -23,6 +23,11 @@ class InteractiveSliderControlModule(BaseModule):
     output, so the user is effectively sending normalized motor-force / root-
     velocity commands to the hand.
 
+    The slider labels and ranges depend on ``robot.use_tendon``:
+
+    - Tendon-driven hands: one slider per spatial tendon, range ``[0, 10]``.
+    - Motor-driven hands: one slider per active motor, range ``[-1, 1]``.
+
     A reset checkbox is also exposed; the runner is expected to poll it and
     call ``env.reset()`` when it becomes checked.
 
@@ -96,18 +101,28 @@ class InteractiveSliderControlModule(BaseModule):
         for i in range(num_actions):
             if is_floating and i < 6:
                 name = root_names[i]
+                slider_min, slider_max = -1.0, 1.0
             else:
-                motor_slot = i if robot.fixed_hand else i - 6
-                if active_indices is not None and motor_slot < len(active_indices):
-                    real_motor_idx = int(active_indices[motor_slot].item())
-                    motor_def = robot.art_def.get_motor_def(real_motor_idx)
-                    name = motor_def.name if motor_def.name else f"Motor {real_motor_idx}"
+                dof_slot = i if robot.fixed_hand else i - 6
+                if active_indices is not None and dof_slot < len(active_indices):
+                    real_idx = int(active_indices[dof_slot].item())
+                    if robot.use_tendon:
+                        tendon_def = robot.art_def.get_spatial_tendon_def(real_idx)
+                        name = tendon_def.name if tendon_def.name else f"Tendon {real_idx}"
+                        slider_min, slider_max = 0.0, 10.0
+                    else:
+                        motor_def = robot.art_def.get_motor_def(real_idx)
+                        name = motor_def.name if motor_def.name else f"Motor {real_idx}"
+                        slider_min, slider_max = -1.0, 1.0
                 else:
                     name = f"Action {i}"
+                    slider_min, slider_max = -1.0, 1.0
 
-            slider = v.UserSlider(name, -1.0, 1.0, 0.0)
+            slider = v.UserSlider(name, slider_min, slider_max, 0.0)
             gym_render.register_menu_item(slider)
             self.sliders.append(slider)
+
+
 
     def step(self, container: ModuleContainer) -> None:
         """Read slider values and write them to ``container.actions``."""
