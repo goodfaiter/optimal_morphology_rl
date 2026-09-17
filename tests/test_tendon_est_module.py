@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import torch
 
+from optimal_morphology_rl.modules import tendon_est_module
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.tendon_est_module import TendonEstModule
 
@@ -27,8 +28,9 @@ class _TinySpringModel(torch.nn.Module):
 
     @torch.jit.export
     def reset(self, mask: torch.Tensor) -> None:
-        keep = torch.ones_like(self.shift) * mask.logical_not().float()
-        self.shift = self.shift * keep
+        # The broadcast state resets whenever any row is selected.
+        if torch.count_nonzero(mask.float()).item() > 0:
+            self.shift = torch.zeros_like(self.shift)
 
 
 class _TinySpringWrapper(torch.nn.Module):
@@ -97,7 +99,7 @@ def _make_module(model_path: str, **overrides) -> TendonEstModule:
         "model_path": model_path,
         "pully_radius": 0.011,
         "model_tendon_indices": [0, 1],
-        "zero_offset_length": [0.0, 0.0, 0.0],
+        "zero_offset_length": [0.0, 0.0],
         "desired_min": -10.0,  # wide clamps so the step math is exact
         "desired_max": 10.0,
         "force_min": -100.0,
@@ -107,15 +109,16 @@ def _make_module(model_path: str, **overrides) -> TendonEstModule:
     return TendonEstModule(config)
 
 
-def test_post_finalize_loads_runners_and_allocates(container: ModuleContainer, tmp_path: Path) -> None:
+def test_post_finalize_loads_single_runner_and_allocates(container: ModuleContainer, tmp_path: Path) -> None:
     module = _make_module(_make_checkpoint(tmp_path))
     module.finalize(container)
     module.post_finalize(container)
 
-    assert len(module.runners) == 2
+    # One model, num_envs = total_num_envs x num_model_tendons.
+    assert module.model.num_envs == 2
     assert module.force_output_idx == 0
     assert container.tendon_force_buf.shape == (1, 3)
-    assert torch.allclose(container.tendon_model_indices, torch.tensor([0, 1]))
+    assert torch.equal(container.tendon_model_indices, torch.tensor([0, 1]))
 
 
 def test_step_writes_model_forces_for_model_tendons_only(container: ModuleContainer, tmp_path: Path) -> None:
@@ -137,16 +140,42 @@ def test_step_writes_model_forces_for_model_tendons_only(container: ModuleContai
     assert container.tendon_force_buf[:, 2].item() == 0.0
 
 
-def test_step_tracks_stateful_model_tendons(container: ModuleContainer, tmp_path: Path) -> None:
+def test_step_runs_single_flattened_forward(container: ModuleContainer, tmp_path: Path) -> None:
+    module = _make_module(_make_checkpoint(tmp_path))
+    module.finalize(container)
+    module.post_finalize(container)
+    module.step(container)
+    first = container.tendon_force_buf.clone()
+
+    # The tiny state grows per forward pass: the summed shift changes the force
+    # by 3 per step (each of the 3 features gets the shift before summing).
+    module.step(container)
+    assert torch.allclose(container.tendon_force_buf[:, :2], first[:, :2] - 3.0)
+
+
+def test_step_supports_multiple_envs(container: ModuleContainer, tmp_path: Path) -> None:
+    # Restriction lifted: batched rows = 2 envs x 2 model tendons, single forward.
+    container.total_num_envs = 2
     module = _make_module(_make_checkpoint(tmp_path))
     module.finalize(container)
     module.post_finalize(container)
 
+    assert module.model.num_envs == 4
+
+    container.scaled_act_buf = torch.tensor([[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]])
+    container.robot.get_tendon_lengths_buf = torch.tensor([[0.066, 0.055, 0.07], [0.066, 0.055, 0.07]])
+    container.robot.get_tendon_vel_buf = torch.tensor([[0.011, 0.0, 0.0], [0.011, 0.0, 0.0]])
     module.step(container)
-    first = container.tendon_force_buf.clone()
-    module.step(container)
-    # Tiny inner model adds the shift to each input column per forward (sum grows by 3).
-    assert torch.allclose(container.tendon_force_buf[:, :2], first[:, :2] - 3.0)
+
+    measured_0 = -0.066 / 0.011
+    measured_1 = -0.055 / 0.011
+    expected_0 = -(measured_0 + (measured_0 + 1.0) + -1.0)
+    expected_1 = -(measured_1 + (measured_1 + 2.0) + 0.0)
+
+    # Env-major rows: env 0 and env 1 produce identical rows for identical inputs.
+    assert torch.allclose(container.tendon_force_buf[:, 0], torch.full((2,), expected_0, dtype=torch.float32))
+    assert torch.allclose(container.tendon_force_buf[:, 1], torch.full((2,), expected_1, dtype=torch.float32))
+    assert torch.all(container.tendon_force_buf[:, 2] == 0.0)
 
 
 def test_reset_clears_model_state(container: ModuleContainer, tmp_path: Path) -> None:
@@ -179,7 +208,7 @@ def test_default_config_clamps(container: ModuleContainer, tmp_path: Path) -> No
         "model_path": _make_checkpoint(tmp_path),
         "pully_radius": 0.011,
         "model_tendon_indices": [0, 1],
-        "zero_offset_length": [0.0, 0.0, 0.0],
+        "zero_offset_length": [0.0, 0.0],
     })
     module.finalize(container)
     module.post_finalize(container)
@@ -211,13 +240,6 @@ def test_finalize_requires_tendon_robot(container: ModuleContainer, tmp_path: Pa
         module.finalize(container)
 
 
-def test_finalize_requires_single_env(container: ModuleContainer, tmp_path: Path) -> None:
-    container.total_num_envs = 2
-    module = _make_module(_make_checkpoint(tmp_path))
-    with pytest.raises(RuntimeError, match="single environment"):
-        module.finalize(container)
-
-
 def test_finalize_validates_model_tendon_indices(container: ModuleContainer, tmp_path: Path) -> None:
     module = _make_module(_make_checkpoint(tmp_path), model_tendon_indices=[])
     with pytest.raises(RuntimeError, match="model_tendon_indices"):
@@ -240,14 +262,15 @@ def test_post_finalize_requires_zero_offset_length(container: ModuleContainer, t
 
 
 def test_post_finalize_rejects_wrong_zero_offset_length(container: ModuleContainer, tmp_path: Path) -> None:
-    module = _make_module(_make_checkpoint(tmp_path), zero_offset_length=[0.0, 0.0])
+    module = _make_module(_make_checkpoint(tmp_path), zero_offset_length=[0.0])
     module.finalize(container)
     with pytest.raises(RuntimeError, match="zero_offset_length"):
         module.post_finalize(container)
 
 
 def test_step_maps_zero_offsets_per_tendon(container: ModuleContainer, tmp_path: Path) -> None:
-    module = _make_module(_make_checkpoint(tmp_path), zero_offset_length=[0.011, 0.0, 0.055])
+    # Zero offsets apply to the model tendons only (tendon 0 and tendon 1).
+    module = _make_module(_make_checkpoint(tmp_path), zero_offset_length=[0.011, 0.0])
     module.finalize(container)
     module.post_finalize(container)
     module.step(container)
@@ -257,7 +280,7 @@ def test_step_maps_zero_offsets_per_tendon(container: ModuleContainer, tmp_path:
     assert container.tendon_force_buf[:, 0].item() == pytest.approx(10.0, rel=1e-5)
     # Tendon 1: offset 0.0 -> unchanged from the zero-offset base case (output -8 -> force 8).
     assert container.tendon_force_buf[:, 1].item() == pytest.approx(8.0, rel=1e-5)
-    # Tendon 2 (offset 0.055) is never written by the module.
+    # Tendon 2 is never written by the module.
     assert container.tendon_force_buf[:, 2].item() == 0.0
 
 
@@ -290,3 +313,43 @@ def test_step_maps_action_slots_per_tendon(container: ModuleContainer, tmp_path:
     assert container.tendon_force_buf[:, 2].item() == pytest.approx(expected_2, rel=1e-5)
     # Tendon 0 is never written by the module.
     assert container.tendon_force_buf[:, 0].item() == 0.0
+
+
+class _FakeRunner:
+    """Captures construction and reset calls (used for reset-mask expansion)."""
+
+    def __init__(self, model_path: str, device: str = "cpu", num_envs: int = 1):
+        self.model_path = model_path
+        self.device = device
+        self.num_envs = num_envs
+        self.reset_masks: list[torch.Tensor] = []
+        self.input_columns = [
+            "measured_position_rad_data",
+            "desired_position_rad_data",
+            "measured_velocity_rad_per_sec_data",
+        ]
+        self.output_columns = ["tendon_bota_force_newton_data", "spring_coeff"]
+
+    def forward(self, timestep: torch.Tensor) -> torch.Tensor:
+        rows = timestep.size(0)
+        return torch.zeros((rows, 1, 2))
+
+    def reset_idx(self, mask: torch.Tensor) -> None:
+        self.reset_masks.append(mask)
+
+
+def test_reset_expands_mask_per_model_tendon(container: ModuleContainer, tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(tendon_est_module, "ModelRunner", _FakeRunner)
+    container.total_num_envs = 2  # 2 envs x 2 model tendons = 4 rows
+    module = _make_module(_make_checkpoint(tmp_path))
+    module.finalize(container)
+    module.post_finalize(container)
+
+    # 2 envs x 2 model tendons = 4 rows.
+    assert module.model.num_envs == 4
+
+    container.reset_buf = torch.tensor([True, False])
+    module.reset(container)
+
+    # Env-major: env 0 owns rows [0, 2), env 1 owns rows [2, 4).
+    assert torch.equal(module.model.reset_masks[-1], torch.tensor([True, True, False, False]))

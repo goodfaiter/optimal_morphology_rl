@@ -31,7 +31,7 @@ FEATURE_KEYS = (
 
 
 def _build_tendon_scale_tensor(cfg_value: Any, expected_len: int, device: torch.device, name: str) -> torch.Tensor:
-    """Convert a scalar or per-tendon list config value to a float tensor."""
+    """Convert a scalar or per-model-tendon list config value to a float tensor."""
     if isinstance(cfg_value, (list, tuple)):
         if len(cfg_value) != expected_len:
             raise RuntimeError(f"TendonEstModule config '{name}' length ({len(cfg_value)}) must match {expected_len}.")
@@ -43,22 +43,26 @@ def _build_tendon_scale_tensor(cfg_value: Any, expected_len: int, device: torch.
 class TendonEstModule(BaseModule):
     """Runs the tendon_est model to produce tendon forces for model-driven tendons.
 
-    One stateful :class:`~tendon_est.ModelRunner` is loaded per model-driven
-    tendon column (the scripted checkpoint processes a single environment and
-    a single tendon per call and keeps its history internally). Per model
-    tendon the model inputs are computed from the measured tendon state via
-    the pulley radius (``dL = radius [m] * angle [rad]``):
+    A single stateful :class:`~tendon_est.ModelRunner` is loaded and runs ONE
+    forward pass per step over ``num_envs x num_model_tendons`` rows (the
+    scripted checkpoint keeps its history per row). Per model tendon the model
+    inputs are computed from the measured tendon state via the pulley radius
+    (``dL = radius [m] * angle [rad]``):
 
     - ``measured_position_rad``: inverse motor angle from the measured tendon length
     - ``measured_velocity_rad_per_sec``: motor angular rate from the measured tendon speed
     - ``desired_position_rad``: measured position plus the scaled policy action,
       clamped to ``[desired_min, desired_max]``
 
+    ``pully_radius`` and ``zero_offset_length`` apply to the model-driven
+    tendons only (scalar, or one entry per ``model_tendon_indices`` entry) —
+    tendons excluded from the model (e.g. a rigid DIP) need no entries.
+
     The predicted tendon force is written to ``container.tendon_force_buf`` for
     the model-driven tendon columns (see ``container.tendon_model_indices``)
-    so ``robot_control`` can apply it via ``set_spatial_tendon_forces``. Tendon
-    columns not listed in ``model_tendon_indices`` (e.g. the DIP tendon) are
-    left untouched and remain under ``robot_control``'s own control.
+    so ``robot_control_tendons`` can apply it via ``set_spatial_tendon_forces``.
+    Tendon columns not listed in ``model_tendon_indices`` (e.g. the DIP tendon)
+    are left untouched and remain under ``robot_control_tendons``'s own control.
     """
 
     def finalize(self, container: ModuleContainer) -> None:
@@ -77,11 +81,6 @@ class TendonEstModule(BaseModule):
                 "TendonEstModule only supports tendon-driven robot configurations "
                 "(the 'create_robot' config must set 'use_tendon: true')."
             )
-        if container.total_num_envs != 1:
-            raise RuntimeError(
-                "TendonEstModule loads one stateful checkpoint per model-driven tendon and "
-                f"supports only a single environment, got {container.total_num_envs} environments."
-            )
 
         indices = self.config.get("model_tendon_indices")
         if not isinstance(indices, (list, tuple)) or len(indices) == 0:
@@ -95,9 +94,10 @@ class TendonEstModule(BaseModule):
         self.model_tendon_indices = indices
 
     def post_finalize(self, container: ModuleContainer) -> None:
-        """Load one ModelRunner per model tendon and allocate the force buffer."""
+        """Load the model runner and allocate the force buffer."""
         robot = container.robot
         device = container.device
+        num_model_tendons = len(self.model_tendon_indices)
 
         model_path = Path(self.config.get("model_path") or DEFAULT_MODEL_PATH)
         if not model_path.exists():
@@ -105,47 +105,45 @@ class TendonEstModule(BaseModule):
                 f"TendonEstModule model not found at '{model_path}'. Provide the 'tendon_est' "
                 "'model_path' config or update the default model path."
             )
-        self.runners: list[ModelRunner] = []
-        for _ in self.model_tendon_indices:
-            runner = ModelRunner(str(model_path), device=str(device), num_envs=1)
-            self.runners.append(runner)
+        # One forward pass per step over num_envs x num_model_tendons rows.
+        self.model = ModelRunner(str(model_path), device=str(device), num_envs=container.total_num_envs * num_model_tendons)
 
-        force_idx = next((i for i, column in enumerate(self.runners[0].output_columns) if "force" in column), None)
+        force_idx = next((i for i, column in enumerate(self.model.output_columns) if "force" in column), None)
         if force_idx is None:
-            raise RuntimeError(f"TendonEstModule: no force output column in the model outputs ({self.runners[0].output_columns}).")
+            raise RuntimeError(f"TendonEstModule: no force output column in the model outputs ({self.model.output_columns}).")
         self.force_output_idx = force_idx
 
-        self._feature_orders: list[list[str]] = []
-        for runner in self.runners:
-            order: list[str] = []
-            for column in runner.input_columns:
-                key = column.removesuffix("_data")
-                if key not in FEATURE_KEYS:
-                    raise RuntimeError(f"TendonEstModule: unsupported model input column '{column}'.")
-                order.append(key)
-            self._feature_orders.append(order)
+        order: list[str] = []
+        for column in self.model.input_columns:
+            key = column.removesuffix("_data")
+            if key not in FEATURE_KEYS:
+                raise RuntimeError(f"TendonEstModule: unsupported model input column '{column}'.")
+            order.append(key)
+        self._feature_order = order
 
         container.tendon_force_buf = torch.zeros((container.total_num_envs, robot.num_tendons), device=device, dtype=torch.float32)
         container.tendon_model_indices = torch.tensor(self.model_tendon_indices, device=device, dtype=torch.long)
 
-        self.pully_radius = _build_tendon_scale_tensor(self.config.get("pully_radius", 0.011), robot.num_tendons, device, "pully_radius")
+        self.pully_radius = _build_tendon_scale_tensor(self.config.get("pully_radius", 0.011), num_model_tendons, device, "pully_radius")
         zero_offset_length = self.config.get("zero_offset_length")
         if zero_offset_length is None:
             raise RuntimeError(
-                "TendonEstModule config missing 'zero_offset_length': a per-tendon list of tendon zero-offset lengths."
+                "TendonEstModule config missing 'zero_offset_length': a per-model-tendon list "
+                "of tendon zero-offset lengths (rigid tendons need no entry)."
             )
-        self.zero_offset_length = _build_tendon_scale_tensor(zero_offset_length, robot.num_tendons, device, "zero_offset_length")
+        self.zero_offset_length = _build_tendon_scale_tensor(zero_offset_length, num_model_tendons, device, "zero_offset_length")
         self.desired_min = float(self.config.get("desired_min", 0.0))
         self.desired_max = float(self.config.get("desired_max", 2.0 * math.pi))
         self.force_min = float(self.config.get("force_min", 0.0))
         self.force_max = float(self.config.get("force_max", 30.0))
 
     def step(self, container: ModuleContainer) -> None:
-        """Feed the measured/desired joint state of each model tendon to the model."""
+        """Feed the measured/desired joint state of every model tendon in ONE forward pass."""
         robot = container.robot
+        num_model_tendons = len(self.model_tendon_indices)
 
-        tendon_lengths = robot.get_tendon_lengths_buf
-        tendon_vels = robot.get_tendon_vel_buf
+        tendon_lengths = robot.get_tendon_lengths_buf[:, self.model_tendon_indices]
+        tendon_vels = robot.get_tendon_vel_buf[:, self.model_tendon_indices]
         actions = container.scaled_act_buf[:, container.active_dof_slice]
 
         # Map each model tendon to its policy-action slot within the
@@ -153,34 +151,32 @@ class TendonEstModule(BaseModule):
         dof_indices = [int(v) for v in container.active_dof_indices.tolist()]
         action_slots = [dof_indices.index(tendon_idx) for tendon_idx in self.model_tendon_indices]
 
-        # dL = radius [m] * angle [rad]
+        # dL = radius [m] * angle [rad] (model tendons only)
         measured_pos_rad = -1.0 * (tendon_lengths - self.zero_offset_length) / self.pully_radius
         measured_vel_rad_per_sec = -1.0 * tendon_vels / self.pully_radius
-        # The desired position is action-driven only for the model-driven tendon columns.
-        desired_pos_rad = measured_pos_rad.clone()
-        desired_pos_rad[:, self.model_tendon_indices] = torch.clamp(
-            measured_pos_rad[:, self.model_tendon_indices] + actions[:, action_slots],
+        desired_pos_rad = torch.clamp(
+            measured_pos_rad + actions[:, action_slots],
             min=self.desired_min,
             max=self.desired_max,
         )
 
-        raw_features = {
+        feature_map = {
             "measured_position_rad": measured_pos_rad,
             "desired_position_rad": desired_pos_rad,
             "measured_velocity_rad_per_sec": measured_vel_rad_per_sec,
         }
+        raw = torch.stack([feature_map[key] for key in self._feature_order], dim=-1)  # [num_envs, T, 3]
 
-        print(raw_features)
+        # Env-major flattening: row = env * num_model_tendons + tendon.
+        timestep = raw.reshape(container.total_num_envs * num_model_tendons, 3)
+        output = self.model.forward(timestep)
 
-        for tendon_idx, runner, order in zip(self.model_tendon_indices, self.runners, self._feature_orders):
-            timestep = torch.stack([raw_features[key][:, tendon_idx] for key in order], dim=-1)
-            output = runner.forward(timestep)
-            print(output)
-            force = -1.0 * output[:, 0, self.force_output_idx]
-            container.tendon_force_buf[:, tendon_idx] = torch.clamp(force, min=self.force_min, max=self.force_max)
+        force = -1.0 * output[:, 0, self.force_output_idx]
+        force = force.reshape(container.total_num_envs, num_model_tendons)
+        container.tendon_force_buf[:, self.model_tendon_indices] = torch.clamp(force, min=self.force_min, max=self.force_max)
 
     def reset(self, container: ModuleContainer) -> None:
         """Reset the internal model state of the environments selected by the reset buffer."""
-        reset_buf = container.reset_buf
-        for runner in self.runners:
-            runner.reset_idx(reset_buf)
+        num_model_tendons = len(self.model_tendon_indices)
+        # Env i owns the tendon rows [i * T, (i + 1) * T) (env-major flattening).
+        self.model.reset_idx(container.reset_buf.repeat_interleave(num_model_tendons))

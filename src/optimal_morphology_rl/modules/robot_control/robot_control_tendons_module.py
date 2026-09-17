@@ -49,7 +49,6 @@ class RobotControlTendonsModule(BaseModule):
         if container.get("tendon_force_buf") is not None and container.get("tendon_model_indices") is not None:
             # Model-driven tendons (see the 'tendon_est' module) are overridden with the model forces.
             tendon_indices = container.tendon_model_indices
-            print(tendon_indices)
             container.set_tendon_controls_buf[:, tendon_indices] = container.tendon_force_buf[:, tendon_indices]
 
         if container.get("rigid_tendon_force_buf") is not None and container.get("rigid_tendon_indices") is not None:
