@@ -129,9 +129,12 @@ class TendonEstModule(BaseModule):
         container.tendon_model_indices = torch.tensor(self.model_tendon_indices, device=device, dtype=torch.long)
 
         self.pully_radius = _build_tendon_scale_tensor(self.config.get("pully_radius", 0.011), robot.num_tendons, device, "pully_radius")
-        self.zero_offset_length = _build_tendon_scale_tensor(
-            self.config.get("zero_offset_length", 0.0), robot.num_tendons, device, "zero_offset_length"
-        )
+        zero_offset_length = self.config.get("zero_offset_length")
+        if zero_offset_length is None:
+            raise RuntimeError(
+                "TendonEstModule config missing 'zero_offset_length': a per-tendon list of tendon zero-offset lengths."
+            )
+        self.zero_offset_length = _build_tendon_scale_tensor(zero_offset_length, robot.num_tendons, device, "zero_offset_length")
         self.desired_min = float(self.config.get("desired_min", 0.0))
         self.desired_max = float(self.config.get("desired_max", 2.0 * math.pi))
         self.force_min = float(self.config.get("force_min", 0.0))
@@ -161,7 +164,8 @@ class TendonEstModule(BaseModule):
         for tendon_idx, runner, order in zip(self.model_tendon_indices, self.runners, self._feature_orders):
             timestep = torch.stack([raw_features[key][:, tendon_idx] for key in order], dim=-1)
             output = runner.forward(timestep)
-            force = output[:, 0, self.force_output_idx]
+            print(output)
+            force = -1.0 * output[:, 0, self.force_output_idx]
             container.tendon_force_buf[:, tendon_idx] = torch.clamp(force, min=self.force_min, max=self.force_max)
 
     def reset(self, container: ModuleContainer) -> None:

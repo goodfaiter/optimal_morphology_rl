@@ -26,7 +26,7 @@ create_rigid_vsim_envs:
   rendering: true
   with_window: true
   enable_scene_query: true
-  timestep: ${1/120}
+  timestep: ${1/200}
   frame_skip: 2
   spacing: 0.75
   gravity: [0.0, 0.0, -9.81]
@@ -47,8 +47,9 @@ create_robot:
 
 robot_control: {}
 
-antagonistic_spring:
-  spring_constants: 0.1
+interactive_slider_control:
+  slider_min: 0.0
+  slider_max: 1.0
 
 process_variable_actions:
   min_dof_scale: -5.0
@@ -57,9 +58,13 @@ process_variable_actions:
 tendon_est:
   pully_radius: 0.011
   model_tendon_indices: [0, 1]
+  zero_offset_length: [0.057, 0.040, 0.067]
 
 rigid_tendons:
   rigid_tendon_indices: [-1]
+
+antagonistic_spring:
+  spring_constants: 0.1
 
 observation:
   num_hist: 1
@@ -80,7 +85,3 @@ render:
   camera:
     eye: [0.049792, 0.161890, 0.291726]
     target: [0.586387, -0.742233, -0.324408]
-
-interactive_slider_control:
-  enabled: true
-  reset_name: "Reset"

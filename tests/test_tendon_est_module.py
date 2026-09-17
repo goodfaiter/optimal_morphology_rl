@@ -96,6 +96,7 @@ def _make_module(model_path: str, **overrides) -> TendonEstModule:
         "model_path": model_path,
         "pully_radius": 0.011,
         "model_tendon_indices": [0, 1],
+        "zero_offset_length": [0.0, 0.0, 0.0],
         "desired_min": -10.0,  # wide clamps so the step math is exact
         "desired_max": 10.0,
         "force_min": -100.0,
@@ -177,6 +178,7 @@ def test_default_config_clamps(container: ModuleContainer, tmp_path: Path) -> No
         "model_path": _make_checkpoint(tmp_path),
         "pully_radius": 0.011,
         "model_tendon_indices": [0, 1],
+        "zero_offset_length": [0.0, 0.0, 0.0],
     })
     module.finalize(container)
     module.post_finalize(container)
@@ -223,6 +225,39 @@ def test_finalize_validates_model_tendon_indices(container: ModuleContainer, tmp
     module = _make_module(_make_checkpoint(tmp_path), model_tendon_indices=[0, 5])
     with pytest.raises(RuntimeError, match="model_tendon_indices"):
         module.finalize(container)
+
+
+def test_post_finalize_requires_zero_offset_length(container: ModuleContainer, tmp_path: Path) -> None:
+    module = TendonEstModule({
+        "model_path": _make_checkpoint(tmp_path),
+        "pully_radius": 0.011,
+        "model_tendon_indices": [0, 1],
+    })
+    module.finalize(container)
+    with pytest.raises(RuntimeError, match="zero_offset_length"):
+        module.post_finalize(container)
+
+
+def test_post_finalize_rejects_wrong_zero_offset_length(container: ModuleContainer, tmp_path: Path) -> None:
+    module = _make_module(_make_checkpoint(tmp_path), zero_offset_length=[0.0, 0.0])
+    module.finalize(container)
+    with pytest.raises(RuntimeError, match="zero_offset_length"):
+        module.post_finalize(container)
+
+
+def test_step_maps_zero_offsets_per_tendon(container: ModuleContainer, tmp_path: Path) -> None:
+    module = _make_module(_make_checkpoint(tmp_path), zero_offset_length=[0.011, 0.0, 0.055])
+    module.finalize(container)
+    module.post_finalize(container)
+    module.step(container)
+
+    # measured = -(length - offset) / radius; force = measured + desired + vel (tiny model).
+    # Tendon 0: measured = -(0.066 - 0.011)/0.011 = -5.0, desired = -4.0, vel = -1.0 -> -10.0.
+    assert container.tendon_force_buf[:, 0].item() == pytest.approx(-10.0, rel=1e-5)
+    # Tendon 1: offset 0.0 -> unchanged from the zero-offset base case (-8.0).
+    assert container.tendon_force_buf[:, 1].item() == pytest.approx(-8.0, rel=1e-5)
+    # Tendon 2 (offset 0.055) is never written by the module.
+    assert container.tendon_force_buf[:, 2].item() == 0.0
 
 
 def test_post_finalize_requires_existing_model(container: ModuleContainer, tmp_path: Path) -> None:
