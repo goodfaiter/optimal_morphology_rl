@@ -148,10 +148,21 @@ class TendonEstModule(BaseModule):
         tendon_vels = robot.get_tendon_vel_buf
         actions = container.scaled_act_buf[:, container.active_dof_slice]
 
+        # Map each model tendon to its policy-action slot within the
+        # policy-controlled tendon columns (fixed tendons have no action).
+        dof_indices = [int(v) for v in container.active_dof_indices.tolist()]
+        action_slots = [dof_indices.index(tendon_idx) for tendon_idx in self.model_tendon_indices]
+
         # dL = radius [m] * angle [rad]
         measured_pos_rad = -1.0 * (tendon_lengths - self.zero_offset_length) / self.pully_radius
         measured_vel_rad_per_sec = -1.0 * tendon_vels / self.pully_radius
-        desired_pos_rad = torch.clamp(measured_pos_rad + actions, min=self.desired_min, max=self.desired_max)
+        # The desired position is action-driven only for the model-driven tendon columns.
+        desired_pos_rad = measured_pos_rad.clone()
+        desired_pos_rad[:, self.model_tendon_indices] = torch.clamp(
+            measured_pos_rad[:, self.model_tendon_indices] + actions[:, action_slots],
+            min=self.desired_min,
+            max=self.desired_max,
+        )
 
         raw_features = {
             "measured_position_rad": measured_pos_rad,

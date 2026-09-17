@@ -29,17 +29,28 @@ class _FakeMotorDef:
         self.name = name
 
 
+class _FakeTendonDef:
+    def __init__(self, name: str):
+        self.name = name
+
+
 class _FakeArtDef:
-    def __init__(self, motor_names):
+    def __init__(self, motor_names, tendon_names=None):
         self._motor_names = motor_names
+        self._tendon_names = tendon_names or []
 
     def get_motor_def(self, i: int) -> _FakeMotorDef:
         return _FakeMotorDef(self._motor_names[i])
 
+    def get_spatial_tendon_def(self, i: int) -> _FakeTendonDef:
+        return _FakeTendonDef(self._tendon_names[i])
+
 
 class _FakeRobot:
-    def __init__(self, fixed_hand: bool, use_tendon: bool, num_tendons: int = 2, num_motors: int = 4):
-        self.art_def = _FakeArtDef(["mcp", "pip", "abd", "lum"])
+    def __init__(self, fixed_hand: bool, use_tendon: bool, num_tendons: int = 2, num_motors: int = 4, tendon_names=None):
+        if tendon_names is None:
+            tendon_names = [f"tendon_{i}" for i in range(num_tendons)]
+        self.art_def = _FakeArtDef(["mcp", "pip", "abd", "lum"], tendon_names=tendon_names)
         self.use_tendon = use_tendon
         self.fixed_hand = fixed_hand
         self.num_tendons = num_tendons if use_tendon else 0
@@ -190,6 +201,61 @@ def test_tendons_module_requires_tendon_robot(container: ModuleContainer) -> Non
     module = RobotControlTendonsModule({})
     with pytest.raises(RuntimeError, match="tendon-driven"):
         module.finalize(container)
+
+
+def test_mask_excludes_fixed_tendons_from_policy_actions(container: ModuleContainer) -> None:
+    container.robot = _FakeRobot(
+        fixed_hand=False, use_tendon=True, num_tendons=3,
+        tendon_names=["mcp_tendon", "pip_tendon", "dip_tendon"],
+    )
+    container.create_robot_config = {"fixed_tendon_substrings": ["dip"]}
+    container.num_actions = None  # reset the guard so the action space is (re)built
+
+    module = RobotControlTendonsModule({})
+    module.finalize(container)
+
+    assert container.num_active_dofs == 2
+    assert torch.equal(container.active_dof_mask, torch.tensor([True, True, False]))
+    assert torch.equal(container.active_dof_indices.to(torch.long), torch.tensor([0, 1]))
+    assert container.active_dof_slice == slice(6, 8)
+    assert container.num_actions == 8  # 6 root + 2 policy-controlled tendons
+
+
+def test_mask_includes_all_tendons_without_config(container: ModuleContainer) -> None:
+    module = RobotControlTendonsModule({})
+    module.finalize(container)
+
+    assert container.num_active_dofs == 2
+    assert torch.equal(container.active_dof_indices.to(torch.long), torch.tensor([0, 1]))
+
+
+def test_tendons_module_scatter_leaves_fixed_tendon_zero(container: ModuleContainer) -> None:
+    container.robot = _FakeRobot(
+        fixed_hand=False, use_tendon=True, num_tendons=3,
+        tendon_names=["mcp_tendon", "pip_tendon", "dip_tendon"],
+    )
+    container.create_robot_config = {"fixed_tendon_substrings": ["dip"]}
+    container.num_actions = None
+
+    module = RobotControlTendonsModule({})
+    module.finalize(container)
+    module.post_finalize(container)
+
+    container.scaled_act_buf = torch.zeros((1, 8))
+    container.scaled_act_buf[:, 6:8] = 0.5
+
+    container.set_tendon_controls_buf = torch.full((1, 3), 9.0)
+    container.rigid_tendon_force_buf = torch.tensor([[0.0, 0.0, 3.0]])
+    container.rigid_tendon_indices = torch.tensor([-1])
+
+    module.step(container)
+    module.step(container)
+
+    # Policy columns (MCP/PIP) get the clamped actions...
+    assert torch.allclose(container.set_tendon_controls_buf[:, :2], torch.full((2,), 0.5))
+    # ...while the fixed DIP tendon only receives the rigid force, with no
+    # cross-step accumulation despite the repeated rigid add.
+    assert container.set_tendon_controls_buf[:, -1].item() == pytest.approx(3.0)
 
 
 def test_motors_module_writes_policy_force_buffer(container: ModuleContainer) -> None:

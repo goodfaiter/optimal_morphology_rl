@@ -84,6 +84,7 @@ def container() -> ModuleContainer:
     cont.env = _FakeEnv()
     cont.robot = _FakeRobot()
     cont.active_dof_slice = slice(0, 3)
+    cont.active_dof_indices = torch.tensor([0, 1, 2])
     cont.scaled_act_buf = torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32)
     cont.reset_buf = torch.zeros(1, dtype=torch.bool)
     cont.robot.get_tendon_lengths_buf = torch.tensor([[0.066, 0.055, 0.07]])
@@ -265,3 +266,27 @@ def test_post_finalize_requires_existing_model(container: ModuleContainer, tmp_p
     module.finalize(container)
     with pytest.raises(FileNotFoundError, match="model not found"):
         module.post_finalize(container)
+
+
+def test_step_maps_action_slots_per_tendon(container: ModuleContainer, tmp_path: Path) -> None:
+    # Fixed tendon 0 excluded from the policy: active dofs [1, 2], model tendons [1, 2].
+    module = _make_module(_make_checkpoint(tmp_path), model_tendon_indices=[1, 2])
+    module.finalize(container)
+    module.post_finalize(container)
+
+    container.active_dof_indices = torch.tensor([1, 2])
+    container.active_dof_slice = slice(0, 2)
+    container.scaled_act_buf = torch.tensor([[1.0, 2.0]])
+    module.step(container)
+
+    # desired = clamp(measured + actions[:, slot]); slot 0 belongs to tendon 1.
+    # Tiny model force (first step, shift 0) = -(measured + desired + vel).
+    measured_1 = -0.055 / 0.011
+    measured_2 = -0.07 / 0.011
+    expected_1 = -(measured_1 + (measured_1 + 1.0) + 0.0)   # slot 0 action (1.0)
+    expected_2 = -(measured_2 + (measured_2 + 2.0) + 0.0)   # slot 1 action (2.0)
+
+    assert container.tendon_force_buf[:, 1].item() == pytest.approx(expected_1, rel=1e-5)
+    assert container.tendon_force_buf[:, 2].item() == pytest.approx(expected_2, rel=1e-5)
+    # Tendon 0 is never written by the module.
+    assert container.tendon_force_buf[:, 0].item() == 0.0

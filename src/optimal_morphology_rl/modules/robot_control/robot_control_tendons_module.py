@@ -37,7 +37,12 @@ class RobotControlTendonsModule(BaseModule):
 
     def step(self, container: ModuleContainer) -> None:
         """Compose the tendon control commands."""
-        container.set_tendon_controls_buf[:] = torch.clamp(
+        tendons = container.set_tendon_controls_buf
+        # Zero the full buffer, then scatter the policy clamp onto the
+        # policy-controlled tendon columns only (fixed tendons stay at zero
+        # and are driven by modules like 'rigid_tendons').
+        tendons[:] = 0.0
+        tendons[:, container.active_dof_indices] = torch.clamp(
             container.scaled_act_buf[:, container.active_dof_slice], 0.0, None
         )
 

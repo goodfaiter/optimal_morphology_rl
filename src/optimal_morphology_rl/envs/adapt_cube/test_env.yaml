@@ -46,6 +46,9 @@ create_robot:
   fixed_hand_root_quat: [-0.5, 0.5, -0.5, 0.5]
   use_tendon: true
   randomize_pose: false
+  # The DIP tendon is fixed (FixedTendonMaterial, driven by rigid_tendons) and
+  # gets no policy action.
+  fixed_tendon_substrings: ["dip"]
   # Make every motor controllable from the UI (no passive motors).
   passive_motor_substrings: []
 
@@ -71,8 +74,7 @@ tendon_est:
   model_tendon_indices: [0, 1]
   zero_offset_length: [0.057, 0.040, 0.067]
 
-rigid_tendons:
-  rigid_tendon_indices: [-1]
+rigid_tendons: {}
 
 antagonistic_spring:
   spring_constants: 0.1

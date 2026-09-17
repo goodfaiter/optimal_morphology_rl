@@ -14,11 +14,13 @@ from optimal_morphology_rl.modules.module_container import ModuleContainer
 def build_active_dof_mask(container: ModuleContainer, config: dict[str, Any]) -> None:
     """Build the mask and slices used to map policy actions to robot actuators.
 
-    For tendon-driven hands the action vector maps directly to the tendons.
-    For motor-driven hands, motors whose names contain any of the substrings in
-    ``passive_motor_substrings`` are passive (spring only); everything else is
-    active. Alternatively ``active_motor_substrings`` can be provided to
-    explicitly select active motors.
+    For tendon-driven hands the policy actions map to the tendon columns whose
+    names contain none of the substrings in ``fixed_tendon_substrings`` (key
+    absent: every tendon is policy-controlled). For motor-driven hands, motors
+    whose names contain any of the substrings in ``passive_motor_substrings``
+    are passive (spring only); everything else is active. Alternatively
+    ``active_motor_substrings`` can be provided to explicitly select active
+    motors.
 
     Results are stored directly on ``container``.
     """
@@ -30,11 +32,19 @@ def build_active_dof_mask(container: ModuleContainer, config: dict[str, Any]) ->
     container.root_slice = slice(0, 6) if not robot.fixed_hand else slice(0, 0)
 
     if robot.use_tendon:
-        # Tendon-driven hands: actions map one-to-one to spatial tendons.
-        num_active = robot.num_tendons
+        # Tendon-driven hands: policy actions map to the tendon columns whose
+        # names contain none of the ``fixed_tendon_substrings`` (fixed tendons
+        # are driven only by modules like 'rigid_tendons').
+        num_tendons = robot.num_tendons
+        fixed_substrings = [s.lower() for s in config.get("fixed_tendon_substrings", [])]
+        mask = torch.ones(num_tendons, dtype=torch.bool, device=device)
+        for i in range(num_tendons):
+            name = robot.art_def.get_spatial_tendon_def(i).name.lower()
+            mask[i] = not (fixed_substrings and any(sub in name for sub in fixed_substrings))
+        num_active = int(mask.sum().item())
         container.num_active_dofs = num_active
-        container.active_dof_mask = torch.ones(num_active, dtype=torch.bool, device=device)
-        container.active_dof_indices = torch.arange(num_active, device=device)
+        container.active_dof_mask = mask
+        container.active_dof_indices = torch.nonzero(mask, as_tuple=False).flatten()
         if robot.fixed_hand:
             container.active_dof_slice = slice(0, num_active)
         else:
@@ -63,10 +73,9 @@ def build_active_dof_mask(container: ModuleContainer, config: dict[str, Any]) ->
 
 
 def get_num_actions(container: ModuleContainer) -> int:
-    """Return the number of actions for the robot."""
+    """Return the number of policy actions for the robot (root dofs + active dofs)."""
     robot = container.robot
-    num_active = robot.num_tendons if robot.use_tendon else container.num_active_dofs
-    return num_active if robot.fixed_hand else 6 + num_active
+    return container.num_active_dofs if robot.fixed_hand else 6 + container.num_active_dofs
 
 
 def build_action_space(container: ModuleContainer) -> None:
