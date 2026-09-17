@@ -28,9 +28,9 @@ class _FakeRobot:
 
 
 def _setup_control_attrs(container: ModuleContainer, num_actions: int) -> None:
-    num_active_motors = num_actions - 6
+    num_active_dofs = num_actions - 6
     container.root_slice = slice(0, 6)
-    container.active_motor_slice = slice(6, 6 + num_active_motors)
+    container.active_dof_slice = slice(6, 6 + num_active_dofs)
 
 
 @pytest.fixture

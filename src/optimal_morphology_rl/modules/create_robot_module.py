@@ -166,7 +166,6 @@ class RobotModule(BaseModule):
         self.robot.create_envs(container.env_def, vsim_path, container.device)
 
         self.randomize_pose = bool(self.config.get("randomize_pose", False))
-        self.fric_coeff = self.config.get("friction_coefficient", None)
 
         default_quat = [0.6963642, 0.1227878, -0.1227878, 0.6963642]
         quat = self.config.get("fixed_hand_root_quat", default_quat)
@@ -184,15 +183,39 @@ class RobotModule(BaseModule):
         container.robot_vsim_path = vsim_path
         container.create_robot_config = self.config
 
+    def post_finalize(self, container: ModuleContainer) -> None:
+        """Allocate the reset buffers and create the reset kinematic command."""
+        if container.get("reset_buf") is None:
+            raise RuntimeError("RobotModule requires 'reset_buf' in the shared container. Ensure 'termination' is loaded.")
+
+        robot = self.robot
+        device = container.device
+        total_num_envs = container.total_num_envs
+
+        container.reset_joint_pos_buf = torch.zeros((total_num_envs, robot.num_joints), device=device, dtype=torch.float32)
+        container.reset_joint_vel_buf = torch.zeros((total_num_envs, robot.num_joints), device=device, dtype=torch.float32)
+        container.reset_root_transform_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
+        container.reset_root_vel_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
+
+        reset_kin_cmd = container.env_group.create_articulation_kinematic_state_command(
+            v.wrap_gpu_buffer(container.reset_joint_pos_buf),
+            v.wrap_gpu_buffer(container.reset_joint_vel_buf),
+            v.wrap_gpu_buffer(container.reset_root_transform_buf),
+            v.wrap_gpu_buffer(container.reset_root_vel_buf),
+            robot.arti_handle,
+            (0, robot.num_joints),
+            (0, 1),
+            masks_buffer=v.wrap_gpu_buffer(container.reset_buf),
+        )
+        container.gpu_reset_kinematic_state_command_array = container.gym.create_gpu_array([reset_kin_cmd])
+
     def reset(self, container: ModuleContainer) -> None:
         """Reset the robot hand to its initial state."""
-        robot = container.robot
         reset_buf = container.reset_buf
         device = container.device
         gym = container.gym
 
         randomize_pose = bool(self.config.get("randomize_pose", False))
-        fric_coeff = self.config.get("friction_coefficient", None)
 
         container.reset_joint_pos_buf[reset_buf, :] = 0.0
         container.reset_joint_vel_buf[reset_buf, :] = 0.0
@@ -211,14 +234,3 @@ class RobotModule(BaseModule):
                 container.reset_root_transform_buf[reset_buf, :4] = torch.tensor([0.0, 0.0, 0.0, 1.0], device=device)
         container.reset_root_vel_buf[reset_buf, :] = 0.0
         gym.set_articulation_kinematic_states(container.gpu_reset_kinematic_state_command_array)
-
-        total_num_envs = reset_buf.shape[0]
-        if total_num_envs != 1 and fric_coeff is None:
-            static_friction = torch.rand(1, device=device).item() * 0.9 + 0.1
-        else:
-            static_friction = 0.1 if fric_coeff is None else fric_coeff
-        dynamic_friction = static_friction * 0.75
-
-        container.set_static_friction_buf[0] = static_friction * 2.0
-        container.set_dynamic_friction_buf[0] = dynamic_friction * 2.0
-        gym.set_rigid_material_properties(container.gpu_set_friction_cmd)

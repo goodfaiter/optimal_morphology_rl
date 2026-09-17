@@ -2,6 +2,7 @@ modules:
   init_modules:
     - create_rigid_vsim_envs
     - create_robot
+    - randomize_friction
     - termination
     - render
   pre_physics_step_modules:
@@ -11,7 +12,11 @@ modules:
     - tendon_est
     - rigid_tendons
     - antagonistic_spring
-    - robot_control
+    - robot_control_tendons
+    - apply_tendon_forces
+    - apply_motor_forces
+    - gravity_compensation
+    - apply_root_forces
   pre_gym_step_modules: []
   post_gym_step_modules: []
   post_physics_step_modules:
@@ -41,11 +46,17 @@ create_robot:
   fixed_hand_root_quat: [-0.5, 0.5, -0.5, 0.5]
   use_tendon: true
   randomize_pose: false
-  friction_coefficient: 0.8
   # Make every motor controllable from the UI (no passive motors).
   passive_motor_substrings: []
 
-robot_control: {}
+robot_control_tendons: {}
+apply_tendon_forces: {}
+apply_motor_forces: {}
+gravity_compensation: {}
+apply_root_forces: {}
+
+randomize_friction:
+  friction_coefficient: 0.8
 
 interactive_slider_control:
   slider_min: 0.0

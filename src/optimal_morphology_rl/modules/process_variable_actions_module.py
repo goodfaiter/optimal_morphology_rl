@@ -36,9 +36,7 @@ def _build_scale_tensor(
     """Convert a scalar or list config value to a float tensor of the expected length."""
     if isinstance(cfg_value, (list, tuple)):
         if len(cfg_value) != expected_len:
-            raise RuntimeError(
-                f"{name} length ({len(cfg_value)}) must match {expected_len}."
-            )
+            raise RuntimeError(f"{name} length ({len(cfg_value)}) must match {expected_len}.")
         return torch.tensor(cfg_value, device=device, dtype=torch.float32)
     return torch.full((expected_len,), float(cfg_value), device=device, dtype=torch.float32)
 
@@ -52,14 +50,11 @@ def _build_optional_scale_tensor(
     """Convert a scalar or list config value, returning an empty tensor when length is zero."""
     if expected_len == 0:
         if cfg_value is not None and cfg_value != []:
-            raise RuntimeError(
-                f"{name} should not be provided when the robot has no base velocity DOFs."
-            )
+            raise RuntimeError(f"{name} should not be provided when the robot has no base velocity DOFs.")
         return torch.empty((0,), device=device, dtype=torch.float32)
     if cfg_value is None:
         raise RuntimeError(f"ProcessVariableActionsModule config missing '{name}'.")
     return _build_scale_tensor(cfg_value, expected_len, device, name)
-
 
 
 @register_module("process_variable_actions")
@@ -104,14 +99,10 @@ class ProcessVariableActionsModule(BaseModule):
         """Create velocity and active-DOF scale tensors from config."""
         device = container.device
         root_dim = container.root_slice.stop - container.root_slice.start
-        num_active = container.active_motor_slice.stop - container.active_motor_slice.start
+        num_active = container.active_dof_slice.stop - container.active_dof_slice.start
 
-        self.min_velocity = _build_optional_scale_tensor(
-            self.config.get("min_velocity"), root_dim, device, "min_velocity"
-        )
-        self.max_velocity = _build_optional_scale_tensor(
-            self.config.get("max_velocity"), root_dim, device, "max_velocity"
-        )
+        self.min_velocity = _build_optional_scale_tensor(self.config.get("min_velocity"), root_dim, device, "min_velocity")
+        self.max_velocity = _build_optional_scale_tensor(self.config.get("max_velocity"), root_dim, device, "max_velocity")
 
         for key in ("min_dof_scale", "max_dof_scale"):
             if key not in self.config:
@@ -134,9 +125,9 @@ class ProcessVariableActionsModule(BaseModule):
                 self.min_velocity,
                 self.max_velocity,
             )
-        if container.active_motor_slice.stop > container.active_motor_slice.start:
-            scaled_act_buf[:, container.active_motor_slice] = scale(
-                act_buf[:, container.active_motor_slice],
+        if container.active_dof_slice.stop > container.active_dof_slice.start:
+            scaled_act_buf[:, container.active_dof_slice] = scale(
+                act_buf[:, container.active_dof_slice],
                 self.min_dof_scale,
                 self.max_dof_scale,
             )

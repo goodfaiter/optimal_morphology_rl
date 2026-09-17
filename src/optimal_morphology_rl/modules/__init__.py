@@ -6,6 +6,12 @@
 from optimal_morphology_rl.envs.hand_cube import rewards as _hand_cube_rewards
 from optimal_morphology_rl.envs.hand_cube import terminations as _hand_cube_terminations
 from optimal_morphology_rl.modules.antagonistic_spring_module import AntagonisticSpring
+from optimal_morphology_rl.modules.apply_control import (
+    ApplyMotorForcesModule,
+    ApplyRootForcesModule,
+    ApplyRootVelocityModule,
+    ApplyTendonForcesModule,
+)
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.camera_recorder_module import CameraRecorderModule
 from optimal_morphology_rl.modules.color_articulation_links_module import (
@@ -18,6 +24,7 @@ from optimal_morphology_rl.modules.create_objects_module import CreateObjectsMod
 from optimal_morphology_rl.modules.create_rigid_vsim_envs import CreateRigidVsimEnvs
 from optimal_morphology_rl.modules.create_robot_module import RobotModule
 from optimal_morphology_rl.modules.external_force_module import ExternalForceModule
+from optimal_morphology_rl.modules.gravity_compensation_module import GravityCompensationModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import (
     DEFAULT_REGISTRY,
@@ -42,6 +49,7 @@ from optimal_morphology_rl.modules.process_fixed_actions_module import (
 from optimal_morphology_rl.modules.process_variable_actions_module import (
     ProcessVariableActionsModule,
 )
+from optimal_morphology_rl.modules.randomize_friction_module import RandomizeFrictionModule
 from optimal_morphology_rl.modules.rewards import (
     REWARD_REGISTRY,
     RewardBaseModule,
@@ -49,7 +57,11 @@ from optimal_morphology_rl.modules.rewards import (
     register_reward,
 )
 from optimal_morphology_rl.modules.rigid_tendons_module import RigidTendons
-from optimal_morphology_rl.modules.robot_control_module import RobotControlModule
+from optimal_morphology_rl.modules.robot_control import (
+    RobotControlFloatingHandModule,
+    RobotControlMotorsModule,
+    RobotControlTendonsModule,
+)
 from optimal_morphology_rl.modules.tendon_est_module import TendonEstModule
 from optimal_morphology_rl.modules.terminations import (
     TERMINATION_REGISTRY,
@@ -76,6 +88,10 @@ __all__ = [
     "REWARD_REGISTRY",
     "TERMINATION_REGISTRY",
     "AntagonisticSpring",
+    "ApplyMotorForcesModule",
+    "ApplyRootForcesModule",
+    "ApplyRootVelocityModule",
+    "ApplyTendonForcesModule",
     "BaseModule",
     "CameraRecorderModule",
     "ColorArticulationLinksModule",
@@ -87,6 +103,7 @@ __all__ = [
     "ExternalForceModule",
     "GoalStateObservation",
     "GoalVisualizationModule",
+    "GravityCompensationModule",
     "InteractiveSliderControlModule",
     "ModuleContainer",
     "ModuleManager",
@@ -96,11 +113,14 @@ __all__ = [
     "ObservationManagerModule",
     "ProcessFixedActionsModule",
     "ProcessVariableActionsModule",
+    "RandomizeFrictionModule",
     "RenderModule",
     "RewardBaseModule",
     "RewardManagerModule",
     "RigidTendons",
-    "RobotControlModule",
+    "RobotControlFloatingHandModule",
+    "RobotControlMotorsModule",
+    "RobotControlTendonsModule",
     "RobotModule",
     "RobotStateObservation",
     "TendonEstModule",

@@ -83,7 +83,7 @@ def container() -> ModuleContainer:
     cont.device = torch.device("cpu")
     cont.env = _FakeEnv()
     cont.robot = _FakeRobot()
-    cont.active_motor_slice = slice(0, 3)
+    cont.active_dof_slice = slice(0, 3)
     cont.scaled_act_buf = torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32)
     cont.reset_buf = torch.zeros(1, dtype=torch.bool)
     cont.robot.get_tendon_lengths_buf = torch.tensor([[0.066, 0.055, 0.07]])
@@ -124,11 +124,11 @@ def test_step_writes_model_forces_for_model_tendons_only(container: ModuleContai
     module.step(container)
 
     # measured = -length / radius; desired = clamp(measured + action); vel = -v / radius.
-    # Tiny model force (first step, shift 0) = measured + desired + vel.
+    # module force = -1 * tiny-model output (first step, shift 0) = -(measured + desired + vel).
     measured_0 = -0.066 / 0.011
     measured_1 = -0.055 / 0.011
-    expected_0 = measured_0 + (measured_0 + 1.0) + -1.0
-    expected_1 = measured_1 + (measured_1 + 2.0) + 0.0
+    expected_0 = -(measured_0 + (measured_0 + 1.0) + -1.0)
+    expected_1 = -(measured_1 + (measured_1 + 2.0) + 0.0)
 
     assert container.tendon_force_buf[:, 0].item() == pytest.approx(expected_0, rel=1e-5)
     assert container.tendon_force_buf[:, 1].item() == pytest.approx(expected_1, rel=1e-5)
@@ -145,7 +145,7 @@ def test_step_tracks_stateful_model_tendons(container: ModuleContainer, tmp_path
     first = container.tendon_force_buf.clone()
     module.step(container)
     # Tiny inner model adds the shift to each input column per forward (sum grows by 3).
-    assert torch.allclose(container.tendon_force_buf[:, :2], first[:, :2] + 3.0)
+    assert torch.allclose(container.tendon_force_buf[:, :2], first[:, :2] - 3.0)
 
 
 def test_reset_clears_model_state(container: ModuleContainer, tmp_path: Path) -> None:
@@ -168,8 +168,8 @@ def test_step_clamps_predicted_forces(container: ModuleContainer, tmp_path: Path
     module.post_finalize(container)
 
     module.step(container)
-    # Tendon 0 force (-12) is within [-100, -9]; tendon 1 (-8) is clamped up to -9.
-    assert container.tendon_force_buf[:, 0].item() == pytest.approx(-12.0, rel=1e-5)
+    # Raw outputs (-12, -8) are negated (+12, +8) and clamped to force_max=-9.
+    assert container.tendon_force_buf[:, 0].item() == pytest.approx(-9.0)
     assert container.tendon_force_buf[:, 1].item() == pytest.approx(-9.0)
 
 
@@ -184,9 +184,9 @@ def test_default_config_clamps(container: ModuleContainer, tmp_path: Path) -> No
     module.post_finalize(container)
 
     module.step(container)
-    # Defaults: desired clamped to [0, 2*pi], force clamped to [0, 30] -> both negatives clamp to 0.
-    assert container.tendon_force_buf[:, 0].item() == 0.0
-    assert container.tendon_force_buf[:, 1].item() == 0.0
+    # Defaults: desired clamped to [0, 2*pi]; negated outputs (7, 5) stay within [0, 30].
+    assert container.tendon_force_buf[:, 0].item() == pytest.approx(7.0, rel=1e-5)
+    assert container.tendon_force_buf[:, 1].item() == pytest.approx(5.0, rel=1e-5)
 
 
 def test_finalize_requires_robot(container: ModuleContainer, tmp_path: Path) -> None:
@@ -251,11 +251,11 @@ def test_step_maps_zero_offsets_per_tendon(container: ModuleContainer, tmp_path:
     module.post_finalize(container)
     module.step(container)
 
-    # measured = -(length - offset) / radius; force = measured + desired + vel (tiny model).
-    # Tendon 0: measured = -(0.066 - 0.011)/0.011 = -5.0, desired = -4.0, vel = -1.0 -> -10.0.
-    assert container.tendon_force_buf[:, 0].item() == pytest.approx(-10.0, rel=1e-5)
-    # Tendon 1: offset 0.0 -> unchanged from the zero-offset base case (-8.0).
-    assert container.tendon_force_buf[:, 1].item() == pytest.approx(-8.0, rel=1e-5)
+    # measured = -(length - offset) / radius; module force = -1 * tiny-model output.
+    # Tendon 0: measured = -(0.066 - 0.011)/0.011 = -5.0, desired = -4.0, vel = -1.0 -> output -10 -> force 10.
+    assert container.tendon_force_buf[:, 0].item() == pytest.approx(10.0, rel=1e-5)
+    # Tendon 1: offset 0.0 -> unchanged from the zero-offset base case (output -8 -> force 8).
+    assert container.tendon_force_buf[:, 1].item() == pytest.approx(8.0, rel=1e-5)
     # Tendon 2 (offset 0.055) is never written by the module.
     assert container.tendon_force_buf[:, 2].item() == 0.0
 

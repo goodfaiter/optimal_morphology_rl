@@ -146,7 +146,7 @@ class TendonEstModule(BaseModule):
 
         tendon_lengths = robot.get_tendon_lengths_buf
         tendon_vels = robot.get_tendon_vel_buf
-        actions = container.scaled_act_buf[:, container.active_motor_slice]
+        actions = container.scaled_act_buf[:, container.active_dof_slice]
 
         # dL = radius [m] * angle [rad]
         measured_pos_rad = -1.0 * (tendon_lengths - self.zero_offset_length) / self.pully_radius
