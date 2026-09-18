@@ -35,7 +35,7 @@ class GoalVisualizationModule(BaseModule):
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
         self.line_width = float(self.config.get("line_width", 3.0))
-        self.axis_length = float(self.config.get("axis_length", 0.1))
+        self.axis_length = float(self.config.get("axis_length", 0.025))
 
     def step(self, container: ModuleContainer) -> None:
         """Update goal-axis visualization for the first environment."""

@@ -134,8 +134,6 @@ class TendonEstModule(BaseModule):
         self.zero_offset_length = _build_tendon_scale_tensor(zero_offset_length, num_model_tendons, device, "zero_offset_length")
         self.desired_min = float(self.config.get("desired_min", 0.0))
         self.desired_max = float(self.config.get("desired_max", 2.0 * math.pi))
-        self.force_min = float(self.config.get("force_min", 0.0))
-        self.force_max = float(self.config.get("force_max", 30.0))
 
     def step(self, container: ModuleContainer) -> None:
         """Feed the measured/desired joint state of every model tendon in ONE forward pass."""
@@ -173,7 +171,7 @@ class TendonEstModule(BaseModule):
 
         force = -1.0 * output[:, 0, self.force_output_idx]
         force = force.reshape(container.total_num_envs, num_model_tendons)
-        container.tendon_force_buf[:, self.model_tendon_indices] = torch.clamp(force, min=self.force_min, max=self.force_max)
+        container.tendon_force_buf[:, self.model_tendon_indices] = force
 
     def reset(self, container: ModuleContainer) -> None:
         """Reset the internal model state of the environments selected by the reset buffer."""

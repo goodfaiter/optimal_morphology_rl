@@ -42,9 +42,7 @@ class RobotControlTendonsModule(BaseModule):
         # policy-controlled tendon columns only (fixed tendons stay at zero
         # and are driven by modules like 'rigid_tendons').
         tendons[:] = 0.0
-        tendons[:, container.active_dof_indices] = torch.clamp(
-            container.scaled_act_buf[:, container.active_dof_slice], 0.0, None
-        )
+        tendons[:, container.active_dof_indices] = torch.clamp(container.scaled_act_buf[:, container.active_dof_slice], 0.0, None)
 
         if container.get("tendon_force_buf") is not None and container.get("tendon_model_indices") is not None:
             # Model-driven tendons (see the 'tendon_est' module) are overridden with the model forces.
