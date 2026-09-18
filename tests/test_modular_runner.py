@@ -10,9 +10,11 @@ import pytest
 import torch
 import yaml
 
+from optimal_morphology_rl.modules.camera_recorder_module import CameraRecorderModule
 from optimal_morphology_rl.modules.color_articulation_links_module import (
     ColorArticulationLinksModule,
 )
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.visualization.goal_visualization_module import (
     GoalVisualizationModule,
 )
@@ -24,7 +26,6 @@ from optimal_morphology_rl.runners.modular_runner import (
     load_task_configs,
     sync_num_envs,
 )
-
 
 TASKS = [
     "hand_cube",
@@ -178,6 +179,29 @@ def test_color_articulation_links_module_defaults() -> None:
     assert "finger_0" in module.colorer.color_map
 
 
+def test_camera_recorder_module_stops_after_num_steps(tmp_path, monkeypatch) -> None:
+    module = CameraRecorderModule({"output_dir": str(tmp_path), "num_steps": 2})
+    assert module._frames_recorded == 0
+
+    calls = []
+    monkeypatch.setattr(module.recorder, "update", lambda gym: calls.append("update"))
+    monkeypatch.setattr(module.recorder, "save", lambda frame_index: calls.append(frame_index))
+
+    container = ModuleContainer()
+    container.gym = object()  # recorder.update is mocked, but step() reads container.gym
+    for _ in range(5):
+        module.step(container)
+
+    assert calls == ["update", 0, "update", 1]
+
+
+def test_camera_recorder_module_recording_disabled_without_output_dir() -> None:
+    module = CameraRecorderModule({"num_steps": 2})
+    assert module.recorder is None
+    module.step(ModuleContainer())
+    assert module._frames_recorded == 0
+
+
 def test_goal_visualization_is_regular_module() -> None:
     module = GoalVisualizationModule({})
     assert hasattr(module, "step")
@@ -232,5 +256,6 @@ def test_train_two_epochs(task_root: Path, tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         timeout=180,
+        check=False,
     )
     assert result.returncode == 0, f"Modular train run failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"

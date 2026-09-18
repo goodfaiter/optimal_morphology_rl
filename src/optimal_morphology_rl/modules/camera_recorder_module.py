@@ -8,14 +8,13 @@ from typing import Any
 
 import numpy as np
 import torch
+import vlearn as v
 from PIL import Image
 
-import vlearn as v
-
 from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.create_objects_module import LoadedRigidObject
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
-from optimal_morphology_rl.modules.create_objects_module import LoadedRigidObject
 
 
 @dataclass(frozen=True)
@@ -56,14 +55,14 @@ class ObjectCameraRecorder:
         for binding in rgb_bindings:
             gym.get_rgb_camera_images(binding.command_array)
 
-    def save(self, timestep: int) -> None:
+    def save(self, frame_index: int) -> None:
         """Save PNGs for all bound cameras."""
         for binding in self._bindings:
-            self._save_binding(binding, timestep)
+            self._save_binding(binding, frame_index)
 
-    def build_specs(self, object_generator, env_def) -> None:
-        """Discover camera specs from loaded rigid objects."""
-        for obj in object_generator.objects.values():
+    def build_specs(self, loaded_objects: dict, env_def) -> None:
+        """Discover camera specs from the loaded objects mapping (container.objects)."""
+        for obj in loaded_objects.values():
             if isinstance(obj, LoadedRigidObject):
                 self._build_spec(obj, env_def=env_def)
 
@@ -72,12 +71,11 @@ class ObjectCameraRecorder:
         env_def,
         env_group,
         gym: Any,
-        num_envs: int | list[int],
         device: torch.device,
     ) -> None:
         """Instantiate camera buffers and GPU commands."""
         for spec in self._specs:
-            self._bindings.append(self._build_camera(spec, env_def, env_group, gym, num_envs, device))
+            self._bindings.append(self._build_camera(spec, env_def, env_group, gym, device))
 
     def _build_spec(self, loaded_object, env_def) -> None:
         rigid_body_def = env_def.get_rigid_body_def_by_name(loaded_object.name)
@@ -94,12 +92,11 @@ class ObjectCameraRecorder:
         env_def,
         env_group,
         gym: Any,
-        num_envs: int | list[int],
         device: torch.device,
     ) -> CameraBinding:
         rigid_body_handle = env_def.get_rigid_body_handle_by_name(spec.object_name)
         rigid_body = env_def.get_rigid_body(rigid_body_handle)
-        return self._bind_rgb_camera(spec, rigid_body, env_group, gym, num_envs, device)
+        return self._bind_rgb_camera(spec, rigid_body, env_group, gym, device)
 
     def _build_rgb_spec(
         self,
@@ -132,26 +129,28 @@ class ObjectCameraRecorder:
         rigid_body,
         env_group,
         gym: Any,
-        num_envs: int | list[int],
         device: torch.device,
     ) -> CameraBinding:
-        n_envs = len(num_envs) if isinstance(num_envs, (list, tuple)) else num_envs
+        total_envs = env_group.get_total_num_environments()
+        camera_handle = rigid_body.get_rgb_camera_handle_by_name(spec.instance_name)
+        # The command buffers are sized by the camera's resolution as seen by the
+        # environment group, which may differ from the camera def resolution.
+        resolution_x, resolution_y = env_group.get_rgb_camera_resolution(camera_handle)
         buffer = torch.empty(
-            (n_envs, spec.resolution_y, spec.resolution_x, 4),
+            (total_envs, resolution_y, resolution_x, 4),
             dtype=torch.uint8,
             device=device,
         )
-        camera_handle = rigid_body.get_rgb_camera_handle_by_name(spec.instance_name)
         command = env_group.create_rgb_camera_command(v.wrap_gpu_buffer(buffer), camera_handle)
         command_array = gym.create_gpu_array([command])
         return CameraBinding(spec=spec, buffer=buffer, command=command, command_array=command_array)
 
-    def _save_binding(self, binding: CameraBinding, timestep: int) -> Path:
+    def _save_binding(self, binding: CameraBinding, frame_index: int) -> Path:
         spec = binding.spec
         object_dir = self.output_dir / spec.object_name / spec.instance_name
         object_dir.mkdir(parents=True, exist_ok=True)
 
-        filename = f"step_{timestep:06d}.png"
+        filename = f"step_{frame_index:06d}.png"
         output_path = object_dir / filename
         print(f"Saving camera image to {output_path}")
         image = binding.buffer[0].detach().cpu().numpy()
@@ -165,12 +164,14 @@ class ObjectCameraRecorder:
 
 @register_module("camera_recorder")
 class CameraRecorderModule(BaseModule):
-    """Wraps ObjectCameraRecorder and records frames each control step."""
+    """Wraps ObjectCameraRecorder and records frames for the configured number of steps."""
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
         output_dir = self.config.get("output_dir")
         self.recorder: ObjectCameraRecorder | None = None
+        self._num_steps: int | None = self.config.get("num_steps")
+        self._frames_recorded = 0
         if output_dir is not None:
             self.recorder = ObjectCameraRecorder(output_dir)
 
@@ -186,20 +187,20 @@ class CameraRecorderModule(BaseModule):
         """Create camera instances on the environment group."""
         if self.recorder is None:
             return
-        env = container.env
         self.recorder.build_cameras(
             container.env_def,
             container.env_group,
             container.gym,
-            env.num_envs,
             container.device,
         )
         container.camera_recorder = self.recorder
 
     def step(self, container: ModuleContainer) -> None:
-        """Record a frame from each camera."""
+        """Record a frame from each camera until the configured number of steps is reached."""
         if self.recorder is None:
             return
-        env = container.env
+        if self._num_steps is not None and self._frames_recorded >= self._num_steps:
+            return
         self.recorder.update(container.gym)
-        self.recorder.save(env.progress_buf[0].cpu().item())
+        self.recorder.save(self._frames_recorded)
+        self._frames_recorded += 1
