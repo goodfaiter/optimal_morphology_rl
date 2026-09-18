@@ -10,6 +10,9 @@ from optimal_morphology_rl.modules.rewards.action_smoothness_reward import (
 from optimal_morphology_rl.modules.rewards.fingertip_contact_reward import (
     FingertipContactReward,
 )
+from optimal_morphology_rl.modules.rewards.goal_finger_tip_reward import (
+    GoalFingerTipReward,
+)
 from optimal_morphology_rl.modules.rewards.goal_orientation_reward import (
     GoalOrientationReward,
 )
@@ -27,14 +30,15 @@ from optimal_morphology_rl.modules.rewards.reward_manager_module import (
 )
 
 __all__ = [
+    "REWARD_REGISTRY",
+    "ActionPenaltyReward",
+    "ActionSmoothnessReward",
+    "FingertipContactReward",
+    "GoalFingerTipReward",
+    "GoalOrientationReward",
+    "GoalPositionReward",
+    "HandToObjectDistanceReward",
     "RewardBaseModule",
     "RewardManagerModule",
     "register_reward",
-    "REWARD_REGISTRY",
-    "GoalPositionReward",
-    "GoalOrientationReward",
-    "HandToObjectDistanceReward",
-    "FingertipContactReward",
-    "ActionPenaltyReward",
-    "ActionSmoothnessReward",
 ]

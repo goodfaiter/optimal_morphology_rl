@@ -6,6 +6,9 @@ from typing import Any
 
 import torch
 
+from optimal_morphology_rl.modules.create_kinematic_sensor_module import (
+    find_kinematic_sensor,
+)
 from optimal_morphology_rl.modules.rewards.reward_base_module import RewardBaseModule
 from optimal_morphology_rl.modules.rewards.reward_manager_module import register_reward
 
@@ -33,7 +36,13 @@ class GoalPositionReward(RewardBaseModule):
     def compute(self, env: Any) -> torch.Tensor:
         container = env.module_manager.container
         reward_object = container.reward_object
-        object_pos_in_world = container.kinematic_sensor.pos_in_world
+        sensor = find_kinematic_sensor(container, reward_object.name)
+        if sensor is None:
+            raise RuntimeError(
+                "goal_position_reward: no kinematic sensor for the reward object. "
+                "Ensure create_kinematic_sensor is listed."
+            )
+        object_pos_in_world = sensor.pos_in_world
 
         normalize = float(self.config.get("normalize", 0.2))
         scale = float(self.config.get("scale", 1.5))

@@ -6,6 +6,9 @@ from typing import Any
 
 import torch
 
+from optimal_morphology_rl.modules.create_kinematic_sensor_module import (
+    find_kinematic_sensor,
+)
 from optimal_morphology_rl.modules.rewards.reward_base_module import RewardBaseModule
 from optimal_morphology_rl.modules.rewards.reward_manager_module import register_reward
 
@@ -34,7 +37,13 @@ class HandToObjectDistanceReward(RewardBaseModule):
     def compute(self, env: Any) -> torch.Tensor:
         container = env.module_manager.container
         robot = container.robot
-        object_pos_in_world = container.kinematic_sensor.pos_in_world
+        sensor = find_kinematic_sensor(container, container.reward_object.name)
+        if sensor is None:
+            raise RuntimeError(
+                "hand_to_object_distance_reward: no kinematic sensor for the reward object. "
+                "Ensure create_kinematic_sensor is listed."
+            )
+        object_pos_in_world = sensor.pos_in_world
 
         scale = float(self.config.get("scale", 0.1))
         link_positions = robot.distal_link_pos_buf.transpose(0, 1)

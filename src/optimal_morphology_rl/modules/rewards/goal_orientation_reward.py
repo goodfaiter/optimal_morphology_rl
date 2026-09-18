@@ -7,6 +7,9 @@ from typing import Any
 import torch
 from vlearn.torch_utils.torch_jit_utils import quat_rotate
 
+from optimal_morphology_rl.modules.create_kinematic_sensor_module import (
+    find_kinematic_sensor,
+)
 from optimal_morphology_rl.modules.rewards.reward_base_module import RewardBaseModule
 from optimal_morphology_rl.modules.rewards.reward_manager_module import register_reward
 
@@ -46,7 +49,13 @@ class GoalOrientationReward(RewardBaseModule):
     def compute(self, env: Any) -> torch.Tensor:
         container = env.module_manager.container
         reward_object = container.reward_object
-        quat_object_to_world = container.kinematic_sensor.quat_sensor_to_world
+        sensor = find_kinematic_sensor(container, reward_object.name)
+        if sensor is None:
+            raise RuntimeError(
+                "goal_orientation_reward: no kinematic sensor for the reward object. "
+                "Ensure create_kinematic_sensor is listed."
+            )
+        quat_object_to_world = sensor.quat_sensor_to_world
 
         scale = float(self.config.get("scale", 1.0))
         reward, raw = _goal_orientation_reward_jit(

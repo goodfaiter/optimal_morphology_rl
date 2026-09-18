@@ -9,6 +9,9 @@ import torch
 from time_series_buffer.time_series_buffer import TimeSeriesBuffer
 
 from optimal_morphology_rl.envs.hand_envs.utils import get_reward_object_name
+from optimal_morphology_rl.modules.create_kinematic_sensor_module import (
+    find_kinematic_sensor,
+)
 from optimal_morphology_rl.modules.terminations.termination_base_module import (
     TerminationBaseModule,
     register_termination,
@@ -44,7 +47,13 @@ class CubeSuccessTermination(TerminationBaseModule):
 
         container = env.module_manager.container
         reward_object = container.reward_object
-        quat_object_to_world = container.kinematic_sensor.quat_sensor_to_world
+        sensor = find_kinematic_sensor(container, reward_object.name)
+        if sensor is None:
+            raise RuntimeError(
+                "cube_success_termination: no kinematic sensor for the reward object. "
+                "Ensure create_kinematic_sensor is listed."
+            )
+        quat_object_to_world = sensor.quat_sensor_to_world
         quat_object_goal_to_world = reward_object.goal_quat_object_to_world
 
         quat_dot = torch.sum(quat_object_goal_to_world * quat_object_to_world, dim=-1).abs().clamp(max=1.0)

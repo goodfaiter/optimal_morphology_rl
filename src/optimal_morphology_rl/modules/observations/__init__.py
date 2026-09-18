@@ -1,6 +1,9 @@
 """Observation sub-modules and manager."""
 
 # Import observation sub-modules so their @register_observation decorators run.
+from optimal_morphology_rl.modules.observations.goal_finger_tip_observation import (
+    GoalFingerTipObservation,
+)
 from optimal_morphology_rl.modules.observations.goal_state_observation import (
     GoalStateObservation,
 )
@@ -20,11 +23,12 @@ from optimal_morphology_rl.modules.observations.robot_state_observation import (
 )
 
 __all__ = [
+    "OBSERVATION_REGISTRY",
+    "GoalFingerTipObservation",
+    "GoalStateObservation",
+    "ObjectStateObservation",
     "ObservationBaseModule",
     "ObservationManagerModule",
-    "register_observation",
-    "OBSERVATION_REGISTRY",
     "RobotStateObservation",
-    "ObjectStateObservation",
-    "GoalStateObservation",
+    "register_observation",
 ]

@@ -1,4 +1,4 @@
-"""Module that creates a kinematic sensor on the reward object."""
+"""Module that creates every kinematic sensor defined for the environment."""
 
 from __future__ import annotations
 
@@ -22,13 +22,14 @@ class KinematicSensor:
 
     def __init__(self):
         self.kinematic_sensor_handle: Any = None
+        self.name: str = ""
         self.pose_in_world_buf: torch.Tensor | None = None
         self.velocity_in_world_buf: torch.Tensor | None = None
         self.pose_in_object_buf: torch.Tensor | None = None
         self.velocity_in_object_buf: torch.Tensor | None = None
         self.get_kinematic_sensor_cmd_arr: Any = None
 
-        # Object state expressed in the robot base frame.
+        # State expressed in the robot base frame.
         self.pos_in_robot_buf: torch.Tensor | None = None
         self.quat_sensor_to_robot_buf: torch.Tensor | None = None
         self.linear_velocity_in_robot_buf: torch.Tensor | None = None
@@ -98,17 +99,11 @@ class KinematicSensor:
 
         quat_world_to_robot = quat_conjugate(quat_robot_to_world)
 
-        self.pos_in_robot_buf[:] = quat_rotate_inverse(
-            quat_robot_to_world, self.pose_in_world_buf[:, 4:7] - robot_pos_in_world
-        )
+        self.pos_in_robot_buf[:] = quat_rotate_inverse(quat_robot_to_world, self.pose_in_world_buf[:, 4:7] - robot_pos_in_world)
         self.quat_sensor_to_robot_buf[:] = quat_mul(quat_world_to_robot, self.pose_in_world_buf[:, :4])
 
-        self.linear_velocity_in_robot_buf[:] = quat_rotate_inverse(
-            quat_robot_to_world, self.velocity_in_world_buf[:, 3:6]
-        )
-        self.angular_velocity_in_robot_buf[:] = quat_rotate_inverse(
-            quat_robot_to_world, self.velocity_in_world_buf[:, :3]
-        )
+        self.linear_velocity_in_robot_buf[:] = quat_rotate_inverse(quat_robot_to_world, self.velocity_in_world_buf[:, 3:6])
+        self.angular_velocity_in_robot_buf[:] = quat_rotate_inverse(quat_robot_to_world, self.velocity_in_world_buf[:, :3])
 
     @property
     def pose_in_world(self) -> torch.Tensor:
@@ -169,26 +164,62 @@ class KinematicSensor:
 
 @register_module("create_kinematic_sensor")
 class CreateKinematicSensorModule(BaseModule):
-    """Creates a kinematic sensor on the reward object."""
+    """Creates every kinematic sensor defined for the environment.
+
+    Enumerates the loaded reward object's kinematic sensor (its sensors are
+    keyed by the object's body name) and every articulation kinematic sensor
+    definition (from the .vsim, keyed by the attachment link name), storing
+    them on ``container.kinematic_sensors``. Consumers look sensors up by name
+    with :func:`find_kinematic_sensor`.
+    """
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
-        self.sensor = KinematicSensor()
-
-    def finalize(self, container: ModuleContainer) -> None:
-        """Verify dependencies."""
-        if container.get("reward_object") is None:
-            raise RuntimeError("CreateKinematicSensorModule requires 'reward_object' in the shared container.")
-        if container.get("env_def") is None:
-            raise RuntimeError("CreateKinematicSensorModule requires 'env_def' in the shared container.")
+        self.sensors: dict[str, KinematicSensor] = {}
 
     def post_finalize(self, container: ModuleContainer) -> None:
-        """Allocate buffers and create GPU commands."""
-        self.sensor.allocate_buffers(
-            container.env_def,
-            container.reward_object.handle,
-            container.total_num_envs,
-            container.device,
-        )
-        container.kinematic_sensor = self.sensor
-        self.sensor.create_gpu_commands(container.env_group, container.gym)
+        """Create every available kinematic sensor and register them by name."""
+        env_def = container.env_def
+        device = container.device
+
+        # 1) The reward object's kinematic sensor (object environments), keyed
+        #    by the object's body name.
+        reward_object = container.get("reward_object")
+        if reward_object is not None:
+            sensor = KinematicSensor()
+            sensor.allocate_buffers(
+                env_def,
+                reward_object.handle,
+                container.total_num_envs,
+                device,
+            )
+            sensor.name = reward_object.name
+            self.sensors[reward_object.name] = sensor
+
+        # 2) Every articulation kinematic sensor definition (from the .vsim).
+        robot = container.get("robot")
+        if robot is not None and robot.art_def is not None:
+            for i in range(robot.art_def.get_num_kinematic_sensor_defs()):
+                sensor = KinematicSensor()
+                sensor.allocate_buffers(
+                    env_def,
+                    robot.arti_handle,
+                    container.total_num_envs,
+                    device,
+                    sensor_index=i,
+                )
+                sensor.name = robot.art_def.get_kinematic_sensor_def(i).link_name
+                self.sensors[sensor.name] = sensor
+
+        container.kinematic_sensors = self.sensors
+        for sensor in self.sensors.values():
+            sensor.create_gpu_commands(container.env_group, container.gym)
+
+
+def find_kinematic_sensor(container: ModuleContainer, pattern: str) -> KinematicSensor | None:
+    """Look up a created kinematic sensor by body/link name substring."""
+    sensors = container.get("kinematic_sensors") or {}
+    for key, sensor in sensors.items():
+        if pattern.lower() in key.lower():
+            return sensor
+    return None

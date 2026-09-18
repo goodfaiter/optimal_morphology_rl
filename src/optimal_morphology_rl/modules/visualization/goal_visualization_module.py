@@ -15,7 +15,11 @@ from optimal_morphology_rl.modules.module_manager import register_module
 
 @register_module("goal_visualization")
 class GoalVisualizationModule(BaseModule):
-    """Draws RGB axes at the reward object's current goal pose.
+    """Draws RGB axes at the robot's fingertip-reach goal or the object goal pose.
+
+    When ``container.fingertip_goal_pos`` exists (adapt_finger-style tasks) the
+    axes are drawn at the first environment's fingertip goal; otherwise they
+    are drawn at the loaded reward object's goal pose.
 
     This module only does work when rendering is enabled.  It updates the
     debug line shapes during the post-gym step so the renderer can draw
@@ -39,12 +43,16 @@ class GoalVisualizationModule(BaseModule):
         if not getattr(env, "rendering", False) or container.gym_render is None:
             return
 
-        reward_object = container.get("reward_object")
-        if reward_object is None:
-            return
-
-        goal_pos = reward_object.goal_pos_in_world[0]
-        goal_quat = reward_object.goal_quat_object_to_world[0:1]
+        fingertip_goal = container.get("fingertip_goal_pos")
+        if fingertip_goal is not None:
+            goal_pos = fingertip_goal[0]
+            goal_quat = torch.tensor([[0.0, 0.0, 0.0, 1.0]], device=env.device, dtype=torch.float32)
+        else:
+            reward_object = container.get("reward_object")
+            if reward_object is None:
+                return
+            goal_pos = reward_object.goal_pos_in_world[0]
+            goal_quat = reward_object.goal_quat_object_to_world[0:1]
 
         axes = [
             quat_rotate(

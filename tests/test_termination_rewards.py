@@ -8,10 +8,10 @@ from typing import Any
 import pytest
 import torch
 
-from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.envs.hand_cube.terminations.cube_success_termination import (
     CubeSuccessTermination,
 )
+from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.terminations.bounds_termination import (
     BoundsTermination,
 )
@@ -46,13 +46,20 @@ def drop_setup() -> tuple[_FakeEnv, DropTermination]:
     container = ModuleContainer()
     container.device = device
     container.total_num_envs = total_num_envs
-    container.kinematic_sensor = _FakeKinematicSensor(
-        torch.tensor(
-            [[0.0, 0.0, 0.0], [0.0, 0.0, -0.2], [0.0, 0.0, 0.1], [0.0, 0.0, -0.15]],
-            dtype=torch.float32,
-            device=device,
+
+    class _FakeRewardObject:
+        name = "cube"
+
+    container.reward_object = _FakeRewardObject()
+    container.kinematic_sensors = {
+        "cube": _FakeKinematicSensor(
+            torch.tensor(
+                [[0.0, 0.0, 0.0], [0.0, 0.0, -0.2], [0.0, 0.0, 0.1], [0.0, 0.0, -0.15]],
+                dtype=torch.float32,
+                device=device,
+            )
         )
-    )
+    }
 
     env = _FakeEnv(container)
     module = DropTermination({"threshold": -0.1, "reward_scale": -20.0})
@@ -81,7 +88,14 @@ def test_drop_termination_zero_scale_disables_reward() -> None:
     container = ModuleContainer()
     container.device = device
     container.total_num_envs = total_num_envs
-    container.kinematic_sensor = _FakeKinematicSensor(torch.tensor([[0.0, 0.0, -0.2], [0.0, 0.0, 0.0]], dtype=torch.float32, device=device))
+
+    class _FakeRewardObject:
+        name = "cube"
+
+    container.reward_object = _FakeRewardObject()
+    container.kinematic_sensors = {
+        "cube": _FakeKinematicSensor(torch.tensor([[0.0, 0.0, -0.2], [0.0, 0.0, 0.0]], dtype=torch.float32, device=device))
+    }
     env = _FakeEnv(container)
     module = DropTermination({"threshold": -0.1, "reward_scale": 0.0})
 
@@ -169,6 +183,7 @@ def test_bounds_termination_zero_scale_disables_reward() -> None:
 
 class _FakeRewardObject:
     def __init__(self, goal_quat: torch.Tensor):
+        self.name = "cube"
         self.goal_quat_object_to_world = goal_quat
 
 
@@ -185,7 +200,7 @@ def _make_cube_env(object_quat: torch.Tensor, goal_quat: torch.Tensor) -> tuple[
     container.total_num_envs = total_num_envs
     container.reward_object_name = "cube"
     container.reward_object = _FakeRewardObject(goal_quat)
-    container.kinematic_sensor = _FakeKinematicSensorQuat(object_quat)
+    container.kinematic_sensors = {"cube": _FakeKinematicSensorQuat(object_quat)}
 
     env = _FakeEnv(container)
     module = CubeSuccessTermination({"success_scale": 200.0})
@@ -234,13 +249,13 @@ def test_cube_success_resets_on_misalignment() -> None:
         env.rew_buf[:] = 0.0
 
     # One misaligned step resets the counter.
-    env.module_manager.container.kinematic_sensor.quat_sensor_to_world = misaligned_quat
+    env.module_manager.container.kinematic_sensors["cube"].quat_sensor_to_world = misaligned_quat
     module.compute(env)
     env.rew_buf[:] = 0.0
     assert not env.term_buf.any()
 
     # Another aligned step should not yet succeed.
-    env.module_manager.container.kinematic_sensor.quat_sensor_to_world = goal_quat
+    env.module_manager.container.kinematic_sensors["cube"].quat_sensor_to_world = goal_quat
     module.compute(env)
     assert not env.term_buf.any()
 

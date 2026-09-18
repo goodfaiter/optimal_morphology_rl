@@ -6,11 +6,14 @@ from typing import Any
 
 import torch
 
-from optimal_morphology_rl.modules.observations.observation_jit_helpers import (
-    _object_state_obs_jit,
+from optimal_morphology_rl.modules.create_kinematic_sensor_module import (
+    find_kinematic_sensor,
 )
 from optimal_morphology_rl.modules.observations.observation_base_module import (
     ObservationBaseModule,
+)
+from optimal_morphology_rl.modules.observations.observation_jit_helpers import (
+    _object_state_obs_jit,
 )
 from optimal_morphology_rl.modules.observations.observation_manager_module import (
     register_observation,
@@ -26,7 +29,12 @@ class ObjectStateObservation(ObservationBaseModule):
 
     def compute_observation(self, env: Any, out: torch.Tensor) -> None:
         container = env.module_manager.container
-        sensor = container.kinematic_sensor
+        sensor = find_kinematic_sensor(container, container.reward_object.name)
+        if sensor is None:
+            raise RuntimeError(
+                "object_state observation: no kinematic sensor for the reward object. "
+                "Ensure create_kinematic_sensor is listed."
+            )
 
         out[:] = _object_state_obs_jit(
             sensor.pos_in_robot,

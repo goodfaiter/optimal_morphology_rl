@@ -8,6 +8,9 @@ import torch
 
 from optimal_morphology_rl.envs.hand_envs.utils import get_reward_object_name
 from optimal_morphology_rl.helpers.numpy_vlearn import quaternion_to_6d
+from optimal_morphology_rl.modules.create_kinematic_sensor_module import (
+    find_kinematic_sensor,
+)
 from optimal_morphology_rl.modules.rewards.reward_base_module import RewardBaseModule
 from optimal_morphology_rl.modules.rewards.reward_manager_module import register_reward
 
@@ -23,7 +26,13 @@ class CubeOrientationReward(RewardBaseModule):
 
         container = env.module_manager.container
         reward_object = container.reward_object
-        quat_object_to_world = container.kinematic_sensor.quat_sensor_to_world
+        sensor = find_kinematic_sensor(container, reward_object_name)
+        if sensor is None:
+            raise RuntimeError(
+                "cube_orientation_reward: no kinematic sensor for the reward object. "
+                "Ensure create_kinematic_sensor is listed."
+            )
+        quat_object_to_world = sensor.quat_sensor_to_world
 
         _6d_object_to_world = quaternion_to_6d(quat_object_to_world)
         _6d_object_goal_to_world = quaternion_to_6d(reward_object.goal_quat_object_to_world)

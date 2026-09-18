@@ -1,0 +1,98 @@
+modules:
+  init_modules:
+    - create_rigid_vsim_envs
+    - create_robot
+    - randomize_friction
+    - termination
+    - render
+  pre_physics_step_modules:
+    - render
+    - interactive_slider_control
+    - process_variable_actions
+    - tendon_est
+    - rigid_tendons
+    - antagonistic_spring
+    - robot_control_tendons
+    - apply_tendon_forces
+    - apply_motor_forces
+    - apply_root_forces
+  pre_gym_step_modules: []
+  post_gym_step_modules: []
+  post_physics_step_modules:
+    - update_robot
+    - observation
+    - reward
+    - termination
+
+create_rigid_vsim_envs:
+  num_envs: 1
+  device: cuda:0
+  rendering: true
+  with_window: true
+  enable_scene_query: true
+  timestep: ${1/200}
+  frame_skip: 2
+  spacing: 0.75
+  gravity: [0.0, 0.0, -9.81]
+  up_axis: [0.0, 0.0, 1.0]
+  max_contact_pairs_per_env: 64
+  max_contact_points_per_patch: 4
+
+create_robot:
+  vsim_path: /workspace/optimal_morphology_rl_assets/optimal_morphology_rl_assets/assets/hands/Adapt_Hand_v4/Hand_GeomOpt_MJCF_Short_one_finger.vsim
+  fixed_hand: true
+  fixed_hand_root_pos: [0.0, 0.0, 0.2]
+  fixed_hand_root_quat: [-0.5, 0.5, -0.5, 0.5]
+  use_tendon: true
+  randomize_pose: false
+  # The DIP tendon is fixed (FixedTendonMaterial, driven by rigid_tendons) and
+  # gets no policy action.
+  fixed_tendon_substrings: ["dip"]
+  # Make every motor controllable from the UI (no passive motors).
+  passive_motor_substrings: []
+
+robot_control_tendons: {}
+apply_tendon_forces: {}
+apply_motor_forces: {}
+apply_root_forces: {}
+
+randomize_friction:
+  friction_coefficient: 0.8
+
+interactive_slider_control:
+  slider_min: 0.0
+  slider_max: 1.0
+
+process_variable_actions:
+  min_dof_scale: -5.0
+  max_dof_scale: 5.0
+
+tendon_est:
+  pully_radius: 0.011
+  model_tendon_indices: [0, 1]
+  zero_offset_length: [0.057, 0.040]
+
+rigid_tendons: {}
+
+antagonistic_spring:
+  spring_constants: 0.1
+
+observation:
+  num_hist: 1
+  hist_stride: 1
+  modules:
+    - robot_state
+
+reward: {}
+
+termination:
+  progress:
+    max_episode_length: 1000000
+
+render:
+  capped_step: false
+  paused: false
+  raise_exception: true
+  camera:
+    eye: [0.049792, 0.161890, 0.291726]
+    target: [0.586387, -0.742233, -0.324408]

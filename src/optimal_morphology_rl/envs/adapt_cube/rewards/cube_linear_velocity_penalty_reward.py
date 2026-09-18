@@ -7,6 +7,9 @@ from typing import Any
 import torch
 
 from optimal_morphology_rl.envs.hand_envs.utils import get_reward_object_name
+from optimal_morphology_rl.modules.create_kinematic_sensor_module import (
+    find_kinematic_sensor,
+)
 from optimal_morphology_rl.modules.rewards.reward_base_module import RewardBaseModule
 from optimal_morphology_rl.modules.rewards.reward_manager_module import register_reward
 
@@ -21,7 +24,13 @@ class CubeLinearVelocityPenaltyReward(RewardBaseModule):
             return None
 
         container = env.module_manager.container
-        linear_velocity_world = container.kinematic_sensor.linear_velocity_world
+        sensor = find_kinematic_sensor(container, reward_object_name)
+        if sensor is None:
+            raise RuntimeError(
+                "cube_linear_velocity_penalty_reward: no kinematic sensor for the reward object. "
+                "Ensure create_kinematic_sensor is listed."
+            )
+        linear_velocity_world = sensor.linear_velocity_world
         velocity_magnitude = torch.norm(linear_velocity_world, dim=-1)
 
         scale = float(self.config.get("scale", 1.0))
