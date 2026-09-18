@@ -169,7 +169,7 @@ def test_render_module_defaults() -> None:
 def test_goal_visualization_module_defaults() -> None:
     module = GoalVisualizationModule({})
     assert module.line_width == 3.0
-    assert module.axis_length == 0.1
+    assert module.axis_length == 0.025
 
 
 def test_color_articulation_links_module_defaults() -> None:

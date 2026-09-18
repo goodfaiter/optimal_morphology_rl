@@ -29,7 +29,7 @@ class GoalVisualizationModule(BaseModule):
 
         goal_visualization:
           line_width: 3.0
-          axis_length: 0.1
+          axis_length: 0.025
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
