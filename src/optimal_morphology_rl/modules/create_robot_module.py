@@ -65,8 +65,7 @@ class Robot:
 
         self.gpu_get_kinematic_state_command_array: Any = None
         self.gpu_get_distal_link_transforms_cmd_arr: Any = None
-        self.gpu_get_tendon_lengths_command_array: Any = None
-        self.gpu_get_tendon_velocities_command_array: Any = None
+        self.gpu_get_tendon_command_array: Any = None
 
     def create_envs(self, env_def, vsim_path: str, device: torch.device) -> None:
         """Load the hand model into the environment definition."""
@@ -126,6 +125,9 @@ class Robot:
 
         for i in range(self.num_sensors):
             print(i, self.art_def.get_force_sensor_def(i))
+
+        for i in range(self.num_tendons):
+            print(i, self.art_def.get_spatial_tendon_def(i))
 
         rigid_mat = v.RigidMaterial()
         rigid_mat.dynamic_friction = 0.5

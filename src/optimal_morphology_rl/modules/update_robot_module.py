@@ -84,7 +84,6 @@ def _create_read_gpu_commands(robot: Robot, env_group: Any, gym: v.Gym) -> None:
             robot.arti_handle,
             (0, robot.num_tendons),
         )
-        robot.gpu_get_tendon_lengths_command_array = gym.create_gpu_array([get_tendon_lengths_cmd])
 
         get_tendon_vel_cmd = env_group.create_spatial_tendon_state_command(
             v.SpatialTendonState.VELOCITY,
@@ -92,7 +91,8 @@ def _create_read_gpu_commands(robot: Robot, env_group: Any, gym: v.Gym) -> None:
             robot.arti_handle,
             (0, robot.num_tendons),
         )
-        robot.gpu_get_tendon_velocities_command_array = gym.create_gpu_array([get_tendon_vel_cmd])
+
+        robot.gpu_get_tendon_command_array = gym.create_gpu_array([get_tendon_lengths_cmd, get_tendon_vel_cmd])
 
 
 def _refresh_buffers(robot: Robot, gym: v.Gym) -> None:
@@ -102,8 +102,7 @@ def _refresh_buffers(robot: Robot, gym: v.Gym) -> None:
         gym.get_link_transforms(robot.gpu_get_distal_link_transforms_cmd_arr)
         robot.distal_link_pos_buf[:] = robot.distal_link_transform_buf[:, :, 4:7]
     if robot.use_tendon:
-        gym.get_spatial_tendon_states(robot.gpu_get_tendon_lengths_command_array)
-        gym.get_spatial_tendon_states(robot.gpu_get_tendon_velocities_command_array)
+        gym.get_spatial_tendon_states(robot.gpu_get_tendon_command_array)
 
 
 def _get_state(container: ModuleContainer) -> dict[str, torch.Tensor]:
