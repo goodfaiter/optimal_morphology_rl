@@ -15,15 +15,14 @@ from optimal_morphology_rl.modules.module_manager import register_module
 
 @register_module("goal_visualization")
 class GoalVisualizationModule(BaseModule):
-    """Draws RGB axes at the robot's fingertip-reach goal or the object goal pose.
+    """Draws RGB axes at the goal pose stored in the shared container.
 
-    When ``container.fingertip_goal_pos`` exists (adapt_finger-style tasks) the
-    axes are drawn at the first environment's fingertip goal; otherwise they
-    are drawn at the loaded reward object's goal pose.
+    The goal is sampled from ``container.pos_goal_in_world`` and
+    ``container.quat_goal_to_world``, owned by the ``goal_pose`` module.
 
-    This module only does work when rendering is enabled.  It updates the
-    debug line shapes during the post-gym step so the renderer can draw
-    them on the next frame.
+    This module only does work when rendering is enabled and the goal exists.
+    It updates the debug line shapes during the post-gym step so the renderer
+    can draw them on the next frame.
 
     Config shape::
 
@@ -43,16 +42,13 @@ class GoalVisualizationModule(BaseModule):
         if not getattr(env, "rendering", False) or container.gym_render is None:
             return
 
-        fingertip_goal = container.get("fingertip_goal_pos")
-        if fingertip_goal is not None:
-            goal_pos = fingertip_goal[0]
-            goal_quat = torch.tensor([[0.0, 0.0, 0.0, 1.0]], device=env.device, dtype=torch.float32)
-        else:
-            reward_object = container.get("reward_object")
-            if reward_object is None:
-                return
-            goal_pos = reward_object.goal_pos_in_world[0]
-            goal_quat = reward_object.goal_quat_object_to_world[0:1]
+        pos_goal_in_world = container.get("pos_goal_in_world")
+        quat_goal_to_world = container.get("quat_goal_to_world")
+        if pos_goal_in_world is None or quat_goal_to_world is None:
+            return
+
+        goal_pos = pos_goal_in_world[0]
+        goal_quat = quat_goal_to_world[0:1]
 
         axes = [
             quat_rotate(

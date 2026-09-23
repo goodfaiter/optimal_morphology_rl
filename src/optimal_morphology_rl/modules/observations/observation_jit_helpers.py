@@ -53,14 +53,14 @@ def _object_state_obs_jit(
 def _goal_state_obs_jit(
     quat_robot_to_world: torch.Tensor,
     robot_pos_in_world: torch.Tensor,
-    goal_pos_in_world: torch.Tensor,
-    goal_quat_object_to_world: torch.Tensor,
+    pos_goal_in_world: torch.Tensor,
+    quat_goal_to_world: torch.Tensor,
 ) -> torch.Tensor:
     """Compute goal-state observation in the robot frame."""
     quat_world_to_robot = quat_conjugate(quat_robot_to_world)
 
-    goal_pos_in_robot = quat_rotate_inverse(quat_robot_to_world, goal_pos_in_world - robot_pos_in_world)
-    goal_quat_in_robot = quat_mul(quat_world_to_robot, goal_quat_object_to_world)
+    goal_pos_in_robot = quat_rotate_inverse(quat_robot_to_world, pos_goal_in_world - robot_pos_in_world)
+    goal_quat_in_robot = quat_mul(quat_world_to_robot, quat_goal_to_world)
     _6d_goal_to_robot = _quaternion_to_6d_jit(goal_quat_in_robot)
 
     return torch.cat([goal_pos_in_robot, _6d_goal_to_robot], dim=-1)

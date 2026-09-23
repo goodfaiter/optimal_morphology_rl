@@ -34,84 +34,39 @@ class _FakeEnv:
         self.info = {"rewards": {}}
 
 
-def _observation_config(**overrides) -> dict:
-    config = {
-        "xz_range": [[0.0, 0.1], [0.2, 0.3]],
-        "y_fixed": -0.15,
-        "resample_prob": 0.0,
-    }
-    config.update(overrides)
-    return config
-
-
 # ---------------------------------------------------------------------------
 # goal_finger_tip observation
 # ---------------------------------------------------------------------------
 def test_get_obs_dim() -> None:
     container = _FakeContainer()
     env = _FakeEnv(container)
-    module = GoalFingerTipObservation(_observation_config())
+    module = GoalFingerTipObservation({})
     assert module.get_obs_dim(env) == 3
 
 
-def test_lazily_allocates_and_samples_within_box() -> None:
+def test_obs_raises_when_goal_pose_buffer_missing() -> None:
     container = _FakeContainer()
     env = _FakeEnv(container)
-    module = GoalFingerTipObservation(_observation_config())
+    module = GoalFingerTipObservation({})
+
+    out = torch.zeros((1, 3))
+    with pytest.raises(RuntimeError, match="goal_pose"):
+        module.compute_observation(env, out)
+
+
+def test_observes_goal_from_container() -> None:
+    goal = torch.tensor([[0.05, -0.12, 0.25]])
+    container = _FakeContainer(pos_goal_in_world=goal)
+    env = _FakeEnv(container)
+    module = GoalFingerTipObservation({})
 
     out = torch.zeros((1, 3))
     module.compute_observation(env, out)
 
-    goal = container.fingertip_goal_pos
-    assert goal.shape == (1, 3)
-    assert 0.0 <= goal[:, 0].item() <= 0.1
-    assert goal[:, 1].item() == pytest.approx(-0.15)
-    assert 0.2 <= goal[:, 2].item() <= 0.3
     assert torch.allclose(out, goal)
-
-
-def test_obs_persists_between_steps_without_resampling() -> None:
-    container = _FakeContainer()
-    env = _FakeEnv(container)
-    module = GoalFingerTipObservation(_observation_config(resample_prob=0.0))
-
-    out = torch.zeros((1, 3))
+    # The observation must not own or mutate the goal buffer.
     module.compute_observation(env, out)
-    first = container.fingertip_goal_pos.clone()
-    module.compute_observation(env, out)
-
-    assert torch.allclose(container.fingertip_goal_pos, first)
-    assert torch.allclose(out, first)
-
-
-def test_resample_prob_one_resamples_every_step() -> None:
-    container = _FakeContainer()
-    env = _FakeEnv(container)
-    module = GoalFingerTipObservation(_observation_config(resample_prob=1.0))
-
-    out = torch.zeros((1, 3))
-    module.compute_observation(env, out)
-    module.compute_observation(env, out)
-
-    # Goal still inside the box (strictly not equal with probability ~1).
-    assert 0.0 <= container.fingertip_goal_pos[:, 0].item() <= 0.1
-    assert 0.2 <= container.fingertip_goal_pos[:, 2].item() <= 0.3
-
-
-def test_resample_prob_one_keeps_samples_in_box_multi_env() -> None:
-    container = _FakeContainer()
-    env = _FakeEnv(container, total_num_envs=8)
-    module = GoalFingerTipObservation(_observation_config(resample_prob=1.0))
-
-    out = torch.zeros((8, 3))
-    module.compute_observation(env, out)
-    first = container.fingertip_goal_pos.clone()
-    module.compute_observation(env, out)
-
-    assert torch.all(first[:, 0] <= 0.1)
-    assert torch.all(first[:, 1] == -0.15)
-    assert torch.all(first[:, 2] >= 0.2)
-    assert first[:, 2].max() <= 0.3
+    assert torch.allclose(out, goal)
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +80,7 @@ class _FakeKinematicSensor:
 def _reward_container(fingertip_pos: torch.Tensor, goal_pos: torch.Tensor) -> tuple[_FakeContainer, _FakeEnv]:
     container = _FakeContainer()
     container.kinematic_sensors = {"Pinky_DP": _FakeKinematicSensor(fingertip_pos)}
-    container.fingertip_goal_pos = goal_pos
+    container.pos_goal_in_world = goal_pos
     env = _FakeEnv(container)
     return container, env
 

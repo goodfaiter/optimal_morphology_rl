@@ -182,9 +182,7 @@ def test_bounds_termination_zero_scale_disables_reward() -> None:
 
 
 class _FakeRewardObject:
-    def __init__(self, goal_quat: torch.Tensor):
-        self.name = "cube"
-        self.goal_quat_object_to_world = goal_quat
+    name = "cube"
 
 
 class _FakeKinematicSensorQuat:
@@ -199,7 +197,8 @@ def _make_cube_env(object_quat: torch.Tensor, goal_quat: torch.Tensor) -> tuple[
     container.device = device
     container.total_num_envs = total_num_envs
     container.reward_object_name = "cube"
-    container.reward_object = _FakeRewardObject(goal_quat)
+    container.reward_object = _FakeRewardObject()
+    container.quat_goal_to_world = goal_quat
     container.kinematic_sensors = {"cube": _FakeKinematicSensorQuat(object_quat)}
 
     env = _FakeEnv(container)

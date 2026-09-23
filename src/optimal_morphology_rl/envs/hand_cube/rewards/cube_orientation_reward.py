@@ -25,7 +25,6 @@ class CubeOrientationReward(RewardBaseModule):
             return None
 
         container = env.module_manager.container
-        reward_object = container.reward_object
         sensor = find_kinematic_sensor(container, reward_object_name)
         if sensor is None:
             raise RuntimeError(
@@ -33,9 +32,15 @@ class CubeOrientationReward(RewardBaseModule):
                 "Ensure create_kinematic_sensor is listed."
             )
         quat_object_to_world = sensor.quat_sensor_to_world
+        quat_goal_to_world = container.get("quat_goal_to_world")
+        if quat_goal_to_world is None:
+            raise RuntimeError(
+                "cube_orientation_reward: container.quat_goal_to_world is missing. "
+                "Add the goal_pose module to post_physics_step_modules before observation."
+            )
 
         _6d_object_to_world = quaternion_to_6d(quat_object_to_world)
-        _6d_object_goal_to_world = quaternion_to_6d(reward_object.goal_quat_object_to_world)
+        _6d_object_goal_to_world = quaternion_to_6d(quat_goal_to_world)
 
         goal_alignment = torch.sum(_6d_object_goal_to_world * _6d_object_to_world, dim=-1) + 2.0
         goal_alignment_normalized = goal_alignment / 4.0

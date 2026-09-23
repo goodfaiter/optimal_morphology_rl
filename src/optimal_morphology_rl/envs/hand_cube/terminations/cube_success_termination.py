@@ -54,9 +54,14 @@ class CubeSuccessTermination(TerminationBaseModule):
                 "Ensure create_kinematic_sensor is listed."
             )
         quat_object_to_world = sensor.quat_sensor_to_world
-        quat_object_goal_to_world = reward_object.goal_quat_object_to_world
+        quat_goal_to_world = container.get("quat_goal_to_world")
+        if quat_goal_to_world is None:
+            raise RuntimeError(
+                "cube_success_termination: container.quat_goal_to_world is missing. "
+                "Add the goal_pose module to post_physics_step_modules before observation."
+            )
 
-        quat_dot = torch.sum(quat_object_goal_to_world * quat_object_to_world, dim=-1).abs().clamp(max=1.0)
+        quat_dot = torch.sum(quat_goal_to_world * quat_object_to_world, dim=-1).abs().clamp(max=1.0)
         goal_angle = 2.0 * torch.acos(quat_dot)
         is_aligned = goal_angle < math.radians(15.0)
 

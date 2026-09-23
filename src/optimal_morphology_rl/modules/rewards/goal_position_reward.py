@@ -43,19 +43,25 @@ class GoalPositionReward(RewardBaseModule):
                 "Ensure create_kinematic_sensor is listed."
             )
         object_pos_in_world = sensor.pos_in_world
+        goal_pos = container.get("pos_goal_in_world")
+        if goal_pos is None:
+            raise RuntimeError(
+                "goal_position_reward: container.pos_goal_in_world is missing. "
+                "Add the goal_pose module to post_physics_step_modules before observation."
+            )
 
         normalize = float(self.config.get("normalize", 0.2))
         scale = float(self.config.get("scale", 1.5))
 
         reward, raw = _goal_position_reward_jit(
             object_pos_in_world,
-            reward_object.goal_pos_in_world,
+            goal_pos,
             normalize,
             scale,
         )
 
         env.info["rewards"]["goal_position_reward"] = raw.sum().item() / env.total_num_envs
         env.info["rewards"]["goal_position_error_l2_norm_mm"] = (
-            torch.norm(object_pos_in_world - reward_object.goal_pos_in_world, dim=-1).sum().item() / env.total_num_envs * 1000
+            torch.norm(object_pos_in_world - goal_pos, dim=-1).sum().item() / env.total_num_envs * 1000
         )
         return reward

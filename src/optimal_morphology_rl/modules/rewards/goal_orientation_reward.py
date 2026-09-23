@@ -56,11 +56,17 @@ class GoalOrientationReward(RewardBaseModule):
                 "Ensure create_kinematic_sensor is listed."
             )
         quat_object_to_world = sensor.quat_sensor_to_world
+        goal_quat = container.get("quat_goal_to_world")
+        if goal_quat is None:
+            raise RuntimeError(
+                "goal_orientation_reward: container.quat_goal_to_world is missing. "
+                "Add the goal_pose module to post_physics_step_modules before observation."
+            )
 
         scale = float(self.config.get("scale", 1.0))
         reward, raw = _goal_orientation_reward_jit(
             quat_object_to_world,
-            reward_object.goal_quat_object_to_world,
+            goal_quat,
             scale,
         )
 

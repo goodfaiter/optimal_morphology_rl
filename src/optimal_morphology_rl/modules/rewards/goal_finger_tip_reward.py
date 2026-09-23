@@ -47,7 +47,12 @@ class GoalFingerTipReward(RewardBaseModule):
                 "Ensure the .vsim defines the fingertip kinematic sensor and create_kinematic_sensor is listed."
             )
         fingertip_pos = sensor.pos_in_world
-        goal_pos = container.fingertip_goal_pos
+        goal_pos = container.get("pos_goal_in_world")
+        if goal_pos is None:
+            raise RuntimeError(
+                "goal_finger_tip_reward: container.pos_goal_in_world is missing. "
+                "Add the goal_pose module to post_physics_step_modules before observation."
+            )
 
         normalize = float(self.config.get("normalize", 0.05))
         scale = float(self.config.get("scale", 1.0))

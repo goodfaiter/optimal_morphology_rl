@@ -1,0 +1,135 @@
+modules:
+  init_modules:
+    - create_rigid_vsim_envs
+    - create_robot
+    - randomize_friction
+    - color_articulation_links
+    - create_objects
+    - create_kinematic_sensor
+    - create_force_sensor
+    - create_contacts
+    - termination
+    - render
+  pre_physics_step_modules:
+    - render
+    - interactive_slider_control
+    - process_variable_actions
+    - robot_control_floating_hand
+    - antagonistic_spring
+    - robot_control_tendons
+    - object_control
+    - apply_tendon_forces
+    - apply_motor_forces
+    - apply_root_velocity
+    - gravity_compensation
+    - apply_root_forces
+  pre_gym_step_modules: []
+  post_gym_step_modules: []
+  post_physics_step_modules:
+    - update_robot
+    - update_objects
+    - update_kinematic_sensor
+    - update_force_sensors
+    - update_contacts
+    - goal_pose
+    - observation
+    - reward
+    - termination
+    - goal_visualization
+
+create_rigid_vsim_envs:
+  num_envs: 1
+  device: cuda:0
+  rendering: true
+  with_window: true
+  enable_scene_query: true
+  timestep: ${1/120}
+  frame_skip: 2
+  spacing: 1.0
+  gravity: [0.0, 0.0, -9.81]
+  up_axis: [0.0, 0.0, 1.0]
+  max_contact_pairs_per_env: 64
+  max_contact_points_per_patch: 4
+
+create_robot:
+  vsim_path: /workspace/data/optimal_hands/button_difficult.vsim
+  fixed_hand: false
+  use_tendon: true
+  randomize_pose: false
+
+create_objects:
+  objects: [table, button_difficult]
+  reward_object: button_difficult
+
+goal_pose:
+  goal_position:
+    x: [0.35, 0.35]
+    y: [0.0, 0.0]
+    z: [0.1, 0.1]
+  goal_orientation: [0, 0, 0, 1]
+  resample_prob: 0.005
+
+robot_control_floating_hand: {}
+robot_control_tendons: {}
+apply_tendon_forces: {}
+apply_motor_forces: {}
+apply_root_velocity: {}
+gravity_compensation: {}
+apply_root_forces: {}
+
+randomize_friction:
+  friction_coefficient: 0.1
+
+interactive_slider_control:
+  slider_min: -1.0
+  slider_max: 1.0
+
+process_variable_actions:
+  min_velocity: [-1.0, -1.0, -1.0, -0.2, -0.2, -0.2]
+  max_velocity: [1.0, 1.0, 1.0, 0.2, 0.2, 0.2]
+  min_dof_scale: -0.25
+  max_dof_scale: 10.0
+
+antagonistic_spring:
+  spring_constants: 0.1
+
+create_force_sensor:
+  link_names:
+  - distal
+
+create_contacts:
+  link_names:
+  - distal
+
+observation:
+  num_hist: 3
+  hist_stride: 10
+  modules:
+  - robot_state
+  - object_state
+  - goal_state
+
+reward:
+  goal_position_reward:
+    scale: 1.5
+    normalize: 0.05
+  hand_to_object_distance_reward:
+    scale: 0.2
+  fingertip_contact_reward:
+    scale: 2.0
+  action_penalty_reward:
+    scale: 0.01
+  action_smoothness_reward:
+    scale: 0.01
+
+termination:
+  progress:
+    max_episode_length: 1000000
+
+render:
+  capped_step: false
+  paused: false
+  raise_exception: true
+  camera:
+    eye: [0.049792, 0.161890, 0.291726]
+    target: [0.586387, -0.742233, -0.324408]

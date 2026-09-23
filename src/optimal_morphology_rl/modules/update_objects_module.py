@@ -81,9 +81,3 @@ class UpdateObjectsModule(BaseModule):
             return
         for obj in objects.values():
             obj.refresh_buffers(container.gym)
-
-        # Resample goal
-        reward_object = container.get("reward_object")
-        sample_new_goal = torch.rand(self.total_num_envs, device=self.device) < 0.005
-        if sample_new_goal.any():
-            reward_object.update_goal(sample_new_goal)

@@ -26,12 +26,18 @@ class GoalStateObservation(ObservationBaseModule):
 
     def compute_observation(self, env: Any, out: torch.Tensor) -> None:
         container = env.module_manager.container
-        reward_object = container.reward_object
+        goal_pos = container.get("pos_goal_in_world")
+        goal_quat = container.get("quat_goal_to_world")
+        if goal_pos is None or goal_quat is None:
+            raise RuntimeError(
+                "goal_state: container.pos_goal_in_world / quat_goal_to_world are missing. "
+                "Add the goal_pose module to post_physics_step_modules before observation."
+            )
         robot_state = container.robot_state
 
         out[:] = _goal_state_obs_jit(
             robot_state["quat_robot_to_world"],
             robot_state["robot_pos_in_world"],
-            reward_object.goal_pos_in_world,
-            reward_object.goal_quat_object_to_world,
+            goal_pos,
+            goal_quat,
         )

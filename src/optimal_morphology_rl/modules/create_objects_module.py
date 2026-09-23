@@ -40,18 +40,9 @@ class ObjectBase(ABC):
         self.gpu_get_object_kin_cmd_array: Any = None
         self.gpu_set_object_kin_cmd_array: Any = None
 
-        # Goal buffers attached by create_objects module.
-        self.goal_pos_in_world: Optional[torch.Tensor] = None
-        self.goal_quat_object_to_world: Optional[torch.Tensor] = None
-
     @abstractmethod
     def load(self, env_def) -> None:
         """Load object into environment definition and set self.handle."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def update_goal(self, reset_buf: torch.Tensor) -> None:
-        """Update goal position and orientation for the object."""
         raise NotImplementedError
 
     @abstractmethod
@@ -129,20 +120,11 @@ class LoadedRigidObject(ObjectBase):
         rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
         env_def.assign_rigid_material_to_rigid_body(object_def_handle, rigid_mat_handle)
 
-    def update_goal(self, reset_buf: torch.Tensor) -> None:
-        self.goal_pos_in_world[reset_buf, 0] = 0.0
-        self.goal_pos_in_world[reset_buf, 1] = 0.0
-        self.goal_pos_in_world[reset_buf, 2] = 0.2
-        self.goal_quat_object_to_world[reset_buf, :] = random_uniform_quaternion(
-            reset_buf.sum().item(), device=reset_buf.device, dtype=torch.float32
-        )
-
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
         self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
         self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.0, 0.0, 0.025]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
-        self.update_goal(reset_buf)
 
     def get_link_offset(self) -> int:
         return 1
@@ -206,9 +188,6 @@ class LoadedArticulatedObject(ObjectBase):
         for i in range(self.art_def.get_num_link_defs()):
             env_def.assign_rigid_material_to_articulation_link(object_def_handle, rigid_mat_handle, i)
 
-    def update_goal(self, reset_buf: torch.Tensor) -> None:
-        raise NotImplementedError
-
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
         self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
         self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
@@ -216,7 +195,6 @@ class LoadedArticulatedObject(ObjectBase):
         self.set_joint_pos_buf[reset_buf, :] = 0.0
         self.set_joint_vel_buf[reset_buf, :] = 0.0
         gym.set_articulation_kinematic_states(self.gpu_set_object_kin_cmd_array)
-        self.update_goal(reset_buf)
 
     def get_link_offset(self) -> int:
         return self.num_links
@@ -225,8 +203,6 @@ class LoadedArticulatedObject(ObjectBase):
 class Cube(LoadedRigidObject):
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(name="cube", asset_path=_object_asset_path("cube_mid"), config=config)
-        self.goal_position = self.config.get("goal_position", [0.0, -0.15, 0.25])
-        self.goal_orientation = self.config.get("goal_orientation", "random")
         self.init_position = self.config.get("init_position", [-0.05, -0.15, 0.15])
         self.init_orientation = self.config.get("init_orientation", [0.7071068, -0.7071068, 0.0, 0.0])
 
@@ -267,23 +243,16 @@ class Cube(LoadedRigidObject):
                 orientation_config, device=reset_buf.device, dtype=torch.float32
             )
 
-    def update_goal(self, reset_buf: torch.Tensor) -> None:
-        self._apply_position(self.goal_pos_in_world, reset_buf, self.goal_position)
-        self._apply_orientation(self.goal_quat_object_to_world, reset_buf, self.goal_orientation)
-
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
         self._apply_orientation(self.set_trans_object_to_world_buf[:, :4], reset_buf, self.init_orientation)
         self._apply_position(self.set_trans_object_to_world_buf[:, 4:], reset_buf, self.init_position)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
-        self.update_goal(reset_buf)
 
 
 class CubeSmall(LoadedRigidObject):
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(name="cube", asset_path=_object_asset_path("cube_small"), config=config)
-        self.goal_position = self.config.get("goal_position", [0.0, -0.15, 0.25])
-        self.goal_orientation = self.config.get("goal_orientation", _IDENTITY_QUAT)
         self.init_position = self.config.get("init_position", [-0.05, -0.15, 0.15])
         self.init_orientation = self.config.get("init_orientation", [0.7071068, -0.7071068, 0.0, 0.0])
 
@@ -324,16 +293,11 @@ class CubeSmall(LoadedRigidObject):
                 orientation_config, device=reset_buf.device, dtype=torch.float32
             )
 
-    def update_goal(self, reset_buf: torch.Tensor) -> None:
-        self._apply_position(self.goal_pos_in_world, reset_buf, self.goal_position)
-        self._apply_orientation(self.goal_quat_object_to_world, reset_buf, self.goal_orientation)
-
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
         self._apply_orientation(self.set_trans_object_to_world_buf[:, :4], reset_buf, self.init_orientation)
         self._apply_position(self.set_trans_object_to_world_buf[:, 4:], reset_buf, self.init_position)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
-        self.update_goal(reset_buf)
 
 
 class Tomato(LoadedRigidObject):
@@ -350,7 +314,6 @@ class TomatoExtreme(LoadedRigidObject):
         self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.0, 0.0, 0.075]], device=reset_buf.device)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
-        self.update_goal(reset_buf)
 
 
 class Knife(LoadedRigidObject):
@@ -473,14 +436,6 @@ class Drawer(LoadedArticulatedObject):
                 self.drawer_joint_motor_index = i
                 self.drawer_joint_dof_index = motor_def.dof_index
 
-    def update_goal(self, reset_buf: torch.Tensor) -> None:
-        self.goal_pos_in_world[reset_buf, 0] = 0.0
-        self.goal_pos_in_world[reset_buf, 1] = 0.0
-        self.goal_pos_in_world[reset_buf, 2] = 0.1
-        half = math.sin(math.pi / 4.0)
-        w = math.cos(math.pi / 4.0)
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor([half, 0.0, 0.0, w], device=reset_buf.device)
-
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
         self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
         self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
@@ -490,7 +445,6 @@ class Drawer(LoadedArticulatedObject):
             self.unlocked_buf[reset_buf] = False
 
         gym.set_articulation_kinematic_states(self.gpu_set_object_kin_cmd_array)
-        self.update_goal(reset_buf)
 
 
 class Button(LoadedArticulatedObject):
@@ -530,12 +484,6 @@ class Button(LoadedArticulatedObject):
                 self.button_joint_motor_index = i
                 self.button_joint_dof_index = motor_def.dof_index
 
-    def update_goal(self, reset_buf: torch.Tensor) -> None:
-        self.goal_pos_in_world[reset_buf, 0] = 0.3
-        self.goal_pos_in_world[reset_buf, 1] = 0.0
-        self.goal_pos_in_world[reset_buf, 2] = 0.1
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
-
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
         self.set_trans_object_to_world_buf[reset_buf, :4] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
         self.set_trans_object_to_world_buf[reset_buf, 4:] = torch.tensor([[0.2, 0.0, 0.1]], device=reset_buf.device)
@@ -546,7 +494,6 @@ class Button(LoadedArticulatedObject):
             self.set_joint_vel_buf[reset_buf, self.button_joint_dof_index] = 0.0
 
         gym.set_articulation_kinematic_states(self.gpu_set_object_kin_cmd_array)
-        self.update_goal(reset_buf)
 
 
 class ButtonDifficult(Button):
@@ -554,12 +501,6 @@ class ButtonDifficult(Button):
         super().__init__(config=config, **kwargs)
         self.name = "button_difficult"
         self.asset_path = _object_asset_path("button_difficult")
-
-    def update_goal(self, reset_buf: torch.Tensor) -> None:
-        self.goal_pos_in_world[reset_buf, 0] = 0.35
-        self.goal_pos_in_world[reset_buf, 1] = 0.0
-        self.goal_pos_in_world[reset_buf, 2] = 0.1
-        self.goal_quat_object_to_world[reset_buf, :] = torch.tensor(_IDENTITY_QUAT, device=reset_buf.device)
 
 
 #: Mapping from object name to object class.
@@ -627,8 +568,6 @@ def _allocate_set_buffers(obj: ObjectBase, total_num_envs: int, device: torch.de
     """Allocate buffers used to reset/write object state."""
     obj.set_trans_object_to_world_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
     obj.set_vel_in_world_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
-    obj.goal_pos_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
-    obj.goal_quat_object_to_world = torch.zeros((total_num_envs, 4), device=device, dtype=torch.float32)
 
     if isinstance(obj, LoadedArticulatedObject):
         obj.set_joint_pos_buf = torch.zeros((total_num_envs, obj.num_joints), device=device, dtype=torch.float32)
