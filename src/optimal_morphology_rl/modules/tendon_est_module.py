@@ -144,6 +144,8 @@ class TendonEstModule(BaseModule):
         tendon_vels = robot.get_tendon_vel_buf[:, self.model_tendon_indices]
         actions = container.scaled_act_buf[:, container.active_dof_slice]
 
+        # print(actions[0, :])
+
         # Map each model tendon to its policy-action slot within the
         # policy-controlled tendon columns (fixed tendons have no action).
         dof_indices = [int(v) for v in container.active_dof_indices.tolist()]
@@ -158,6 +160,8 @@ class TendonEstModule(BaseModule):
             max=self.desired_max,
         )
 
+        # print(measured_vel_rad_per_sec[0, :])
+
         feature_map = {
             "measured_position_rad": measured_pos_rad,
             "desired_position_rad": desired_pos_rad,
@@ -171,6 +175,9 @@ class TendonEstModule(BaseModule):
 
         force = -1.0 * output[:, 0, self.force_output_idx]
         force = force.reshape(container.total_num_envs, num_model_tendons)
+
+        # force = 2.0 * actions[:, action_slots]
+
         container.tendon_force_buf[:, self.model_tendon_indices] = force
 
     def reset(self, container: ModuleContainer) -> None:

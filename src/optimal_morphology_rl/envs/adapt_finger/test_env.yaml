@@ -61,13 +61,14 @@ randomize_friction:
 
 interactive_slider_control:
   slider_min: 0.0
-  slider_max: 1.0
+  slider_max: 10.0
 
 process_variable_actions:
   min_dof_scale: -5.0
   max_dof_scale: 5.0
 
 tendon_est:
+  model_path: "/workspace/optimal_morphology_rl_assets/optimal_morphology_rl_assets/models/actuators/2026_09_24_spring_transformer_frozen_finger.pt"
   pully_radius: 0.011
   model_tendon_indices: [0, 1]
   zero_offset_length: [0.057, 0.040]
@@ -75,7 +76,7 @@ tendon_est:
 rigid_tendons: {}
 
 antagonistic_spring:
-  spring_constants: 0.1
+  spring_constants: 0.05
 
 observation:
   num_hist: 1

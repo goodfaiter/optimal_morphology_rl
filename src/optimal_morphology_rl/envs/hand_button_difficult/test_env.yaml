@@ -31,7 +31,7 @@ modules:
     - update_kinematic_sensor
     - update_force_sensors
     - update_contacts
-    - goal_pose
+    - goal_pose_discrete
     - observation
     - reward
     - termination
@@ -61,7 +61,7 @@ create_objects:
   objects: [table, button_difficult]
   reward_object: button_difficult
 
-goal_pose:
+goal_pose_discrete:
   goal_position:
     x: [0.35, 0.35]
     y: [0.0, 0.0]

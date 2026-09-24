@@ -58,6 +58,7 @@ class AntagonisticSpring(BaseModule):
         container.antagonistic_spring_force_buf = torch.zeros(
             (container.total_num_envs, robot.num_motors), device=device, dtype=torch.float32
         )
+        print(f"AntagonisticSpring: spring_constants = {self.spring_constants.cpu().numpy()}")
 
     def step(self, container: ModuleContainer) -> None:
         """Compute the antagonistic spring force for each motor."""

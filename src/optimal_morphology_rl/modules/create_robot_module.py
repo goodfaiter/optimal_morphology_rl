@@ -219,7 +219,7 @@ class RobotModule(BaseModule):
 
         randomize_pose = bool(self.config.get("randomize_pose", False))
 
-        container.reset_joint_pos_buf[reset_buf, :] = 0.0
+        container.reset_joint_pos_buf[reset_buf, :] = torch.rand((reset_buf.sum().item(), container.robot.num_joints), device=device) * torch.pi * 0.5
         container.reset_joint_vel_buf[reset_buf, :] = 0.0
         if self.fixed_hand:
             container.reset_root_transform_buf[reset_buf, 4:] = self.fixed_hand_root_pos

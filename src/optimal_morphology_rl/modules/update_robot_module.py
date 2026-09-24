@@ -150,6 +150,7 @@ class UpdateRobotModule(BaseModule):
         robot = container.robot
         _allocate_read_buffers(robot, container.total_num_envs, container.device)
         _create_read_gpu_commands(robot, container.env_group, container.gym)
+        container.robot_state = _get_state(container)
 
     def step(self, container: ModuleContainer) -> None:
         """Refresh robot state buffers and publish the robot state dict."""

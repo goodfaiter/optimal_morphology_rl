@@ -1,9 +1,9 @@
-"""Unit tests for the goal_pose module."""
+"""Unit tests for the goal_pose_discrete module."""
 
 import pytest
 import torch
 
-from optimal_morphology_rl.modules.goal_pose_module import GoalPoseModule
+from optimal_morphology_rl.modules.goal_pose_discrete_module import GoalPoseDiscreteModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 
 
@@ -27,7 +27,7 @@ def _container(total_num_envs: int = 1) -> ModuleContainer:
 
 def test_post_finalize_allocates_goal_buffers() -> None:
     container = _container(4)
-    module = GoalPoseModule(_config())
+    module = GoalPoseDiscreteModule(_config())
 
     module.post_finalize(container)
 
@@ -40,7 +40,7 @@ def test_post_finalize_allocates_goal_buffers() -> None:
 def test_reset_samples_within_ranges() -> None:
     container = _container(1)
     container.reset_buf.fill_(True)
-    module = GoalPoseModule(_config())
+    module = GoalPoseDiscreteModule(_config())
 
     module.reset(container)
 
@@ -57,7 +57,7 @@ def test_reset_samples_within_ranges() -> None:
 def test_reset_resamples_on_every_reset_call() -> None:
     container = _container(8)
     container.reset_buf.fill_(True)
-    module = GoalPoseModule(_config())
+    module = GoalPoseDiscreteModule(_config())
 
     module.reset(container)
     first_pos = container.pos_goal_in_world.clone()
@@ -73,7 +73,7 @@ def test_reset_resamples_on_every_reset_call() -> None:
 def test_full_env_reset_resamples_all_envs() -> None:
     container = _container(4)
     container.reset_buf.fill_(True)
-    module = GoalPoseModule({"goal_position": {"x": [0.0, 0.1], "y": [0, 0], "z": [0, 0]}, "resample_prob": 0.0})
+    module = GoalPoseDiscreteModule({"goal_position": {"x": [0.0, 0.1], "y": [0, 0], "z": [0, 0]}, "resample_prob": 0.0})
 
     module.reset(container)
     first = container.pos_goal_in_world.clone()
@@ -87,7 +87,7 @@ def test_full_env_reset_resamples_all_envs() -> None:
 def test_partial_reset_only_changes_reset_envs() -> None:
     container = _container(4)
     container.reset_buf.fill_(True)
-    module = GoalPoseModule(_config())
+    module = GoalPoseDiscreteModule(_config())
 
     module.reset(container)
     first = container.pos_goal_in_world.clone()
@@ -106,7 +106,7 @@ def test_reset_with_missing_reset_buf_samples_all() -> None:
     container.total_num_envs = 3
     container.device = torch.device("cpu")
     container.reset_buf = None
-    module = GoalPoseModule(_config())
+    module = GoalPoseDiscreteModule(_config())
 
     module.reset(container)
 
@@ -120,7 +120,7 @@ def test_reset_with_lazy_allocation_raises_without_env_buffers() -> None:
     container = ModuleContainer()
     container.reset_buf = torch.zeros(2, dtype=torch.bool)
     container.reset_buf.fill_(True)
-    module = GoalPoseModule(_config())
+    module = GoalPoseDiscreteModule(_config())
 
     # total_num_envs/device missing entirely.
     with pytest.raises(RuntimeError, match="total_num_envs"):
@@ -130,7 +130,7 @@ def test_reset_with_lazy_allocation_raises_without_env_buffers() -> None:
 def test_resample_prob_zero_persists_between_steps() -> None:
     container = _container(4)
     container.reset_buf.fill_(True)
-    module = GoalPoseModule(_config(resample_prob=0.0))
+    module = GoalPoseDiscreteModule(_config(resample_prob=0.0))
 
     module.reset(container)
     first = container.pos_goal_in_world.clone()
@@ -143,7 +143,7 @@ def test_resample_prob_zero_persists_between_steps() -> None:
 def test_resample_prob_one_resamples_every_step() -> None:
     total_num_envs = 8
     container = _container(total_num_envs)
-    module = GoalPoseModule(
+    module = GoalPoseDiscreteModule(
         {
             "goal_position": {"x": [0.0, 0.1], "y": [0, 0], "z": [0, 0]},
             "resample_prob": 1.0,
@@ -164,7 +164,7 @@ def test_resample_prob_one_resamples_every_step() -> None:
 def test_resample_prob_mask_semantics(monkeypatch) -> None:
     container = _container(4)
     container.reset_buf.fill_(True)
-    module = GoalPoseModule(
+    module = GoalPoseDiscreteModule(
         {
             "goal_position": {"x": [0.0, 0.1], "y": [0, 0], "z": [0, 0]},
             "resample_prob": 0.01,
@@ -191,7 +191,7 @@ def test_resample_prob_mask_semantics(monkeypatch) -> None:
 def test_goal_orientation_random_samples_unit_quaternions() -> None:
     container = _container(16)
     container.reset_buf.fill_(True)
-    module = GoalPoseModule(_config(goal_orientation="random"))
+    module = GoalPoseDiscreteModule(_config(goal_orientation="random"))
 
     module.reset(container)
 
@@ -202,7 +202,7 @@ def test_goal_orientation_random_samples_unit_quaternions() -> None:
 def test_goal_orientation_fixed_samples_configured_quat() -> None:
     container = _container(4)
     container.reset_buf.fill_(True)
-    module = GoalPoseModule(_config(goal_orientation=[0.7071068, 0.0, 0.0, 0.7071068]))
+    module = GoalPoseDiscreteModule(_config(goal_orientation=[0.7071068, 0.0, 0.0, 0.7071068]))
 
     module.reset(container)
 
@@ -216,7 +216,7 @@ def test_goal_orientation_fixed_samples_configured_quat() -> None:
 def test_degenerate_ranges_sample_fixed_position() -> None:
     container = _container(4)
     container.reset_buf.fill_(True)
-    module = GoalPoseModule(
+    module = GoalPoseDiscreteModule(
         {
             "goal_position": {"x": [0.3, 0.3], "y": [0.0, 0.0], "z": [0.1, 0.1]},
             "resample_prob": 0.0,
@@ -232,7 +232,7 @@ def test_degenerate_ranges_sample_fixed_position() -> None:
 def test_defaults_sample_zero_center() -> None:
     container = _container(2)
     container.reset_buf.fill_(True)
-    module = GoalPoseModule({})
+    module = GoalPoseDiscreteModule({})
 
     module.reset(container)
 

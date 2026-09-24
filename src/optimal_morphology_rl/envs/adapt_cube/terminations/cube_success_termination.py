@@ -58,7 +58,7 @@ class CubeSuccessTermination(TerminationBaseModule):
         if quat_goal_to_world is None:
             raise RuntimeError(
                 "cube_success_termination: container.quat_goal_to_world is missing. "
-                "Add the goal_pose module to post_physics_step_modules before observation."
+                "Add a goal_pose_discrete, goal_pose_sinusoidal, or goal_pose_square module to post_physics_step_modules before observation."
             )
 
         quat_dot = torch.sum(quat_goal_to_world * quat_object_to_world, dim=-1).abs().clamp(max=1.0)

@@ -31,7 +31,7 @@ class GoalStateObservation(ObservationBaseModule):
         if goal_pos is None or goal_quat is None:
             raise RuntimeError(
                 "goal_state: container.pos_goal_in_world / quat_goal_to_world are missing. "
-                "Add the goal_pose module to post_physics_step_modules before observation."
+                "Add a goal_pose_discrete, goal_pose_sinusoidal, or goal_pose_square module to post_physics_step_modules before observation."
             )
         robot_state = container.robot_state
 

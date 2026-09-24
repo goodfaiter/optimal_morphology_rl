@@ -19,10 +19,9 @@ class GoalFingerTipObservation(ObservationBaseModule):
     """Fingertip-reach goal observation.
 
     Reads ``container.pos_goal_in_world`` ``(total_num_envs, 3)``, which is
-    owned and sampled by the ``goal_pose`` module. This module only observes
-    the goal; goals change on every reset call and are periodically resampled
-    for random envs every step by ``goal_pose`` (``resample_prob`` per env per
-    step).
+    owned and sampled by the ``goal_pose_discrete`` / ``goal_pose_sinusoidal``
+    / ``goal_pose_square`` modules. This module only observes the goal; goals
+    change on every reset call, and in continuous modes they move every step.
     """
 
     def get_obs_dim(self, env: Any) -> int:
@@ -34,6 +33,6 @@ class GoalFingerTipObservation(ObservationBaseModule):
         if goal is None:
             raise RuntimeError(
                 "goal_finger_tip: container.pos_goal_in_world is missing. "
-                "Add the goal_pose module to post_physics_step_modules before observation."
+                "Add a goal_pose_discrete, goal_pose_sinusoidal, or goal_pose_square module to post_physics_step_modules before observation."
             )
         out[:] = goal

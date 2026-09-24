@@ -18,7 +18,8 @@ class GoalVisualizationModule(BaseModule):
     """Draws RGB axes at the goal pose stored in the shared container.
 
     The goal is sampled from ``container.pos_goal_in_world`` and
-    ``container.quat_goal_to_world``, owned by the ``goal_pose`` module.
+    ``container.quat_goal_to_world``, owned by the ``goal_pose_discrete`` /
+    ``goal_pose_sinusoidal`` / ``goal_pose_square`` modules.
 
     This module only does work when rendering is enabled and the goal exists.
     It updates the debug line shapes during the post-gym step so the renderer
