@@ -8,7 +8,7 @@ params:
     name: continuous_a2c_logstd
 
   network:
-    name: actor_critic
+    name: transformer_actor_critic
     separate: True
 
     space:
@@ -25,15 +25,16 @@ params:
           # b: 0.1
         fixed_sigma: True
 
-    mlp:
-      units: [256, 128, 64]
+    transformer:
+      # history_size is read from the env config at load time (num_hist),
+      # like num_actors: ${num_envs}.
+      history_size: ${num_hist}
+      num_layers: 2
+      num_heads: 4
+      hidden_dim: 128
+      feature_size: 64
+      dropout: 0.1
       activation: tanh
-      d2rl: False
-
-      initializer:
-        name: default
-      regularizer:
-        name: None
 
   config:
     name: adapt_finger

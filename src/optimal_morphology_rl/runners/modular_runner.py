@@ -16,6 +16,7 @@ from rl_games.torch_runner import Runner
 from vlearn.spaces import Box, Discrete
 from vlearn.torch_utils.wrappers import NewToOldAPICompatilibity
 
+import optimal_morphology_rl.networks.transformer_network  # noqa: F401  # registers the transformer builder with rl_games
 from optimal_morphology_rl.envs.modular_environment import ModularEnvironment
 from optimal_morphology_rl.utils.config import load_yaml_with_context
 
@@ -95,7 +96,8 @@ def load_task_configs(
     env_config = load_yaml_with_context(env_path, context=context)
 
     num_envs = env_config.get("create_rigid_vsim_envs", {}).get("num_envs")
-    ppo_context = {**(context or {}), "num_envs": num_envs}
+    num_hist = env_config.get("observation", {}).get("num_hist", 1)
+    ppo_context = {**(context or {}), "num_envs": num_envs, "num_hist": num_hist}
     ppo_config = load_yaml_with_context(ppo_path, context=ppo_context)
 
     return env_path, env_config, ppo_config
