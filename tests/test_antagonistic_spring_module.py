@@ -31,8 +31,24 @@ def container() -> ModuleContainer:
     return cont
 
 
-def _make_module(spring_constants=0.1) -> AntagonisticSpring:
-    return AntagonisticSpring({"spring_constants": spring_constants})
+def _make_envs(num_envs: int, joint_pos: torch.Tensor | None = None) -> ModuleContainer:
+    cont = ModuleContainer()
+    cont.total_num_envs = num_envs
+    cont.device = torch.device("cpu")
+    cont.env = _FakeEnv()
+    cont.robot = _FakeRobot()
+    cont.reset_buf = torch.zeros(num_envs, dtype=torch.bool)
+    cont.robot.get_joint_pos_buf = (
+        joint_pos if joint_pos is not None else torch.zeros((num_envs, 2), dtype=torch.float32)
+    )
+    return cont
+
+
+def _make_module(spring_constants=0.1, spring_constant_range=None) -> AntagonisticSpring:
+    cfg = {"spring_constants": spring_constants}
+    if spring_constant_range is not None:
+        cfg["spring_constant_range"] = spring_constant_range
+    return AntagonisticSpring(cfg)
 
 
 def test_post_finalize_builds_constants_and_allocates_buffer(container: ModuleContainer) -> None:
@@ -122,4 +138,141 @@ def test_post_finalize_rejects_per_motor_length_mismatch(container: ModuleContai
     module = _make_module([1.0, 2.0, 3.0])  # two motors, three values
     module.finalize(container)
     with pytest.raises(RuntimeError, match="spring_constants"):
+        module.post_finalize(container)
+
+
+# ---------------------------------------------------------------------------
+# spring_constant_range domain randomization
+# ---------------------------------------------------------------------------
+def test_range_pins_default_constants_during_training() -> None:
+    num_envs = 4
+    cont = _make_envs(num_envs, joint_pos=torch.tensor([[1.0, -2.0]] * num_envs))
+    module = _make_module(0.1, spring_constant_range=[0.1, 0.1])
+    module.finalize(cont)
+    module.post_finalize(cont)
+
+    assert module.spring_constants_buf.shape == (num_envs, 2)
+    assert torch.allclose(module.spring_constants_buf, torch.full((num_envs, 2), 0.1))
+
+    cont.reset_buf = torch.ones(num_envs, dtype=torch.bool)
+    module.reset(cont)
+    module.step(cont)
+
+    assert torch.allclose(module.spring_constants_buf, torch.full((num_envs, 2), 0.1))
+    assert torch.allclose(cont.antagonistic_spring_force_buf, -0.1 * cont.robot.get_joint_pos_buf)
+
+
+def test_range_samples_within_bounds_and_step_uses_per_env_constants() -> None:
+    num_envs = 8
+    cont = _make_envs(num_envs, joint_pos=torch.tensor([[1.0, -2.0]] * num_envs))
+    module = _make_module(0.1, spring_constant_range=[0.05, 0.2])
+    module.finalize(cont)
+    torch.manual_seed(0)
+    module.post_finalize(cont)
+
+    constants = module.spring_constants_buf
+    assert constants.shape == (num_envs, 2)
+    assert torch.all(constants >= 0.05)
+    assert torch.all(constants <= 0.2)
+    assert (constants.max() - constants.min()).item() > 0.0
+
+    module.step(cont)
+    assert torch.allclose(cont.antagonistic_spring_force_buf, -constants * cont.robot.get_joint_pos_buf)
+
+
+def test_reset_resamples_only_resetting_envs() -> None:
+    num_envs = 4
+    cont = _make_envs(num_envs)
+    module = _make_module(0.1, spring_constant_range=[0.05, 0.2])
+    module.finalize(cont)
+    torch.manual_seed(0)
+    module.post_finalize(cont)
+
+    before = module.spring_constants_buf.clone()
+    cont.reset_buf = torch.tensor([True, False, False, False])
+    torch.manual_seed(1)
+    module.reset(cont)
+
+    after = module.spring_constants_buf
+    assert torch.all(after[0] >= 0.05)
+    assert torch.all(after[0] <= 0.2)
+    assert not torch.allclose(after[0], before[0])
+    assert torch.allclose(after[1:], before[1:])
+
+
+def test_reset_resamples_all_envs_when_reset_buf_all_true() -> None:
+    num_envs = 4
+    cont = _make_envs(num_envs)
+    module = _make_module(0.1, spring_constant_range=[0.05, 0.2])
+    module.finalize(cont)
+    torch.manual_seed(0)
+    module.post_finalize(cont)
+
+    cont.reset_buf = torch.ones(num_envs, dtype=torch.bool)
+    module.reset(cont)
+
+    constants = module.spring_constants_buf
+    assert torch.all(constants >= 0.05)
+    assert torch.all(constants <= 0.2)
+
+
+def test_reset_is_noop_when_nothing_resets() -> None:
+    cont = _make_envs(4)
+    module = _make_module(0.1, spring_constant_range=[0.05, 0.2])
+    module.finalize(cont)
+    torch.manual_seed(0)
+    module.post_finalize(cont)
+
+    before = module.spring_constants_buf.clone()
+    cont.reset_buf = torch.zeros(4, dtype=torch.bool)
+    module.reset(cont)
+
+    assert torch.allclose(module.spring_constants_buf, before)
+
+
+def test_reset_keeps_defaults_without_range() -> None:
+    num_envs = 4
+    cont = _make_envs(num_envs, joint_pos=torch.tensor([[1.0, -2.0]] * num_envs))
+    module = _make_module(0.1)
+    module.finalize(cont)
+    module.post_finalize(cont)
+
+    cont.reset_buf = torch.ones(num_envs, dtype=torch.bool)
+    module.reset(cont)
+    module.step(cont)
+
+    assert torch.allclose(module.spring_constants_buf, 0.1 * torch.ones(num_envs, 2))
+    assert torch.allclose(cont.antagonistic_spring_force_buf, -0.1 * cont.robot.get_joint_pos_buf)
+
+
+def test_post_finalize_supports_range_only_config() -> None:
+    num_envs = 4
+    cont = _make_envs(num_envs, joint_pos=torch.tensor([[1.0, -2.0]] * num_envs))
+    module = AntagonisticSpring({"spring_constant_range": [0.05, 0.2]})
+    module.finalize(cont)
+    torch.manual_seed(0)
+    module.post_finalize(cont)
+
+    assert module.spring_constants is None
+
+    constants = module.spring_constants_buf
+    assert constants.shape == (num_envs, 2)
+    assert torch.all(constants >= 0.05)
+    assert torch.all(constants <= 0.2)
+
+    module.step(cont)
+    assert torch.allclose(cont.antagonistic_spring_force_buf, -constants * cont.robot.get_joint_pos_buf)
+
+
+def test_post_finalize_rejects_min_greater_than_max(container: ModuleContainer) -> None:
+    module = _make_module(0.1, spring_constant_range=[0.2, 0.05])
+    module.finalize(container)
+    with pytest.raises(RuntimeError, match="spring_constant_range"):
+        module.post_finalize(container)
+
+
+def test_post_finalize_rejects_malformed_range(container: ModuleContainer) -> None:
+    module = _make_module(0.1, spring_constant_range=0.5)
+    module.finalize(container)
+    with pytest.raises(RuntimeError, match="spring_constant_range"):
         module.post_finalize(container)

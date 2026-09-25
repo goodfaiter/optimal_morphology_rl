@@ -91,7 +91,7 @@ process_variable_actions:
   max_dof_scale: 10.0
 
 antagonistic_spring:
-  spring_constants: 0.1
+  spring_constant_range: ${eval:'[0.1, 0.1] if mode == "train" else [0.05, 0.2]'}
 
 create_force_sensor:
   link_names:

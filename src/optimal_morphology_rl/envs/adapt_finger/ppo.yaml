@@ -30,9 +30,9 @@ params:
       # like num_actors: ${num_envs}.
       history_size: ${num_hist}
       num_layers: 2
-      num_heads: 4
-      hidden_dim: 128
-      feature_size: 64
+      num_heads: 2
+      hidden_dim: 64
+      feature_size: 32
       dropout: 0.1
       activation: tanh
 
