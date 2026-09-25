@@ -54,6 +54,7 @@ from optimal_morphology_rl.modules.process_variable_actions_module import (
     ProcessVariableActionsModule,
 )
 from optimal_morphology_rl.modules.randomize_friction_module import RandomizeFrictionModule
+from optimal_morphology_rl.modules.randomize_joint_friction_module import RandomizeJointFrictionModule
 from optimal_morphology_rl.modules.rewards import (
     REWARD_REGISTRY,
     RewardBaseModule,
@@ -122,6 +123,7 @@ __all__ = [
     "ProcessFixedActionsModule",
     "ProcessVariableActionsModule",
     "RandomizeFrictionModule",
+    "RandomizeJointFrictionModule",
     "RenderModule",
     "RewardBaseModule",
     "RewardManagerModule",

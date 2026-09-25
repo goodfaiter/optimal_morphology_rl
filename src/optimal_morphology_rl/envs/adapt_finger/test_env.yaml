@@ -2,6 +2,7 @@ modules:
   init_modules:
     - create_rigid_vsim_envs
     - create_robot
+    - randomize_joint_friction
     - randomize_friction
     - termination
     - render
@@ -77,6 +78,9 @@ rigid_tendons: {}
 
 antagonistic_spring:
   spring_constant_range: [0.05, 0.05]
+
+randomize_joint_friction:
+  joint_friction_range: ${eval:'[0.01, 0.01] if mode == "train" else [0.005, 0.02]'}
 
 observation:
   num_hist: 1
