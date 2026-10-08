@@ -69,7 +69,7 @@ def test_post_finalize_builds_command_and_samples(container: ModuleContainer) ->
 
     assert container.gpu_set_joint_friction_cmd[0] == "gpu_array"
     prop, buf, handle, index_range, masks = container.env_group.commands[0]
-    assert prop == v.JointProperty.JOINT_FRICTION_LOSS
+    assert prop == v.JointProperty.JOINT_FRICTION
     assert handle == 42
     assert index_range == (0, 3)
     assert masks is None

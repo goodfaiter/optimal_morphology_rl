@@ -170,13 +170,22 @@ class TendonEstModule(BaseModule):
         raw = torch.stack([feature_map[key] for key in self._feature_order], dim=-1)  # [num_envs, T, 3]
 
         # Env-major flattening: row = env * num_model_tendons + tendon.
-        timestep = raw.reshape(container.total_num_envs * num_model_tendons, 3)
-        output = self.model.forward(timestep)
+        # timestep = raw.reshape(container.total_num_envs * num_model_tendons, 3)
+        # output = self.model.forward(timestep)
 
-        force = -1.0 * output[:, 0, self.force_output_idx]
-        force = force.reshape(container.total_num_envs, num_model_tendons)
+        # force = -1.0 * output[:, 0, self.force_output_idx]
+        # force.clamp_(min=0.0)  # Tendon force is always non-negative.
+        # force = force.reshape(container.total_num_envs, num_model_tendons)
 
-        # force = 2.0 * actions[:, action_slots]
+
+        # pos_error = actions[:, action_slots] - measured_pos_rad
+        # force = torch.clamp(2.0 * pos_error, min=0.0, max=15.0)
+
+        force = torch.clamp(2.0 * actions[:, action_slots], min=0.0, max=15.0)
+
+        # print(tendon_lengths[0, :])
+
+        # print(actions[0, 1], force[0, 1])
 
         container.tendon_force_buf[:, self.model_tendon_indices] = force
 

@@ -9,6 +9,7 @@ from typing import Any
 
 import gymnasium as gym
 import torch
+from rl_games.algos_torch import players
 from rl_games.common import env_configurations, vecenv
 from rl_games.common.algo_observer import VlearnAlgoObserver
 from rl_games.common.ivecenv import IVecEnv
@@ -17,6 +18,7 @@ from vlearn.spaces import Box, Discrete
 from vlearn.torch_utils.wrappers import NewToOldAPICompatilibity
 
 import optimal_morphology_rl.networks.transformer_network  # noqa: F401  # registers the transformer builder with rl_games
+from optimal_morphology_rl.algos.colored_noise_agent import ColoredNoiseA2CAgent
 from optimal_morphology_rl.envs.modular_environment import ModularEnvironment
 from optimal_morphology_rl.utils.config import load_yaml_with_context
 
@@ -244,6 +246,16 @@ def make_env_creator(env_config: dict[str, Any], mode: str):
     return create_envs
 
 
+def register_colored_noise_algo(runner: Runner) -> None:
+    """Register the colored-noise PPO agent under the ``a2c_continuous_pink`` algo name.
+
+    Training uses ``ColoredNoiseA2CAgent``; play mode falls back to the standard
+    player so evaluation stays noise-free.
+    """
+    runner.algo_factory.register_builder("a2c_continuous_pink", lambda **kwargs: ColoredNoiseA2CAgent(**kwargs))
+    runner.player_factory.register_builder("a2c_continuous_pink", lambda **kwargs: players.PpoPlayerContinuous(**kwargs))
+
+
 def run_rl_games(
     env_config: dict[str, Any],
     ppo_config: dict[str, Any],
@@ -301,6 +313,7 @@ def run_rl_games(
         )
 
     runner = Runner(algo_observer=VlearnAlgoObserver())
+    register_colored_noise_algo(runner)
     runner.load(ppo_config)
     try:
         runner.run(run_args)

@@ -31,8 +31,7 @@ class RandomizeJointFrictionModule(BaseModule):
     When a ``joint_friction_range`` config (``[min, max]``) is given, a
     joint friction value is sampled uniformly from that range at every reset
     (when at least one env resets) and applied via ``gym.set_joint_properties``
-    on the ``JointProperty.JOINT_FRICTION_LOSS`` property (the ``friction``
-    dynamic attribute of the .vsim joints) over the joint DOFs
+    on the ``JointProperty.JOINT_FRICTION`` property over the joint DOFs
     ``(0, robot.num_joints)``.
 
     Note: joint properties belong to the shared articulation definition, so

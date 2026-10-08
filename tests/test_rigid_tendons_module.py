@@ -107,6 +107,31 @@ def test_step_supports_multiple_rigid_tendons(container: ModuleContainer) -> Non
     assert container.rigid_tendon_force_buf[:, 0].item() == 0.0
 
 
+def test_step_supports_multiple_envs() -> None:
+    cont = ModuleContainer()
+    cont.total_num_envs = 2
+    cont.device = torch.device("cpu")
+    cont.env = _FakeEnv()
+    cont.robot = _FakeRobot()
+    cont.reset_buf = torch.zeros(2, dtype=torch.bool)
+    cont.active_dof_mask = torch.tensor([True, True, False])
+    cont.robot.get_tendon_lengths_buf = torch.tensor([[0.0865, 0.06, 0.0865], [0.05, 0.06, 0.05]])
+    cont.robot.get_tendon_vel_buf = torch.tensor([[0.0, 0.1, 0.2], [0.0, 0.0, 0.5]])
+
+    module = _make_module(stretch_kd=1.0)
+    module.finalize(cont)
+    module.post_finalize(cont)
+    module.step(cont)
+
+    # Env 0: force = 200 - vel 0.2 * kd 1.0 = 199.8; env 1 is shorter than its
+    # rest length -> stretch clamps to 0 and the force clamps to 0.
+    assert cont.rigid_tendon_force_buf[0, 2].item() == pytest.approx(199.8)
+    assert cont.rigid_tendon_force_buf[1, 2].item() == 0.0
+    # Only rigid tendon columns are written per env; the rest stay zero.
+    assert cont.rigid_tendon_force_buf[0, 0].item() == 0.0
+    assert cont.rigid_tendon_force_buf[1, 1].item() == 0.0
+
+
 def test_post_finalize_rejects_per_index_length_mismatch(container: ModuleContainer) -> None:
     module = _make_module(stretch_kp=[10000.0, 20000.0])  # one rigid tendon, two values
     module.finalize(container)
