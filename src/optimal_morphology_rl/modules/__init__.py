@@ -68,6 +68,7 @@ from optimal_morphology_rl.modules.robot_control import (
     RobotControlTendonsModule,
 )
 from optimal_morphology_rl.modules.tendon_est_module import TendonEstModule
+from optimal_morphology_rl.modules.tendon_force_m5_module import TendonForceM5Module
 from optimal_morphology_rl.modules.terminations import (
     TERMINATION_REGISTRY,
     TerminationBaseModule,
@@ -134,6 +135,7 @@ __all__ = [
     "RobotModule",
     "RobotStateObservation",
     "TendonEstModule",
+    "TendonForceM5Module",
     "TerminationBaseModule",
     "TerminationManagerModule",
     "UpdateContactsModule",

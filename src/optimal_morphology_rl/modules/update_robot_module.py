@@ -38,6 +38,7 @@ def _allocate_read_buffers(robot: Robot, total_num_envs: int, device: torch.devi
     if robot.use_tendon:
         robot.get_tendon_lengths_buf = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
         robot.get_tendon_vel_buf = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
+        robot.get_tendon_force_buf = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
 
     if robot.num_distal_links > 0:
         robot.distal_link_transform_buf = torch.zeros(
@@ -92,7 +93,14 @@ def _create_read_gpu_commands(robot: Robot, env_group: Any, gym: v.Gym) -> None:
             (0, robot.num_tendons),
         )
 
-        robot.gpu_get_tendon_command_array = gym.create_gpu_array([get_tendon_lengths_cmd, get_tendon_vel_cmd])
+        get_tendon_force_cmd = env_group.create_spatial_tendon_state_command(
+            v.SpatialTendonState.FORCE,
+            v.wrap_gpu_buffer(robot.get_tendon_force_buf),
+            robot.arti_handle,
+            (0, robot.num_tendons),
+        )
+
+        robot.gpu_get_tendon_command_array = gym.create_gpu_array([get_tendon_lengths_cmd, get_tendon_vel_cmd, get_tendon_force_cmd])
 
 
 def _refresh_buffers(robot: Robot, gym: v.Gym) -> None:

@@ -29,16 +29,21 @@ class TendonForceM5Module(BaseModule):
     angle/rate via the winding convention ``dL = -radius * dtheta`` (as in
     'tendon_est'):
 
-    - ``theta``: motor angle from the measured tendon length
     - ``omega``: motor rate from the finite-difference tendon speed
       (``-(L - L_prev)/dt`` per step, winding convention — the simulator's
       tendon velocity buffer is unreliable and unused), exponentially smoothed
       (``vel = a*vel_raw + (1-a)*vel_prev`` with the ``vel_filter_alpha``
-      coefficient, 1.0 = raw)
+      coefficient, 1.0 = raw), spike-guarded (``max_tendon_speed`` — on the
+      reset step the buffers still show the pre-teleport state, so the next
+      step would otherwise see a phantom velocity jump that launches the
+      finger) and soft-debanded (``vel_deadband``, attenuates
+      the residual length-jitter noise floor so the acceleration FD cannot
+      amplify it into bang-bang force chatter at near-zero velocity)
     - ``acc``: motor acceleration from the finite difference of the speed,
       exponentially smoothed (``acc = a*acc_raw + (1-a)*acc_prev`` with the
-      ``acc_filter_alpha`` coefficient, 1.0 = raw)
-    - ``tau_m``: motor torque ``motor_gain * (action - theta)``
+      ``acc_filter_alpha`` coefficient, 1.0 = raw) and soft-debanded
+      (``acc_deadband``)
+    - ``tau_m``: motor torque ``motor_gain * action``
     - ``tau_e_prev``: transmitted torque from the previous spatial tendon force
       read from the simulator (``-force * radius``, see 'update_robot')
 
@@ -54,10 +59,10 @@ class TendonForceM5Module(BaseModule):
     in sign, so the applied force is ``-tau_e / radius`` (clamped non-negative
     — tendons only pull).
 
-    ``pully_radius`` and ``zero_offset_length`` apply to the model-driven
-    tendons only (scalar, or one entry per ``model_tendon_indices`` entry) —
-    tendons excluded from the model (e.g. a rigid DIP) need no entries. All
-    model coefficients are scalars, or one entry per model tendon.
+    ``pully_radius`` applies to the model-driven tendons only (scalar, or one
+    entry per ``model_tendon_indices`` entry) — tendons excluded from the model
+    (e.g. a rigid DIP) need no entries. All model coefficients are scalars, or
+    one entry per model tendon.
 
     The computed force is written to ``container.tendon_force_buf`` for the
     model-driven tendon columns (see ``container.tendon_model_indices``) so
@@ -112,13 +117,9 @@ class TendonForceM5Module(BaseModule):
         container.tendon_model_indices = torch.tensor(self.model_tendon_indices, device=device, dtype=torch.long)
 
         self.pully_radius = _build_tendon_scale_tensor(self.config.get("pully_radius", 0.011), num_model_tendons, device, "pully_radius")
-        zero_offset_length = self.config.get("zero_offset_length")
-        if zero_offset_length is None:
-            raise RuntimeError(
-                "TendonForceM5 config missing 'zero_offset_length': a per-model-tendon list "
-                "of tendon zero-offset lengths (rigid tendons need no entry)."
-            )
-        self.zero_offset_length = _build_tendon_scale_tensor(zero_offset_length, num_model_tendons, device, "zero_offset_length")
+        self.max_tendon_speed = _build_tendon_scale_tensor(
+            self.config.get("max_tendon_speed", 0.22), num_model_tendons, device, "max_tendon_speed"
+        )
 
         self.motor_gain = _build_tendon_scale_tensor(self.config.get("motor_gain", 0.105), num_model_tendons, device, "motor_gain")
         self.inertia = _build_tendon_scale_tensor(self.config.get("J", 0.0011779299150459918), num_model_tendons, device, "J")
@@ -137,15 +138,23 @@ class TendonForceM5Module(BaseModule):
         self.vel_filter_alpha = _build_tendon_scale_tensor(
             self.config.get("vel_filter_alpha", 1.0), num_model_tendons, device, "vel_filter_alpha"
         )
+        self.vel_deadband = _build_tendon_scale_tensor(self.config.get("vel_deadband", 0.0), num_model_tendons, device, "vel_deadband")
+        self.acc_deadband = _build_tendon_scale_tensor(self.config.get("acc_deadband", 0.0), num_model_tendons, device, "acc_deadband")
 
         if torch.any(self.pully_radius <= 0.0):
             raise RuntimeError("TendonForceM5 config 'pully_radius' entries must be positive.")
+        if torch.any(self.max_tendon_speed <= 0.0):
+            raise RuntimeError("TendonForceM5 config 'max_tendon_speed' entries must be positive.")
         if torch.any(self.v_s <= 0.0):
             raise RuntimeError("TendonForceM5 config 'v_s' entries must be positive.")
         if torch.any(self.acc_filter_alpha < 0.0) or torch.any(self.acc_filter_alpha > 1.0):
             raise RuntimeError("TendonForceM5 config 'acc_filter_alpha' entries must be in [0, 1].")
         if torch.any(self.vel_filter_alpha < 0.0) or torch.any(self.vel_filter_alpha > 1.0):
             raise RuntimeError("TendonForceM5 config 'vel_filter_alpha' entries must be in [0, 1].")
+        if torch.any(self.vel_deadband < 0.0):
+            raise RuntimeError("TendonForceM5 config 'vel_deadband' entries must be non-negative.")
+        if torch.any(self.acc_deadband < 0.0):
+            raise RuntimeError("TendonForceM5 config 'acc_deadband' entries must be non-negative.")
 
         # Previous filtered tendon speed per env/model tendon (exponential filter state,
         # also the previous sample for the acceleration finite difference).
@@ -168,8 +177,20 @@ class TendonForceM5Module(BaseModule):
         vel_raw = -1.0 * (tendon_lengths - self.prev_length) / self.dt
         vel_raw = torch.where(has_history, vel_raw, torch.zeros_like(vel_raw))
 
+        # Spike guard: on the reset step the buffers still show the pre-teleport state,
+        # so the first stored length is stale and the next step sees a phantom velocity
+        # jump far beyond the physical joint speed limit (which launches the finger).
+        # Jumps beyond max_tendon_speed are phantom velocities, not motion.
+        vel_raw = torch.where(vel_raw.abs() > self.max_tendon_speed, torch.zeros_like(vel_raw), vel_raw)
+
         # Exponential smoothing of the noisy finite-difference velocity.
         tendon_vels = self.vel_filter_alpha * vel_raw + (1.0 - self.vel_filter_alpha) * self.prev_vel
+
+        # Soft deadband (continuous, so no FD spikes at the threshold): attenuates the
+        # residual length-jitter noise floor so the acceleration finite difference does
+        # not amplify it into alternating accelerations (bang-bang force chatter at
+        # near-zero velocity).
+        tendon_vels = torch.sign(tendon_vels) * torch.clamp(tendon_vels.abs() - self.vel_deadband, min=0.0)
 
         sim_forces = -1.0 * robot.get_tendon_force_buf[:, self.model_tendon_indices]
         actions = container.scaled_act_buf[:, container.active_dof_slice]
@@ -180,7 +201,6 @@ class TendonForceM5Module(BaseModule):
         action_slots = [dof_indices.index(tendon_idx) for tendon_idx in self.model_tendon_indices]
 
         # dL = -radius * dtheta (winding convention, as in 'tendon_est').
-        theta = -(tendon_lengths - self.zero_offset_length) / self.pully_radius
         omega = tendon_vels / self.pully_radius
         omega_prev = self.prev_vel / self.pully_radius
         acc_raw = (omega - omega_prev) / self.dt
@@ -188,9 +208,11 @@ class TendonForceM5Module(BaseModule):
         # Exponential smoothing of the noisy finite-difference acceleration.
         acc = self.acc_filter_alpha * acc_raw + (1.0 - self.acc_filter_alpha) * self.prev_acc
 
+        # Soft deadband on the acceleration (same rationale as the velocity deadband).
+        acc = torch.sign(acc) * torch.clamp(acc.abs() - self.acc_deadband, min=0.0)
+
         # Motor torque: PD gain on (action - measured motor angle).
-        tau_m = self.motor_gain * (actions[:, action_slots] - theta)
-        # tau_m = self.motor_gain * (actions[:, action_slots])
+        tau_m = self.motor_gain * (actions[:, action_slots])
 
         # Transmitted torque from the previous spatial tendon force read from the simulator.
         tau_e_prev = sim_forces * self.pully_radius
@@ -206,21 +228,10 @@ class TendonForceM5Module(BaseModule):
 
         # Environment/transmitted torque from the equation of motion.
         inertia_force = self.inertia * acc
-        # tau_e = tau_m + tau_f - inertia_force
-        # tau_e = tau_m - inertia_force + tau_f
         tau_e = inertia_force - tau_m - tau_f
-
-        print(
-            f"tau_m={tau_m.cpu().numpy().flatten()[0]:.3f}, "
-            f"inertia_force={inertia_force.cpu().numpy().flatten()[0]:.3f}, "
-            f"tau_f={tau_f.cpu().numpy().flatten()[0]:.3f}, "
-            f"tau_e={tau_e.cpu().numpy().flatten()[0]:.3f}"
-        )
 
         # the convention in vsim is that teu_e and tendon force are opposite in sign, so we negate tau_e to get the applied tendon force
         force = torch.clamp(-1.0 * tau_e / self.pully_radius, min=0.0)
-
-        # print(f"tendon_force_m5: tau_m={tau_m.cpu().numpy()}, tau_f={tau_f.cpu().numpy()}, tau_e={tau_e.cpu().numpy()}")
 
         container.tendon_force_buf[:, self.model_tendon_indices] = force
         self.prev_length[:] = tendon_lengths
