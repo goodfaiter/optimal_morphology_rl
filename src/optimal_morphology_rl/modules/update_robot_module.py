@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import torch
-from vlearn.torch_utils.torch_jit_utils import quat_rotate_inverse
 import vlearn as v
+from vlearn.torch_utils.torch_jit_utils import quat_rotate_inverse
 
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.create_robot_module import Robot
@@ -210,12 +210,8 @@ class UpdateRobotModule(BaseModule):
         self.max_tendon_speed = build_tendon_scale_tensor(
             self.config.get("max_tendon_speed", 0.22), num_tendons, device, "max_tendon_speed"
         )
-        self.vel_filter_alpha = build_tendon_scale_tensor(
-            self.config.get("vel_filter_alpha", 1.0), num_tendons, device, "vel_filter_alpha"
-        )
-        self.acc_filter_alpha = build_tendon_scale_tensor(
-            self.config.get("acc_filter_alpha", 1.0), num_tendons, device, "acc_filter_alpha"
-        )
+        self.vel_filter_alpha = build_tendon_scale_tensor(self.config.get("vel_filter_alpha", 1.0), num_tendons, device, "vel_filter_alpha")
+        self.acc_filter_alpha = build_tendon_scale_tensor(self.config.get("acc_filter_alpha", 1.0), num_tendons, device, "acc_filter_alpha")
         self.vel_deadband = build_tendon_scale_tensor(self.config.get("vel_deadband", 0.0), num_tendons, device, "vel_deadband")
         self.acc_deadband = build_tendon_scale_tensor(self.config.get("acc_deadband", 0.0), num_tendons, device, "acc_deadband")
 

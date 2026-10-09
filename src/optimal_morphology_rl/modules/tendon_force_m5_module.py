@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import torch
 
 from optimal_morphology_rl.modules.base_module import BaseModule
