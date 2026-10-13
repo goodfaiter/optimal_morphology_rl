@@ -87,12 +87,12 @@ prismatic_force_m5:
   J: 0.0011136 # Nm*s^2/rad
   K_v: 0.00383633
   K_c: 0.00667819
-  K_m: 0.512697
+  K_m: 0.162697
   K_e: 0.0272222
   v_s: 0.0709052
   alpha: 1.86053
   K_cs: 0.0112702
-  K_ms: 0.337333
+  K_ms: 0.137333
   K_es: 0.0247055
 
 # Filtered finite-difference tendon velocity/acceleration computed by 'update_robot'

@@ -2,7 +2,7 @@ params:
   seed: 200964
 
   algo:
-    name: a2c_continuous
+    name: a2c_continuous_pink
 
   model:
     name: continuous_a2c_logstd
