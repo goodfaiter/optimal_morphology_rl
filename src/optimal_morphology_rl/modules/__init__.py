@@ -47,6 +47,7 @@ from optimal_morphology_rl.modules.observations import (
     RobotStateObservation,
     register_observation,
 )
+from optimal_morphology_rl.modules.prismatic_force_m5_module import PrismaticForceM5Module
 from optimal_morphology_rl.modules.process_fixed_actions_module import (
     ProcessFixedActionsModule,
 )
@@ -136,6 +137,7 @@ __all__ = [
     "RobotStateObservation",
     "TendonEstModule",
     "TendonForceM5Module",
+    "PrismaticForceM5Module",
     "TerminationBaseModule",
     "TerminationManagerModule",
     "UpdateContactsModule",

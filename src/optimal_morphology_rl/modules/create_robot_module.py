@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from typing import Any
 
 import torch
@@ -41,6 +42,9 @@ class Robot:
 
         # Motor metadata.
         self.motor_to_joint_dof_index: torch.Tensor | None = None
+
+        # True for DOFs of revolute/continuous joints (False e.g. for the prismatic tendon sliders).
+        self.revolute_dof_mask: torch.Tensor | None = None
 
         # Read-state buffers are attached by update_robot.
         self.get_joint_pos_buf: torch.Tensor | None = None
@@ -114,8 +118,25 @@ class Robot:
             motor_def = self.art_def.get_motor_def(i)
             self.motor_to_joint_dof_index[i] = motor_def.dof_index
 
-        for i in range(self.num_joints):
-            print(self.art_def.get_joint_def(i))
+        # vlearn's joint definitions do not expose the joint type, so it is read from the vsim
+        # file; DOF names are the vsim joint names.
+        joint_types = {j.get("name"): j.get("type") for j in ET.parse(vsim_path).getroot().iter("joint")}
+        dof_names = self.art_def.get_joint_dof_def_names()
+        missing = [name for name in dof_names if name not in joint_types]
+        if missing:
+            raise RuntimeError(f"DOFs {missing} have no matching joint in {vsim_path}.")
+        self.revolute_dof_mask = torch.tensor(
+            [joint_types[name] in ("revolute", "continuous") for name in dof_names], dtype=torch.bool, device=device
+        )
+
+        # Joint defs are named after their child link and include fixed joints the importer
+        # did not merge (0 DOFs), so there can be more joint defs than DOFs.
+        for i in range(self.art_def.get_num_joint_defs()):
+            joint_def = self.art_def.get_joint_def(i)
+            print(i, joint_def, f"dof: {joint_def.dof}, dof_start_index: {joint_def.dof_start_index}")
+
+        for i, dof_name in enumerate(self.art_def.get_joint_dof_def_names()):
+            print(f"dof {i}: {dof_name}")
 
         for i in range(self.num_links):
             print(self.art_def.get_link_def(i))

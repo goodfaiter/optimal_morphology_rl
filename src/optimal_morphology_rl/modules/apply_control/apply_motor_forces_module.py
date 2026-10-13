@@ -16,7 +16,8 @@ class ApplyMotorForcesModule(BaseModule):
     """Owns the motor command buffer/GPU command and applies the motor forces.
 
     Composes the total motor force as ``zero + policy forces (when
-    robot_control_motors is wired) + antagonistic spring forces (when
+    robot_control_motors is wired) + slider spool forces (when
+    prismatic_force_m5 is wired) + antagonistic spring forces (when
     present)`` and applies it via ``gym.set_motor_forces``.
     """
 
@@ -46,6 +47,10 @@ class ApplyMotorForcesModule(BaseModule):
         if container.get("motor_policy_force_buf") is not None:
             # Policy motor forces (see the 'robot_control_motors' module).
             container.set_motor_cmd_buf[:] += container.motor_policy_force_buf
+
+        if container.get("prismatic_motor_force_buf") is not None:
+            # Servo spool forces on the tendon actuator sliders (see the 'prismatic_force_m5' module).
+            container.set_motor_cmd_buf[:] += container.prismatic_motor_force_buf
 
         if container.get("antagonistic_spring_force_buf") is not None:
             # Antagonistic spring forces (see the 'antagonistic_spring' module) are applied to all motors.

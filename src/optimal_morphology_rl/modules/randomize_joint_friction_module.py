@@ -31,8 +31,9 @@ class RandomizeJointFrictionModule(BaseModule):
     When a ``joint_friction_range`` config (``[min, max]``) is given, a
     joint friction value is sampled uniformly from that range at every reset
     (when at least one env resets) and applied via ``gym.set_joint_properties``
-    on the ``JointProperty.JOINT_FRICTION`` property over the joint DOFs
-    ``(0, robot.num_joints)``.
+    on the ``JointProperty.JOINT_FRICTION`` property. Only the revolute DOFs
+    are randomized; the other DOFs (e.g. the prismatic tendon sliders) keep
+    the friction of their vsim joint definition.
 
     Note: joint properties belong to the shared articulation definition, so
     one value applies to every env of an env set (see
@@ -74,8 +75,15 @@ class RandomizeJointFrictionModule(BaseModule):
         # Joint friction is a property of the shared articulation def: one row
         # per env set (all envs in a set share it).
         num_env_sets = len(container.num_envs)
-        container.set_joint_friction_buf = torch.empty((num_env_sets, num_dofs), device=device, dtype=torch.float32)
-        container.set_joint_friction_buf[:] = self._sample_frictions(num_env_sets, num_dofs, container.device)
+        self.revolute_dof_mask = robot.revolute_dof_mask
+        # The command writes every DOF, so the non-revolute ones are filled with their defined friction.
+        defined_friction = torch.zeros(num_dofs, device=device, dtype=torch.float32)
+        for i in range(robot.art_def.get_num_joint_defs()):
+            joint_def = robot.art_def.get_joint_def(i)
+            start = joint_def.dof_start_index
+            defined_friction[start : start + joint_def.dof] = joint_def.joint_friction
+        container.set_joint_friction_buf = defined_friction.repeat(num_env_sets, 1)
+        self._randomize(container)
 
         command = container.env_group.create_joint_property_command(
             v.JointProperty.JOINT_FRICTION,
@@ -86,18 +94,18 @@ class RandomizeJointFrictionModule(BaseModule):
         container.gpu_set_joint_friction_cmd = container.gym.create_gpu_array([command])
         print(
             f"RandomizeJointFrictionModule: joint_friction_range = [{self.friction_min}, {self.friction_max}] "
-            f"over {num_dofs} dofs"
+            f"over revolute dofs {torch.nonzero(self.revolute_dof_mask).flatten().tolist()}"
         )
 
-    def _sample_frictions(self, num_rows: int, num_dofs: int, device: torch.device) -> torch.Tensor:
-        """Sample joint friction values uniformly from the configured range."""
-        return torch.rand((num_rows, num_dofs), device=device) * (self.friction_max - self.friction_min) + self.friction_min
+    def _randomize(self, container: ModuleContainer) -> None:
+        """Sample the revolute DOF frictions uniformly from the configured range."""
+        buf = container.set_joint_friction_buf
+        samples = torch.rand(buf.shape, device=buf.device) * (self.friction_max - self.friction_min) + self.friction_min
+        buf[:] = torch.where(self.revolute_dof_mask, samples, buf)
 
     def reset(self, container: ModuleContainer) -> None:
         """Randomize and apply the joint friction when at least one env resets."""
         if container.reset_buf.sum().item() == 0:
             return
-        num_env_sets = len(container.num_envs)
-        num_dofs = container.set_joint_friction_buf.shape[1]
-        container.set_joint_friction_buf[:] = self._sample_frictions(num_env_sets, num_dofs, container.device)
+        self._randomize(container)
         container.gym.set_joint_properties(container.gpu_set_joint_friction_cmd)

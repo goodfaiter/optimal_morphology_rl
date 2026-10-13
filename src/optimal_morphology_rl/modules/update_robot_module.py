@@ -24,6 +24,7 @@ def _allocate_read_buffers(robot: Robot, total_num_envs: int, device: torch.devi
     robot.get_joint_vel_buf = torch.zeros((total_num_envs, robot.num_joints), device=device, dtype=torch.float32)
     robot.get_root_transform_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
     robot.get_root_vel_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
+    robot.calculated_joint_velocity = torch.zeros((total_num_envs, robot.num_joints), device=device, dtype=torch.float32)
 
     robot.robot_pos_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
     robot.quat_robot_to_world = torch.zeros((total_num_envs, 4), device=device, dtype=torch.float32)
@@ -158,6 +159,13 @@ def _get_state(container: ModuleContainer) -> dict[str, torch.Tensor]:
 class UpdateRobotModule(BaseModule):
     """Refreshes robot state buffers for the robot created by ``create_robot``.
 
+    The module computes ``calculated_joint_velocity``, the finite difference of
+    the joint positions (``(q - q_prev)/dt`` per step). The simulator's joint
+    velocity misses the motion a tendon constraint imposes on a joint (e.g. the
+    tendon actuator sliders read ~0 while they creep), so 'prismatic_force_m5'
+    consumes this signal instead. On reset the history is replaced by the reset
+    state (the read buffers still show the pre-reset state on the next step).
+
     For tendon-driven robots the module additionally computes filtered tendon
     velocity and acceleration signals per tendon column from the finite
     difference of the tendon lengths (the simulator's tendon velocity buffer is
@@ -184,20 +192,17 @@ class UpdateRobotModule(BaseModule):
     """
 
     def post_finalize(self, container: ModuleContainer) -> None:
-        """Allocate read buffers, create read GPU commands and set up the tendon dynamics filters."""
+        """Allocate read buffers, create read GPU commands and set up the joint/tendon finite differences."""
         robot = container.robot
         _allocate_read_buffers(robot, container.total_num_envs, container.device)
         _create_read_gpu_commands(robot, container.env_group, container.gym)
+        self._setup_joint_velocity(container)
         if robot.use_tendon:
             self._setup_tendon_dynamics(container)
         container.robot_state = _get_state(container)
 
-    def _setup_tendon_dynamics(self, container: ModuleContainer) -> None:
-        """Build the tendon filter tensors and allocate the length/velocity/acceleration history."""
-        robot = container.robot
-        device = container.device
-        num_tendons = robot.num_tendons
-
+    def _set_control_dt(self, container: ModuleContainer) -> None:
+        """Set the control step ``dt = timestep * frame_skip`` used by the finite differences."""
         timestep = container.get("timestep")
         frame_skip = container.get("frame_skip")
         if timestep is None or frame_skip is None:
@@ -206,6 +211,28 @@ class UpdateRobotModule(BaseModule):
                 "Ensure the 'create_rigid_vsim_envs' module is listed before 'update_robot'."
             )
         self.dt = float(timestep) * float(frame_skip)
+
+    def _setup_joint_velocity(self, container: ModuleContainer) -> None:
+        """Allocate the joint position history for the joint velocity finite difference."""
+        self._set_control_dt(container)
+        # Previous joint position per env/joint (the reset state until the first refresh).
+        self.prev_joint_pos = torch.zeros(
+            (container.total_num_envs, container.robot.num_joints), device=container.device, dtype=torch.float32
+        )
+
+    def _compute_joint_velocity(self, robot: Robot) -> None:
+        """Finite-difference joint velocity from the refreshed joint positions."""
+        joint_pos = robot.get_joint_pos_buf
+        robot.calculated_joint_velocity[:] = (joint_pos - self.prev_joint_pos) / self.dt
+        self.prev_joint_pos[:] = joint_pos
+
+    def _setup_tendon_dynamics(self, container: ModuleContainer) -> None:
+        """Build the tendon filter tensors and allocate the length/velocity/acceleration history."""
+        robot = container.robot
+        device = container.device
+        num_tendons = robot.num_tendons
+
+        self._set_control_dt(container)
 
         self.max_tendon_speed = build_tendon_scale_tensor(
             self.config.get("max_tendon_speed", 0.22), num_tendons, device, "max_tendon_speed"
@@ -281,14 +308,24 @@ class UpdateRobotModule(BaseModule):
         if robot is None:
             return
         _refresh_buffers(robot, container.gym)
+        self._compute_joint_velocity(robot)
         if robot.use_tendon:
             self._compute_tendon_dynamics(robot)
         container.robot_state = _get_state(container)
 
     def reset(self, container: ModuleContainer) -> None:
-        """Clear the tendon length/velocity/acceleration history of the environments selected by the reset buffer."""
+        """Reset the joint and tendon finite-difference history of the environments selected by the reset buffer.
+
+        The read buffers still show the pre-reset state on the next step, so the joint history
+        is replaced by the reset state written by 'create_robot' (listed before this module).
+        """
         robot = container.get("robot")
-        if robot is None or not robot.use_tendon:
+        if robot is None:
+            return
+        reset_buf = container.reset_buf
+        self.prev_joint_pos[reset_buf] = container.reset_joint_pos_buf[reset_buf]
+        robot.calculated_joint_velocity[reset_buf] = container.reset_joint_vel_buf[reset_buf]
+        if not robot.use_tendon:
             return
         self.prev_length[container.reset_buf] = float("nan")
         self.prev_vel[container.reset_buf] = 0.0

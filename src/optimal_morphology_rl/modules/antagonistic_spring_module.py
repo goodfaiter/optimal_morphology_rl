@@ -35,7 +35,8 @@ class AntagonisticSpring(BaseModule):
     """Computes per-motor antagonistic spring forces.
 
     The module applies a linear spring-like resistance around the joint zero
-    position for every motor:
+    position for every motor on a revolute joint (motors on other joints,
+    e.g. the prismatic tendon actuator sliders, get no spring force):
 
     ``force = -spring_constants * joint_pos[motor_to_joint_dof_index]``
 
@@ -91,6 +92,8 @@ class AntagonisticSpring(BaseModule):
         else:
             self.spring_constants_buf = self.spring_constants.repeat(container.total_num_envs, 1)
 
+        self.revolute_motor_mask = robot.revolute_dof_mask[robot.motor_to_joint_dof_index]
+
         container.antagonistic_spring_force_buf = torch.zeros(
             (container.total_num_envs, robot.num_motors), device=device, dtype=torch.float32
         )
@@ -99,6 +102,8 @@ class AntagonisticSpring(BaseModule):
             parts.append(f"spring_constant_range = [{self.spring_min}, {self.spring_max}]")
         if self.spring_constants is not None:
             parts.append(f"spring_constants = {self.spring_constants.cpu().numpy()}")
+        names = [robot.art_def.get_motor_def(i).name for i in range(robot.num_motors) if self.revolute_motor_mask[i]]
+        parts.append(f"revolute motors = {names}")
         print(f"AntagonisticSpring: {', '.join(parts)}")
 
     def _sample_constants(self, num_rows: int, num_motors: int, device: torch.device) -> torch.Tensor:
@@ -120,4 +125,5 @@ class AntagonisticSpring(BaseModule):
         """Compute the antagonistic spring force for each motor."""
         robot = container.robot
 
-        container.antagonistic_spring_force_buf[:] = -self.spring_constants_buf * robot.get_joint_pos_buf[:, robot.motor_to_joint_dof_index]
+        force = -self.spring_constants_buf * robot.get_joint_pos_buf[:, robot.motor_to_joint_dof_index]
+        container.antagonistic_spring_force_buf[:] = force * self.revolute_motor_mask
