@@ -191,7 +191,6 @@ class PrismaticForceM5Module(BaseModule):
         tau_f_max = self._friction_budget(tau_m, tau_e, omega_m.abs())
         tau_f_stop = -(self.j_eff / self.dt * omega_m + tau_m + tau_e)
         tau_f = torch.clamp(tau_f_stop, -tau_f_max, tau_f_max)
-        # tau_f = tau_f_stop
 
         force = (tau_m + tau_f) / r
         container.prismatic_motor_force_buf[:, self.motor_indices] = force
