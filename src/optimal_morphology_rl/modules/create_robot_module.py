@@ -53,6 +53,10 @@ class Robot:
         self.get_root_vel_buf: torch.Tensor | None = None
         self.get_tendon_lengths_buf: torch.Tensor | None = None
         self.get_tendon_vel_buf: torch.Tensor | None = None
+        # Velocities selected by update_robot's 'velocity_source' (simulator buffers or finite differences).
+        self.velocity_source: str = "sim"
+        self.joint_velocity: torch.Tensor | None = None
+        self.tendon_velocity: torch.Tensor | None = None
 
         self.distal_link_transform_buf: torch.Tensor | None = None
         self.distal_link_pos_buf: torch.Tensor | None = None

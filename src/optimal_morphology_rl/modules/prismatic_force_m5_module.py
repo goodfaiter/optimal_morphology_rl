@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import optimal_morphology_rl_assets
 import torch
 
 from optimal_morphology_rl.modules.base_module import BaseModule
@@ -9,6 +12,14 @@ from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 from optimal_morphology_rl.modules.robot_control.helpers import build_action_space
 from optimal_morphology_rl.modules.tendon_scale_utils import build_tendon_scale_tensor
+
+
+def _resolve_model_path(path: str) -> Path:
+    """Absolute paths are used as is, relative ones resolve against the assets 'models/actuators' folder."""
+    p = Path(path)
+    if p.is_absolute():
+        return p
+    return Path(optimal_morphology_rl_assets.__file__).resolve().parent / "models" / "actuators" / p
 
 
 @register_module("prismatic_force_m5")
@@ -29,6 +40,14 @@ class PrismaticForceM5Module(BaseModule):
     simulator closes the loop  J_eff * domega_m = tau_m + tau_f + tau_e  with
     J_eff = (armature + slider_mass) * r**2.  The armature should therefore be the reflected rotor
     inertia J / r**2; a mismatch with the 'J' config is reported at startup.
+
+    With 'friction_model_path' set, the M5 coefficients K_c, K_v, K_m, K_e, K_cs, K_ms, K_es are
+    predicted each step by a TorchScript friction model (``model(omega, theta_desired, theta, tau_e)``,
+    then ``model.last_coefficients``) instead of the configured constants, and v_s / alpha are the
+    model's fixed Stribeck parameters. The budget itself is still computed here, on this module's
+    tau_m, tau_e and omega_m, and the Karnopp stop torque still uses the simulator's J_eff. The model
+    is stateful (input history per row): it runs one forward pass over num_envs x num_model_tendons
+    rows and is reset per row on environment resets.
 
     The module builds the tendon action space itself (replaces 'robot_control_tendons' and
     'apply_tendon_forces'); its forces are applied by 'apply_motor_forces'.
@@ -105,7 +124,6 @@ class PrismaticForceM5Module(BaseModule):
 
         self.pully_radius = coef("pully_radius", 0.011)
         self.motor_gain = coef("motor_gain", 0.105)
-        self.inertia = coef("J", 0.0011779299150459918)  # reflected: J_rotor * N**2 (reference only)
         self.k_v = coef("K_v", 0.0037641)
         self.k_c = coef("K_c", 0.00666241)
         self.k_m = coef("K_m", 0.447678)
@@ -121,6 +139,30 @@ class PrismaticForceM5Module(BaseModule):
         if torch.any(self.v_s <= 0.0):
             raise RuntimeError("PrismaticForceM5 config 'v_s' entries must be positive.")
 
+        # Optional learned friction budget (TorchScript, 200 Hz, inputs in rad, rad/s, Nm).
+        self.friction_model = None
+        model_path = self.config.get("friction_model_path")
+        if model_path:
+            model_path = _resolve_model_path(str(model_path))
+            if not model_path.is_file():
+                raise RuntimeError(f"PrismaticForceM5: friction model '{model_path}' not found.")
+            self.friction_model = torch.jit.load(str(model_path), map_location=device)
+            self.friction_model.eval()
+            self.friction_model.reset()
+            model_dt = float(getattr(self.friction_model, "dt", self.dt))
+            if abs(model_dt - self.dt) > 1e-9:
+                print(f"PrismaticForceM5: WARNING friction model dt {model_dt} s != env control dt {self.dt} s")
+            model_gain = float(getattr(self.friction_model, "motor_current_gain", float("nan"))) * float(
+                getattr(self.friction_model, "motor_position_gain", float("nan"))
+            )
+            names = list(self.friction_model.coefficient_names)
+            expected = ["K_c", "K_v", "K_m", "K_e", "K_cs", "K_ms", "K_es"]
+            if names != expected:
+                raise RuntimeError(f"PrismaticForceM5: friction model coefficients {names} != {expected}.")
+            self.model_v_s = float(self.friction_model.stribeck_velocity)
+            self.model_alpha = float(self.friction_model.stribeck_exponent)
+            print(f"PrismaticForceM5: friction budget from '{model_path.name}' (model motor gain {model_gain:.6g} Nm/rad)")
+
         self.action_slots = torch.tensor(self.action_slots_list, device=device, dtype=torch.long)
         self.motor_indices = torch.tensor(self.motor_indices_list, device=device, dtype=torch.long)
         self.dof_indices = torch.tensor(self.dof_indices_list, device=device, dtype=torch.long)
@@ -130,20 +172,17 @@ class PrismaticForceM5Module(BaseModule):
         self.j_eff = slider_inertia * self.pully_radius**2
         if torch.any(self.j_eff <= 0.0):
             raise RuntimeError("PrismaticForceM5: the slider joints need a positive armature or mass.")
-        expected_armature = self.inertia / self.pully_radius**2
         print(
             f"PrismaticForceM5: sliders {self.dof_indices_list} (motors {self.motor_indices_list}), "
-            f"armature+mass {slider_inertia.cpu().numpy()} kg, J/r^2 from config {expected_armature.cpu().numpy()} kg"
+            f"armature+mass {slider_inertia.cpu().numpy()} kg"
         )
 
-        # Slider velocity source. "fd": the finite difference of the joint positions computed by
-        # 'update_robot' (robot.calculated_joint_velocity, default). The simulator's joint velocity
-        # misses the motion the tendon constraint imposes on the slider (it reads ~0 while the
-        # slider creeps), so a stop torque built on it cannot hold the spool.
-        # "sim": the simulator's joint velocity buffer.
-        self.velocity_source = str(self.config.get("velocity_source", "fd"))
-        if self.velocity_source not in ("fd", "sim"):
-            raise RuntimeError(f"PrismaticForceM5 config 'velocity_source' must be 'fd' or 'sim', got '{self.velocity_source}'.")
+        # Slider velocity: robot.joint_velocity, selected by update_robot's 'velocity_source'. The
+        # simulator's joint velocity misses the motion the tendon constraint imposes on the slider
+        # (it reads ~0 while the slider creeps), so a stop torque built on it cannot hold the spool.
+        if "velocity_source" in self.config:
+            raise RuntimeError("PrismaticForceM5: 'velocity_source' moved to the 'update_robot' config.")
+        self.checked_velocity_source = False  # checked on the first step, once update_robot is set up
 
         container.prismatic_motor_force_buf = torch.zeros((num_envs, robot.num_motors), device=device, dtype=torch.float32)
         self.just_reset = torch.ones(num_envs, device=device, dtype=torch.bool)
@@ -157,25 +196,38 @@ class PrismaticForceM5Module(BaseModule):
         """The read buffers still show the pre-reset state on the next step: use the reset state instead."""
         self.just_reset |= container.reset_buf
 
-    def _friction_budget(self, tau_m, tau_e, w_abs):
-        """M5: directional load-dependent friction with Stribeck decay (paper, eq. 9)."""
-        coulomb = self.k_c + (self.k_m * tau_m - self.k_e * tau_e).abs()
-        static = torch.exp(-((w_abs / self.v_s) ** self.alpha)) * (self.k_cs + (self.k_ms * tau_m - self.k_es * tau_e).abs())
-        return self.k_v * w_abs + coulomb + static
+    def _friction_budget(self, tau_m, tau_e, w_abs, coefficients=None):
+        """M5: directional load-dependent friction with Stribeck decay (paper, eq. 9).
+
+        coefficients: optional (..., 7) tensor of K_c, K_v, K_m, K_e, K_cs, K_ms, K_es predicted by the
+        friction model (used with the model's v_s / alpha); defaults to the configured constants.
+        """
+        if coefficients is None:
+            k_c, k_v, k_m, k_e = self.k_c, self.k_v, self.k_m, self.k_e
+            k_cs, k_ms, k_es = self.k_cs, self.k_ms, self.k_es
+            v_s, alpha = self.v_s, self.alpha
+        else:
+            k_c, k_v, k_m, k_e, k_cs, k_ms, k_es = coefficients.unbind(-1)
+            v_s, alpha = self.model_v_s, self.model_alpha
+        coulomb = k_c + (k_m * tau_m - k_e * tau_e).abs()
+        static = torch.exp(-((w_abs / v_s) ** alpha)) * (k_cs + (k_ms * tau_m - k_es * tau_e).abs())
+        return k_v * w_abs + coulomb + static
 
     def step(self, container: ModuleContainer) -> None:
         robot = container.robot
         r = self.pully_radius
 
+        if not self.checked_velocity_source:
+            self.checked_velocity_source = True
+            if robot.velocity_source != "fd":
+                print("PrismaticForceM5: WARNING update_robot 'velocity_source' is not 'fd': the stop torque cannot hold the spool.")
         slider_pos = robot.get_joint_pos_buf[:, self.dof_indices]
-        if self.velocity_source == "fd":
-            slider_vel = robot.calculated_joint_velocity[:, self.dof_indices]
-        else:
-            slider_vel = robot.get_joint_vel_buf[:, self.dof_indices]
+        slider_vel = robot.joint_velocity[:, self.dof_indices]
         tension = robot.get_tendon_force_buf[:, self.model_tendon_indices].clamp(min=0.0)
 
-        just_reset = self.just_reset.unsqueeze(-1)
-        if torch.any(self.just_reset):
+        just_reset = self.just_reset.unsqueeze(-1).clone()
+        any_reset = bool(torch.any(self.just_reset))
+        if any_reset:
             slider_pos = torch.where(just_reset, container.reset_joint_pos_buf[:, self.dof_indices], slider_pos)
             slider_vel = torch.where(just_reset, container.reset_joint_vel_buf[:, self.dof_indices], slider_vel)
             tension = torch.where(just_reset, torch.zeros_like(tension), tension)
@@ -188,17 +240,32 @@ class PrismaticForceM5Module(BaseModule):
         actions = container.scaled_act_buf[:, container.active_dof_slice][:, self.action_slots]
         tau_m = self.motor_gain * (actions - theta_m)
 
-        tau_f_max = self._friction_budget(tau_m, tau_e, omega_m.abs())
+        if self.friction_model is not None:
+            with torch.no_grad():
+                # Restart the input history of the reset rows (the model allocates and fills its
+                # history itself on the first call, when its buffers do not match the row count yet).
+                reset_rows = just_reset.expand_as(theta_m).reshape(-1)
+                if any_reset and self.friction_model.needs_init.numel() == reset_rows.numel():
+                    self.friction_model.reset(reset_rows)
+                # Only the predicted M5 coefficients are used; the model's own tau_f is discarded.
+                self.friction_model(omega_m.reshape(-1), actions.reshape(-1), theta_m.reshape(-1), tau_e.reshape(-1))
+                self.last_coefficients = self.friction_model.last_coefficients.view(*theta_m.shape, -1)
+            tau_f_max = self._friction_budget(tau_m, tau_e, omega_m.abs(), self.last_coefficients)
+        else:
+            tau_f_max = self._friction_budget(tau_m, tau_e, omega_m.abs())
         tau_f_stop = -(self.j_eff / self.dt * omega_m + tau_m + tau_e)
         tau_f = torch.clamp(tau_f_stop, -tau_f_max, tau_f_max)
 
         force = (tau_m + tau_f) / r
+        # force = (tau_m) / r
         container.prismatic_motor_force_buf[:, self.motor_indices] = force
 
+        # Signals of the last step, shape (num_envs, num_model_tendons), for inspection tools.
+        self.last_signals = {
+            "theta_m": theta_m, "omega_m": omega_m, "tension": tension, "tau_e": tau_e,
+            "tau_m": tau_m, "tau_f": tau_f, "tau_f_max": tau_f_max, "force": force, "action": actions,
+        }
+
         if self.debug:
-            e, t = 0, 0
-            vals = {
-                "theta_m": theta_m, "omega_m": omega_m, "T": tension, "tau_e": tau_e,
-                "tau_m": tau_m, "tau_f": tau_f, "force": force,
-            }
-            print(" ".join(f"{name} {v[e, t].item(): .4f}" for name, v in vals.items()))
+            e, t = self.debug_env, self.debug_tendon
+            print(" ".join(f"{name} {v[e, t].item(): .4f}" for name, v in self.last_signals.items()))

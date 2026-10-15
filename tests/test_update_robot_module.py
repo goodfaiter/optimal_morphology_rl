@@ -19,6 +19,7 @@ class _FakeRobot:
         self.get_tendon_vel_buf = torch.zeros((1, num_tendons), dtype=torch.float32)
         self.get_tendon_force_buf = torch.zeros((1, num_tendons), dtype=torch.float32)
         self.calculated_tendon_velocity = torch.zeros((1, num_tendons), dtype=torch.float32)
+        self.calculated_tendon_length_rate = torch.zeros((1, num_tendons), dtype=torch.float32)
         self.calculated_tendon_acceleration = torch.zeros((1, num_tendons), dtype=torch.float32)
 
 
@@ -248,6 +249,7 @@ def test_reset_is_selective_per_env(container: ModuleContainer) -> None:
     container.total_num_envs = 2
     container.robot.get_tendon_lengths_buf = torch.tensor([[2.0, 3.0, 9.0], [2.0, 3.0, 9.0]])
     container.robot.calculated_tendon_velocity = torch.zeros((2, 3))
+    container.robot.calculated_tendon_length_rate = torch.zeros((2, 3))
     container.robot.calculated_tendon_acceleration = torch.zeros((2, 3))
     module = _make_module()
     _setup(container, module)
@@ -313,3 +315,16 @@ def test_setup_rejects_negative_acc_deadband(container: ModuleContainer) -> None
     module = _make_module(acc_deadband=-1.0)
     with pytest.raises(RuntimeError, match="acc_deadband"):
         module._setup_tendon_dynamics(container)
+
+
+def test_length_rate_is_negated_tendon_velocity(container: ModuleContainer) -> None:
+    module = _make_module()
+    _setup(container, module)
+    _compute(container, module)
+    container.robot.get_tendon_lengths_buf = torch.tensor([[2.01, 2.98, 9.0]])
+    _compute(container, module)
+
+    # dL/dt of the lengths, the opposite sign of the winding-positive calculated_tendon_velocity.
+    expected = torch.tensor([[1.0, -2.0, 0.0]])
+    assert torch.allclose(container.robot.calculated_tendon_length_rate, expected, atol=1e-4)
+    assert torch.allclose(container.robot.calculated_tendon_length_rate, -container.robot.calculated_tendon_velocity)

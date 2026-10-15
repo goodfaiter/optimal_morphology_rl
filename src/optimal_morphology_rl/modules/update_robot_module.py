@@ -43,6 +43,8 @@ def _allocate_read_buffers(robot: Robot, total_num_envs: int, device: torch.devi
         robot.get_tendon_force_buf = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
         robot.calculated_tendon_velocity = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
         robot.calculated_tendon_acceleration = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
+        # Tendon length rate dL/dt from the finite difference (= -calculated_tendon_velocity).
+        robot.calculated_tendon_length_rate = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
 
     if robot.num_distal_links > 0:
         robot.distal_link_transform_buf = torch.zeros(
@@ -146,12 +148,12 @@ def _get_state(container: ModuleContainer) -> dict[str, torch.Tensor]:
     }
     if robot.use_tendon:
         state["dof_pos_buf"] = robot.get_tendon_lengths_buf
-        state["dof_vel_buf"] = robot.get_tendon_vel_buf
+        state["dof_vel_buf"] = robot.tendon_velocity
         state["calculated_tendon_velocity"] = robot.calculated_tendon_velocity
         state["calculated_tendon_acceleration"] = robot.calculated_tendon_acceleration
     else:
         state["dof_pos_buf"] = robot.get_joint_pos_buf
-        state["dof_vel_buf"] = robot.get_joint_vel_buf
+        state["dof_vel_buf"] = robot.joint_velocity
     return state
 
 
@@ -162,9 +164,17 @@ class UpdateRobotModule(BaseModule):
     The module computes ``calculated_joint_velocity``, the finite difference of
     the joint positions (``(q - q_prev)/dt`` per step). The simulator's joint
     velocity misses the motion a tendon constraint imposes on a joint (e.g. the
-    tendon actuator sliders read ~0 while they creep), so 'prismatic_force_m5'
-    consumes this signal instead. On reset the history is replaced by the reset
-    state (the read buffers still show the pre-reset state on the next step).
+    tendon actuator sliders read ~0 while they creep). On reset the history is
+    replaced by the reset state (the read buffers still show the pre-reset state
+    on the next step).
+
+    ``velocity_source`` selects the velocities published as ``robot.joint_velocity``
+    / ``robot.tendon_velocity`` and as the ``dof_vel_buf`` of ``container.robot_state``
+    (the robot_state observation): "sim" (default) the simulator's buffers, "fd" the
+    finite differences (``calculated_joint_velocity``, and the tendon length rate
+    dL/dt ``calculated_tendon_length_rate = -calculated_tendon_velocity``, which
+    the simulator's tendon velocity buffer does not track). 'prismatic_force_m5'
+    reads ``robot.joint_velocity`` and needs "fd" to hold the spool.
 
     For tendon-driven robots the module additionally computes filtered tendon
     velocity and acceleration signals per tendon column from the finite
@@ -199,6 +209,15 @@ class UpdateRobotModule(BaseModule):
         self._setup_joint_velocity(container)
         if robot.use_tendon:
             self._setup_tendon_dynamics(container)
+
+        robot.velocity_source = str(self.config.get("velocity_source", "sim"))
+        if robot.velocity_source not in ("fd", "sim"):
+            raise RuntimeError(f"update_robot config 'velocity_source' must be 'fd' or 'sim', got '{robot.velocity_source}'.")
+        fd = robot.velocity_source == "fd"
+        # Aliases of buffers updated in place, so they stay valid across steps.
+        robot.joint_velocity = robot.calculated_joint_velocity if fd else robot.get_joint_vel_buf
+        if robot.use_tendon:
+            robot.tendon_velocity = robot.calculated_tendon_length_rate if fd else robot.get_tendon_vel_buf
         container.robot_state = _get_state(container)
 
     def _set_control_dt(self, container: ModuleContainer) -> None:
@@ -297,6 +316,7 @@ class UpdateRobotModule(BaseModule):
         acc = torch.sign(acc) * torch.clamp(acc.abs() - self.acc_deadband, min=0.0)
 
         robot.calculated_tendon_velocity[:] = tendon_vels
+        robot.calculated_tendon_length_rate[:] = -tendon_vels
         robot.calculated_tendon_acceleration[:] = acc
         self.prev_length[:] = tendon_lengths
         self.prev_vel[:] = tendon_vels
@@ -328,5 +348,6 @@ class UpdateRobotModule(BaseModule):
         if not robot.use_tendon:
             return
         self.prev_length[container.reset_buf] = float("nan")
+        robot.calculated_tendon_length_rate[reset_buf] = 0.0
         self.prev_vel[container.reset_buf] = 0.0
         self.prev_acc[container.reset_buf] = 0.0

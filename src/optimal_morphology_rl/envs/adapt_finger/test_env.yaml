@@ -49,6 +49,10 @@ create_robot:
   # Make every motor controllable from the UI (no passive motors).
   passive_motor_substrings: []
 
+# Finite-difference velocities for the prismatic_force_m5 stop torque and the robot_state observation.
+update_robot:
+  velocity_source: fd
+
 apply_motor_forces: {}
 apply_root_forces: {}
 
@@ -63,55 +67,26 @@ process_variable_actions:
   min_dof_scale: -1.0
   max_dof_scale: 1.0
 
-# Servo spool model (M5 friction) driving the tendon actuator sliders: the prismatic
-# joint is the spool rim (theta = q / r), the slider armature is the servo inertia, and
-# the slider motor force is (tau_motor + tau_friction) / r. Builds the tendon action
-# space itself (replaces 'robot_control_tendons' + 'apply_tendon_forces'); the DIP
-# tendon is fixed and has no slider. Alternative to 'tendon_force_m5'/'tendon_est'.
-  # K_v = 0.00383633
-  # K_c = 0.00667819
-  # K_m = 0.512697
-  # K_e = 0.0272222
-  # v_s = 0.0709052
-  # alpha = 1.86053
-  # K_cs = 0.0112702
-  # K_ms = 0.337333
-  # K_es = 0.0247055
-
-
-
 prismatic_force_m5:
-  pully_radius: 0.0105 # 0.0105m but we double because the tendon is doubled over the pulleys
+  pully_radius: 0.005 # [m]
   model_tendon_indices: [0, 1]
-  motor_gain: 0.105 # Nm/rad
-  J: 0.0011136 # Nm*s^2/rad
-  K_v: 0.00383633
-  K_c: 0.00667819
-  K_m: 0.162697
-  K_e: 0.0272222
-  v_s: 0.0709052
-  alpha: 1.86053
-  K_cs: 0.0112702
-  K_ms: 0.137333
-  K_es: 0.0247055
-
-# Filtered finite-difference tendon velocity/acceleration computed by 'update_robot'
-# (winding convention dL = -radius * dtheta; the simulator's tendon velocity buffer
-# is unreliable), consumed by 'tendon_force_m5'. The soft deadband attenuates the
-# residual length-jitter noise floor: prevents the acceleration FD from amplifying
-# it into bang-bang force chatter at the stop.
-update_robot:
-  max_tendon_speed: 0.22
-  vel_filter_alpha: 0.95
-  acc_filter_alpha: 0.95
-  vel_deadband: 0.0
-  acc_deadband: 0.0
+  # friction_model_path: 2026_10_14_m5_mlp_common_friction.pt
+  motor_gain: 0.0389 # Nm/rad
+  K_v: 0.002
+  K_c: 0.014
+  K_m: 0.11
+  K_e: 0.12
+  v_s: 0.09
+  alpha: 1.6
+  K_cs: 0.005
+  K_ms: 0.09
+  K_es: 0.03
 
 antagonistic_spring:
-  spring_constant_range: [0.1, 0.1]
+  spring_constant_range: [0.005, 0.005]
 
 randomize_joint_friction:
-  joint_friction_range: [0.02, 0.02]
+  joint_friction_range: [0.0, 0.0]
 
 observation:
   num_hist: 1

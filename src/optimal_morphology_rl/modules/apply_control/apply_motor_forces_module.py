@@ -40,6 +40,16 @@ class ApplyMotorForcesModule(BaseModule):
         )
         container.gpu_set_motor_control_command_array = container.gym.create_gpu_array([set_motor_cmd])
 
+    def reset(self, container: ModuleContainer) -> None:
+        """Clear the motor forces of the resetting envs.
+
+        The simulator keeps applying the last motor command, so without this the physics step
+        that applies the reset state would still push with the previous episode's forces and the
+        post-reset state would depend on how that episode ended.
+        """
+        container.set_motor_cmd_buf[container.reset_buf] = 0.0
+        container.gym.set_motor_forces(container.gpu_set_motor_control_command_array)
+
     def step(self, container: ModuleContainer) -> None:
         """Compose and apply the total motor forces."""
         container.set_motor_cmd_buf[:] = 0.0
