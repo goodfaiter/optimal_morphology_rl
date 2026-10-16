@@ -12,6 +12,7 @@ modules:
     - interactive_slider_control
     - process_variable_actions
     - create_spool
+    - spool_plot
     - apply_m5_forces
     - antagonistic_spring
     - apply_motor_forces
@@ -79,6 +80,12 @@ create_spool:
 
 # M5-friction servo law on the spools: slider motor force (tau_motor + tau_friction) / r,
 # applied by 'apply_motor_forces'. Alternative to 'tendon_force_m5'/'tendon_est'.
+# Live plot of every spool's command, angle and velocity (env 0) in its own window; it can be
+# minimized or closed without affecting the simulation.
+spool_plot:
+  every: 2
+  window_s: 5.0
+
 apply_m5_forces:
   # friction_model_path: 2026_10_14_m5_mlp_common_friction.pt
   motor_gain: 0.0389 # Nm/rad

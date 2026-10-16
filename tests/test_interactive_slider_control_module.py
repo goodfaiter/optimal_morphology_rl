@@ -143,3 +143,16 @@ def test_step_writes_slider_values_to_actions(container: ModuleContainer) -> Non
 
     assert container.actions.shape == (4, 3)
     assert torch.allclose(container.actions, torch.tensor([[1.0, 2.0, 3.0]]).expand(4, -1))
+
+
+def test_shared_slider_drives_every_action(container: ModuleContainer) -> None:
+    container.env = _FakeEnv()
+    module = _make_module(shared=True)
+    module.finalize(container)
+    module.post_finalize(container)
+
+    assert [slider.name for slider in module.sliders] == ["All actions"]
+    module.sliders[0].value = 2.5
+    module.step(container)
+
+    assert torch.allclose(container.actions, torch.full((4, 3), 2.5))

@@ -23,7 +23,9 @@ class InteractiveSliderControlModule(BaseModule):
     output, so the user is effectively sending action commands to the hand.
 
     One slider is created per action, regardless of tendons/motors, with the
-    range given by the required ``slider_min`` / ``slider_max`` config keys. A
+    range given by the required ``slider_min`` / ``slider_max`` config keys;
+    with ``shared: true`` a single slider drives every action (e.g. curl all
+    fingers together). A
     reset checkbox is also exposed (label ``reset_name``, default
     ``"Reset"``); the runner polls it and calls ``env.reset()`` when it
     becomes checked.
@@ -33,6 +35,7 @@ class InteractiveSliderControlModule(BaseModule):
         interactive_slider_control:
           slider_min: 0.0        # required slider lower bound
           slider_max: 10.0       # required slider upper bound
+          shared: false          # optional: one slider for all actions
           reset_name: "Reset"    # optional reset checkbox label
     """
 
@@ -42,6 +45,7 @@ class InteractiveSliderControlModule(BaseModule):
         self.reset_name = str(self.config.get("reset_name", "Reset"))
         self.slider_min = self.config.get("slider_min")
         self.slider_max = self.config.get("slider_max")
+        self.shared = bool(self.config.get("shared", False))
 
         self.sliders: list[v.UserSlider] = []
         self.reset_checkbox: v.UserCheckbox | None = None
@@ -89,12 +93,11 @@ class InteractiveSliderControlModule(BaseModule):
         self.reset_checkbox = v.UserCheckbox(self.reset_name, False)
         gym_render.register_menu_item(self.reset_checkbox)
 
-        for i in range(num_actions):
-            slider = v.UserSlider(f"Action {i}", self.slider_min, self.slider_max, 0.0)
+        labels = ["All actions"] if self.shared else [f"Action {i}" for i in range(num_actions)]
+        for label in labels:
+            slider = v.UserSlider(label, self.slider_min, self.slider_max, 0.0)
             gym_render.register_menu_item(slider)
             self.sliders.append(slider)
-
-
 
     def step(self, container: ModuleContainer) -> None:
         """Read slider values and write them to ``container.actions``."""
@@ -105,6 +108,8 @@ class InteractiveSliderControlModule(BaseModule):
             return
 
         values = [slider.get_value() for slider in self.sliders]
+        if self.shared:
+            values = values * self._num_actions
         actions = torch.tensor(
             values,
             dtype=torch.float32,
