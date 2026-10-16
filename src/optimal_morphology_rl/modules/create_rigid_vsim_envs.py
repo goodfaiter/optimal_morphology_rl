@@ -13,6 +13,7 @@ import vlearn as v
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
+from optimal_morphology_rl.utils.native_output import suppress_native_stdout
 
 
 @register_module("create_rigid_vsim_envs")
@@ -181,5 +182,8 @@ class CreateRigidVsimEnvs(BaseModule):
         container.env_set_handle = self.env_set_handle
         container.env_set_handles = self.env_set_handles
 
-        self.gym.finalize()
+        # vlearn prints every tendon's attachment constraints for every env on finalize (one
+        # block per robot with num_envs_per_set: 1); it prints nothing else there.
+        with suppress_native_stdout():
+            self.gym.finalize()
         self.gym.update_scene_dependent_components()
