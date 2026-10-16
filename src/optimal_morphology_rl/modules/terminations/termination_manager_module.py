@@ -86,6 +86,9 @@ class TerminationManagerModule(BaseModule):
 
         container.reset_buf[:] = torch.logical_or(env.term_buf, env.trunc_buf)
         container.inverse_reset_buf[:] = ~container.reset_buf
+        # Time-limit truncations, read by rl_games to bootstrap the value of cut-off episodes
+        # (value_bootstrap). Cloned: trunc_buf is cleared in place on the next reset.
+        env.info["time_outs"] = env.trunc_buf.clone()
 
     def reset(self, container: ModuleContainer) -> None:
         """Reset termination state for the environments selected by reset_buf."""
