@@ -206,6 +206,9 @@ class ModularEnvironment:
         # Reset loop: envs that terminated/truncated in the previous step are reset.
         if self.reset_buf.any():
             self.module_manager.reset()
+            # Joint states read fresh after the reset, but link transforms (kinematic sensors,
+            # e.g. the fingertip) only update with forward kinematics, as in reset().
+            self.gym.compute_kinematics()
 
         # Refresh state and compute observations/rewards/terminations.
         self.module_manager.post_physics_step()
