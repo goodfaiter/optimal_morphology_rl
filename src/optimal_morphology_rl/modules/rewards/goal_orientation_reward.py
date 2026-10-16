@@ -60,7 +60,7 @@ class GoalOrientationReward(RewardBaseModule):
         if goal_quat is None:
             raise RuntimeError(
                 "goal_orientation_reward: container.quat_goal_to_world is missing. "
-                "Add a goal_pose_discrete, goal_pose_sinusoidal, or goal_pose_square module to post_physics_step_modules before observation."
+                "Add the goal_pose module to post_physics_step_modules before observation."
             )
 
         scale = float(self.config.get("scale", 1.0))

@@ -32,7 +32,7 @@ modules:
     - update_kinematic_sensor
     - update_force_sensors
     - update_contacts
-    - goal_pose_discrete
+    - goal_pose
     - observation
     - reward
     - termination
@@ -62,13 +62,15 @@ create_objects:
   objects: [table, button_difficult]
   reward_object: button_difficult
 
-goal_pose_discrete:
+goal_pose:
   goal_position:
     x: [0.35, 0.35]
     y: [0.0, 0.0]
     z: [0.1, 0.1]
   goal_orientation: [0, 0, 0, 1]
-  resample_prob: 0.005
+  types:
+    discrete:
+      resample_prob: 0.005
 
 robot_control_floating_hand: {}
 robot_control_tendons: {}

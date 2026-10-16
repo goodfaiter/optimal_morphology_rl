@@ -36,7 +36,7 @@ class CubeOrientationReward(RewardBaseModule):
         if quat_goal_to_world is None:
             raise RuntimeError(
                 "cube_orientation_reward: container.quat_goal_to_world is missing. "
-                "Add a goal_pose_discrete, goal_pose_sinusoidal, or goal_pose_square module to post_physics_step_modules before observation."
+                "Add the goal_pose module to post_physics_step_modules before observation."
             )
 
         _6d_object_to_world = quaternion_to_6d(quat_object_to_world)

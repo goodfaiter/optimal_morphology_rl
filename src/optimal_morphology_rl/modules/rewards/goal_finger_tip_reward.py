@@ -51,7 +51,7 @@ class GoalFingerTipReward(RewardBaseModule):
         if goal_pos is None:
             raise RuntimeError(
                 "goal_finger_tip_reward: container.pos_goal_in_world is missing. "
-                "Add a goal_pose_discrete, goal_pose_sinusoidal, or goal_pose_square module to post_physics_step_modules before observation."
+                "Add the goal_pose module to post_physics_step_modules before observation."
             )
 
         normalize = float(self.config.get("normalize", 0.05))

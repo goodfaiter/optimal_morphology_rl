@@ -24,10 +24,7 @@ from optimal_morphology_rl.modules.create_objects_module import CreateObjectsMod
 from optimal_morphology_rl.modules.create_rigid_vsim_envs import CreateRigidVsimEnvs
 from optimal_morphology_rl.modules.create_robot_module import RobotModule
 from optimal_morphology_rl.modules.external_force_module import ExternalForceModule
-from optimal_morphology_rl.modules.goal_pose_base_module import GoalPoseBaseModule
-from optimal_morphology_rl.modules.goal_pose_discrete_module import GoalPoseDiscreteModule
-from optimal_morphology_rl.modules.goal_pose_square_module import GoalPoseSquareModule
-from optimal_morphology_rl.modules.goal_pose_sinusoidal_module import GoalPoseSinusoidalModule
+from optimal_morphology_rl.modules.goal_pose_module import GoalPoseModule
 from optimal_morphology_rl.modules.gravity_compensation_module import GravityCompensationModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import (
@@ -108,10 +105,7 @@ __all__ = [
     "CreateObjectsModule",
     "CreateRigidVsimEnvs",
     "ExternalForceModule",
-    "GoalPoseBaseModule",
-    "GoalPoseDiscreteModule",
-    "GoalPoseSinusoidalModule",
-    "GoalPoseSquareModule",
+    "GoalPoseModule",
     "GoalStateObservation",
     "GoalVisualizationModule",
     "GravityCompensationModule",
