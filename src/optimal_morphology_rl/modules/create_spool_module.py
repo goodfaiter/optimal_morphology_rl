@@ -76,6 +76,7 @@ class CreateSpoolModule(BaseModule):
         self.dof_indices_list = []
         self.slider_armatures = []  # vsim armature of the slider DOF, kg
         self.slider_masses = []  # slider link mass, kg
+        self.slider_link_names = []
         for idx in self.model_tendon_indices:
             tendon_name = art_def.get_spatial_tendon_def(idx).name
             joint_name = tendon_name + suffix
@@ -89,7 +90,9 @@ class CreateSpoolModule(BaseModule):
             self.motor_indices_list.append(motor_idx)
             self.dof_indices_list.append(dof_idx)
             self.slider_armatures.append(float(art_def.get_joint_dof_def(dof_idx).armature))
-            self.slider_masses.append(float(link_mass.get(tendon_name + suffix.removesuffix("_joint"), 0.0)))
+            slider_link = tendon_name + suffix.removesuffix("_joint")
+            self.slider_link_names.append(slider_link)
+            self.slider_masses.append(float(link_mass.get(slider_link, 0.0)))
         container.spool = self
 
     @property
