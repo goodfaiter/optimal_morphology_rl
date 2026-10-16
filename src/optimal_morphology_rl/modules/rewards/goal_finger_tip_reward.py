@@ -9,6 +9,7 @@ import torch
 from optimal_morphology_rl.modules.create_kinematic_sensor_module import (
     find_kinematic_sensor,
 )
+from optimal_morphology_rl.modules.goal_pose_module import goal_in_env_frame
 from optimal_morphology_rl.modules.rewards.reward_base_module import RewardBaseModule
 from optimal_morphology_rl.modules.rewards.reward_manager_module import register_reward
 
@@ -47,12 +48,7 @@ class GoalFingerTipReward(RewardBaseModule):
                 "Ensure the .vsim defines the fingertip kinematic sensor and create_kinematic_sensor is listed."
             )
         fingertip_pos = sensor.pos_in_world
-        goal_pos = container.get("pos_goal_in_world")
-        if goal_pos is None:
-            raise RuntimeError(
-                "goal_finger_tip_reward: container.pos_goal_in_world is missing. "
-                "Add the goal_pose module to post_physics_step_modules before observation."
-            )
+        goal_pos, _ = goal_in_env_frame(container)
 
         normalize = float(self.config.get("normalize", 0.05))
         scale = float(self.config.get("scale", 1.0))

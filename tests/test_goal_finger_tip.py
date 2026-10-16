@@ -56,7 +56,7 @@ def test_obs_raises_when_goal_pose_buffer_missing() -> None:
 
 def test_observes_goal_from_container() -> None:
     goal = torch.tensor([[0.05, -0.12, 0.25]])
-    container = _FakeContainer(pos_goal_in_world=goal)
+    container = _FakeContainer(goal_position_in_goal_frame=goal)
     env = _FakeEnv(container)
     module = GoalFingerTipObservation({})
 
@@ -80,9 +80,32 @@ class _FakeKinematicSensor:
 def _reward_container(fingertip_pos: torch.Tensor, goal_pos: torch.Tensor) -> tuple[_FakeContainer, _FakeEnv]:
     container = _FakeContainer()
     container.kinematic_sensors = {"Pinky_DP": _FakeKinematicSensor(fingertip_pos)}
-    container.pos_goal_in_world = goal_pos
+    # Goal frame = environment frame: the reward converts the goal with goal_in_env_frame.
+    container.goal_position_in_goal_frame = goal_pos
+    container.goal_orientation_in_goal_frame = torch.tensor([[0.0, 0.0, 0.0, 1.0]]).expand(goal_pos.shape[0], 4)
+    container.goal_frame_quat = torch.tensor([[0.0, 0.0, 0.0, 1.0]]).expand(goal_pos.shape[0], 4)
+    container.goal_frame_pos = torch.zeros_like(goal_pos)
     env = _FakeEnv(container)
     return container, env
+
+
+def test_observation_uses_the_goal_frame_and_reward_the_env_frame() -> None:
+    s = math.sqrt(0.5)  # goal frame rotated 90 deg about z and shifted: local x -> env y
+    goal_local = torch.tensor([[0.5, 0.0, 0.0]])
+    container = _FakeContainer(
+        goal_position_in_goal_frame=goal_local,
+        goal_orientation_in_goal_frame=torch.tensor([[0.0, 0.0, 0.0, 1.0]]),
+        goal_frame_quat=torch.tensor([[0.0, 0.0, s, s]]),
+        goal_frame_pos=torch.tensor([[1.0, 2.0, 3.0]]),
+        kinematic_sensors={"Pinky_DP": _FakeKinematicSensor(torch.tensor([[1.0, 2.5, 3.0]]))},  # tip at the goal
+    )
+    env = _FakeEnv(container)
+    out = torch.zeros(1, 3)
+    GoalFingerTipObservation({}).compute_observation(env, out)
+    assert torch.equal(out, goal_local)  # the observation is the goal-frame value, untouched
+
+    reward = GoalFingerTipReward({"scale": 1.0, "normalize": 0.02, "link_name": "DP"}).compute(env)
+    assert reward.item() == pytest.approx(1.0, abs=1e-5)  # the reward compared the tip with the env-frame goal
 
 
 def test_reward_is_scale_at_exact_goal() -> None:

@@ -198,7 +198,10 @@ def _make_cube_env(object_quat: torch.Tensor, goal_quat: torch.Tensor) -> tuple[
     container.total_num_envs = total_num_envs
     container.reward_object_name = "cube"
     container.reward_object = _FakeRewardObject()
-    container.quat_goal_to_world = goal_quat
+    container.goal_orientation_in_goal_frame = goal_quat  # goal frame = environment frame
+    container.goal_position_in_goal_frame = torch.zeros((total_num_envs, 3), device=device)
+    container.goal_frame_quat = torch.tensor([0.0, 0.0, 0.0, 1.0], device=device).repeat(total_num_envs, 1)
+    container.goal_frame_pos = torch.zeros((total_num_envs, 3), device=device)
     container.kinematic_sensors = {"cube": _FakeKinematicSensorQuat(object_quat)}
 
     env = _FakeEnv(container)

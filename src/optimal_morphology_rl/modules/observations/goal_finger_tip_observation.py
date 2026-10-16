@@ -1,4 +1,4 @@
-"""Observation source for a fingertip-reach goal sampled in the world frame."""
+"""Observation source for a fingertip-reach goal, in the goal_pose goal frame."""
 
 from __future__ import annotations
 
@@ -18,9 +18,10 @@ from optimal_morphology_rl.modules.observations.observation_manager_module impor
 class GoalFingerTipObservation(ObservationBaseModule):
     """Fingertip-reach goal observation.
 
-    Reads ``container.pos_goal_in_world`` ``(total_num_envs, 3)``, which is
-    owned and sampled by the ``goal_pose`` module. This module only observes the
-    goal; goals change on every reset call, and the moving goal types move every step.
+    Reads ``container.goal_position_in_goal_frame`` ``(total_num_envs, 3)``, the goal in the
+    ``goal_pose`` goal frame (``goal_pose.frame``, e.g. Pinky_Abd; the environment frame without one),
+    i.e. within the configured ``goal_position`` ranges and measurable on the real hand. This module
+    only observes the goal; goals change on every reset call, and the moving goal types move every step.
     """
 
     def get_obs_dim(self, env: Any) -> int:
@@ -28,10 +29,10 @@ class GoalFingerTipObservation(ObservationBaseModule):
 
     def compute_observation(self, env: Any, out: torch.Tensor) -> None:
         container = env.module_manager.container
-        goal = container.get("pos_goal_in_world")
+        goal = container.get("goal_position_in_goal_frame")
         if goal is None:
             raise RuntimeError(
-                "goal_finger_tip: container.pos_goal_in_world is missing. "
+                "goal_finger_tip: container.goal_position_in_goal_frame is missing. "
                 "Add the goal_pose module to post_physics_step_modules before observation."
             )
         out[:] = goal

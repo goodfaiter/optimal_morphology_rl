@@ -9,6 +9,7 @@ import vlearn as v
 from vlearn.torch_utils.torch_jit_utils import quat_rotate
 
 from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.goal_pose_module import goal_in_env_frame
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
@@ -17,8 +18,8 @@ from optimal_morphology_rl.modules.module_manager import register_module
 class GoalVisualizationModule(BaseModule):
     """Draws RGB axes at the goal pose stored in the shared container.
 
-    The goal is sampled from ``container.pos_goal_in_world`` and
-    ``container.quat_goal_to_world``, owned by the ``goal_pose`` module.
+    The goal is the ``goal_pose`` module's goal, converted to the environment frame
+    (:func:`~optimal_morphology_rl.modules.goal_pose_module.goal_in_env_frame`).
 
     This module only does work when rendering is enabled and the goal exists.
     It updates the debug line shapes during the post-gym step so the renderer
@@ -42,10 +43,9 @@ class GoalVisualizationModule(BaseModule):
         if not getattr(env, "rendering", False) or container.gym_render is None:
             return
 
-        pos_goal_in_world = container.get("pos_goal_in_world")
-        quat_goal_to_world = container.get("quat_goal_to_world")
-        if pos_goal_in_world is None or quat_goal_to_world is None:
+        if container.get("goal_position_in_goal_frame") is None:
             return
+        pos_goal_in_world, quat_goal_to_world = goal_in_env_frame(container)
 
         goal_pos = pos_goal_in_world[0]
         goal_quat = quat_goal_to_world[0:1]

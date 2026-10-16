@@ -10,6 +10,7 @@ from vlearn.torch_utils.torch_jit_utils import quat_rotate
 from optimal_morphology_rl.modules.create_kinematic_sensor_module import (
     find_kinematic_sensor,
 )
+from optimal_morphology_rl.modules.goal_pose_module import goal_in_env_frame
 from optimal_morphology_rl.modules.rewards.reward_base_module import RewardBaseModule
 from optimal_morphology_rl.modules.rewards.reward_manager_module import register_reward
 
@@ -56,12 +57,7 @@ class GoalOrientationReward(RewardBaseModule):
                 "Ensure create_kinematic_sensor is listed."
             )
         quat_object_to_world = sensor.quat_sensor_to_world
-        goal_quat = container.get("quat_goal_to_world")
-        if goal_quat is None:
-            raise RuntimeError(
-                "goal_orientation_reward: container.quat_goal_to_world is missing. "
-                "Add the goal_pose module to post_physics_step_modules before observation."
-            )
+        _, goal_quat = goal_in_env_frame(container)
 
         scale = float(self.config.get("scale", 1.0))
         reward, raw = _goal_orientation_reward_jit(

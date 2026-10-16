@@ -90,7 +90,7 @@ def test_empty_type_block_uses_shared_keys() -> None:
 def test_single_type_covers_all_envs() -> None:
     module, container = _module(["discrete"], num_envs=4)
     assert module._masks["discrete"].all()
-    assert container.pos_goal_in_world.shape == (4, 3) and container.quat_goal_to_world.shape == (4, 4)
+    assert container.goal_position_in_goal_frame.shape == (4, 3) and container.goal_orientation_in_goal_frame.shape == (4, 4)
 
 
 @pytest.mark.parametrize("types", [None, {}, ["discrete"]])
@@ -122,16 +122,16 @@ def test_shared_keys_are_overridden_by_type_blocks() -> None:
 
 def test_reset_samples_every_type_within_ranges() -> None:
     _, container = _module(["square", "discrete", "sinusoidal"], num_envs=9)
-    assert _in_ranges(container.pos_goal_in_world)
-    assert torch.allclose(container.quat_goal_to_world, torch.tensor([0.0, 0.0, 0.0, 1.0]).expand(9, 4))
+    assert _in_ranges(container.goal_position_in_goal_frame)
+    assert torch.allclose(container.goal_orientation_in_goal_frame, torch.tensor([0.0, 0.0, 0.0, 1.0]).expand(9, 4))
 
 
 def test_step_moves_only_the_moving_types() -> None:
     module, container = _module(["discrete", "sinusoidal", "square"], num_envs=6)
-    before = container.pos_goal_in_world.clone()
+    before = container.goal_position_in_goal_frame.clone()
     for _ in range(20):
         module.step(container)
-    after = container.pos_goal_in_world
+    after = container.goal_position_in_goal_frame
     discrete, moving = module._masks["discrete"], ~module._masks["discrete"]
     assert torch.equal(after[discrete], before[discrete])  # resample_prob defaults to 0
     assert torch.all((after[moving] - before[moving]).abs().sum(-1) > 0)
@@ -142,18 +142,18 @@ def test_discrete_resample_prob_touches_only_discrete_envs() -> None:
     module, container = _module(["discrete", "square"], num_envs=6, discrete={"resample_prob": 1.0})
     square = module._masks["square"]
     module.goal_types["square"].step = lambda container, mask: None  # freeze square for the comparison
-    before = container.pos_goal_in_world.clone()
+    before = container.goal_position_in_goal_frame.clone()
     torch.manual_seed(1)
     module.step(container)
-    assert torch.equal(container.pos_goal_in_world[square], before[square])
-    assert not torch.equal(container.pos_goal_in_world[~square], before[~square])
+    assert torch.equal(container.goal_position_in_goal_frame[square], before[square])
+    assert not torch.equal(container.goal_position_in_goal_frame[~square], before[~square])
 
 
 def test_square_stays_on_the_perimeter() -> None:
     module, container = _module(["square"], num_envs=8)
     for _ in range(200):
         module.step(container)
-        pos = container.pos_goal_in_world
+        pos = container.goal_position_in_goal_frame
         on_x_edge = torch.isclose(pos[:, 0], torch.tensor(0.0), atol=1e-6) | torch.isclose(pos[:, 0], torch.tensor(0.1), atol=1e-6)
         on_z_edge = torch.isclose(pos[:, 2], torch.tensor(0.3), atol=1e-6) | torch.isclose(pos[:, 2], torch.tensor(0.34), atol=1e-6)
         assert torch.all(on_x_edge | on_z_edge)
@@ -167,7 +167,7 @@ def test_sinusoid_follows_its_pattern() -> None:
         module.step(container)
     t = torch.full((4, 1), 10 * 0.01)
     expected = goal._center + goal._amp * torch.sin(2 * math.pi * goal._freq * t + goal._phase)
-    assert torch.allclose(container.pos_goal_in_world, expected, atol=1e-6)
+    assert torch.allclose(container.goal_position_in_goal_frame, expected, atol=1e-6)
     assert torch.all(goal._amp[:, 1] == 0.0)  # degenerate y range
 
 
@@ -175,10 +175,10 @@ def test_partial_reset_only_changes_reset_envs_and_restarts_their_time() -> None
     module, container = _module(["sinusoidal", "square"], num_envs=4)
     for _ in range(5):
         module.step(container)
-    before = container.pos_goal_in_world.clone()
+    before = container.goal_position_in_goal_frame.clone()
     container.reset_buf[:] = torch.tensor([False, True, False, True])
     module.reset(container)
-    assert torch.equal(container.pos_goal_in_world[[0, 2]], before[[0, 2]])
+    assert torch.equal(container.goal_position_in_goal_frame[[0, 2]], before[[0, 2]])
     assert module.goal_types["sinusoidal"]._time_buf[1] == 0.0
     assert module.goal_types["square"]._time_buf[3] == 0.0
     assert module.goal_types["sinusoidal"]._time_buf[0] > 0.0
@@ -207,30 +207,21 @@ def test_missing_timestep_raises_at_allocation() -> None:
 # ---------------------------------------------------------------- goal frame
 
 
-def _set_frame(module: GoalPoseModule, quat, pos, num_envs: int) -> None:
-    for goal_type in module.goal_types.values():
-        goal_type._frame_quat = torch.tensor(quat, dtype=torch.float32).repeat(num_envs, 1)
-        goal_type._frame_pos = torch.tensor(pos, dtype=torch.float32).repeat(num_envs, 1)
-
-
-def test_goal_frame_rotates_and_translates_local_positions() -> None:
+def test_goal_is_kept_in_the_goal_frame_and_converted_on_demand() -> None:
     s = math.sqrt(0.5)  # 90 deg about z: local x -> environment y, local y -> environment -x
-    torch.manual_seed(0)
-    plain, c_plain = _module(["square", "sinusoidal"], num_envs=4)
-    torch.manual_seed(0)
-    framed = GoalPoseModule(_config(["square", "sinusoidal"]))
-    c_framed = _container(4)
-    framed.post_finalize(c_framed)
-    _set_frame(framed, [0.0, 0.0, s, s], [1.0, 2.0, 3.0], 4)
-    framed.reset(c_framed)
+    module, container = _module(["square", "sinusoidal"], num_envs=4)
+    container.goal_frame_quat[:] = torch.tensor([0.0, 0.0, s, s])
+    container.goal_frame_pos[:] = torch.tensor([1.0, 2.0, 3.0])
+    for _ in range(3):
+        module.step(container)
 
-    def expected(local):
-        return torch.stack([1.0 - local[:, 1], 2.0 + local[:, 0], 3.0 + local[:, 2]], dim=-1)
-
-    assert torch.allclose(c_framed.pos_goal_in_world, expected(c_plain.pos_goal_in_world), atol=1e-6)
-    plain.step(c_plain)
-    framed.step(c_framed)
-    assert torch.allclose(c_framed.pos_goal_in_world, expected(c_plain.pos_goal_in_world), atol=1e-6)
+    local = container.goal_position_in_goal_frame
+    assert _in_ranges(local)  # sampled within the configured ranges, no transform applied
+    pos, quat = goal_pose_module.goal_in_env_frame(container)
+    expected = torch.stack([1.0 - local[:, 1], 2.0 + local[:, 0], 3.0 + local[:, 2]], dim=-1)
+    assert torch.allclose(pos, expected, atol=1e-6)
+    # The goal orientation ([0, 0, 0, 1] in the goal frame) is the frame's orientation in the env frame.
+    assert torch.allclose(quat, torch.tensor([[0.0, 0.0, s, s]] * 4), atol=1e-6)
 
 
 VSIM = """<robot name="hand">
@@ -307,7 +298,46 @@ def test_frame_pose_composes_the_simulated_link_and_the_vsim_chain(tmp_path: Pat
     module.post_finalize(container)
     module.reset(container)
 
-    goal = module.goal_types["discrete"]
     # Palm (1, 0, 0) + Abd joint (0, 1, 0), then 1 m along the rotated x (= world y) -> (1, 2, 0).
-    assert torch.allclose(goal._frame_pos, torch.tensor([[1.0, 2.0, 0.0]] * 2), atol=1e-6)
-    assert torch.allclose(goal._frame_quat, torch.tensor([_rpy_to_quat([0.0, 0.0, math.pi / 2])] * 2), atol=1e-6)
+    assert torch.allclose(container.goal_frame_pos, torch.tensor([[1.0, 2.0, 0.0]] * 2), atol=1e-6)
+    assert torch.allclose(container.goal_frame_quat, torch.tensor([_rpy_to_quat([0.0, 0.0, math.pi / 2])] * 2), atol=1e-6)
+
+
+def test_goal_frame_is_published_for_the_envs_of_framed_types(tmp_path: Path, monkeypatch) -> None:
+    vsim = tmp_path / "hand.vsim"
+    vsim.write_text(VSIM)
+
+    class _Robot:
+        num_links = 2
+        arti_handle = None
+
+        class art_def:
+            @staticmethod
+            def get_link_def(i):
+                return type("LinkDef", (), {"name": ["Palm", "MCP_jointbody"][i]})
+
+    class _Gym:
+        def compute_kinematics(self):
+            pass
+
+        def create_gpu_array(self, commands):
+            return commands
+
+        def get_link_transforms(self, commands):
+            commands[0][:] = torch.tensor([0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0])
+
+    container = _container(4)
+    container.robot = _Robot()
+    container.robot_vsim_path = str(vsim)
+    container.gym = _Gym()
+    container.env_group = type("EnvGroup", (), {"create_link_transform_command": staticmethod(lambda buf, handle, rng: buf)})
+    monkeypatch.setattr(goal_pose_module.v, "wrap_gpu_buffer", lambda buf: buf)
+    config = _config(["discrete", "square"])
+    config["types"]["discrete"]["frame"] = "Abd"  # only the discrete envs (0, 1) use a frame
+    module = GoalPoseModule(config)
+    module.post_finalize(container)
+    module.reset(container)
+
+    assert torch.allclose(container.goal_frame_pos[:2], torch.tensor([[1.0, 2.0, 0.0]] * 2), atol=1e-6)
+    assert torch.equal(container.goal_frame_pos[2:], torch.zeros(2, 3))
+    assert torch.equal(container.goal_frame_quat[2:], torch.tensor([[0.0, 0.0, 0.0, 1.0]] * 2))

@@ -12,6 +12,7 @@ from optimal_morphology_rl.envs.hand_envs.utils import get_reward_object_name
 from optimal_morphology_rl.modules.create_kinematic_sensor_module import (
     find_kinematic_sensor,
 )
+from optimal_morphology_rl.modules.goal_pose_module import goal_in_env_frame
 from optimal_morphology_rl.modules.terminations.termination_base_module import (
     TerminationBaseModule,
     register_termination,
@@ -54,12 +55,7 @@ class CubeSuccessTermination(TerminationBaseModule):
                 "Ensure create_kinematic_sensor is listed."
             )
         quat_object_to_world = sensor.quat_sensor_to_world
-        quat_goal_to_world = container.get("quat_goal_to_world")
-        if quat_goal_to_world is None:
-            raise RuntimeError(
-                "cube_success_termination: container.quat_goal_to_world is missing. "
-                "Add the goal_pose module to post_physics_step_modules before observation."
-            )
+        _, quat_goal_to_world = goal_in_env_frame(container)
 
         quat_dot = torch.sum(quat_goal_to_world * quat_object_to_world, dim=-1).abs().clamp(max=1.0)
         goal_angle = 2.0 * torch.acos(quat_dot)

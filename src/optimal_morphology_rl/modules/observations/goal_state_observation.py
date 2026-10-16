@@ -6,11 +6,12 @@ from typing import Any
 
 import torch
 
-from optimal_morphology_rl.modules.observations.observation_jit_helpers import (
-    _goal_state_obs_jit,
-)
+from optimal_morphology_rl.modules.goal_pose_module import goal_in_env_frame
 from optimal_morphology_rl.modules.observations.observation_base_module import (
     ObservationBaseModule,
+)
+from optimal_morphology_rl.modules.observations.observation_jit_helpers import (
+    _goal_state_obs_jit,
 )
 from optimal_morphology_rl.modules.observations.observation_manager_module import (
     register_observation,
@@ -26,13 +27,8 @@ class GoalStateObservation(ObservationBaseModule):
 
     def compute_observation(self, env: Any, out: torch.Tensor) -> None:
         container = env.module_manager.container
-        goal_pos = container.get("pos_goal_in_world")
-        goal_quat = container.get("quat_goal_to_world")
-        if goal_pos is None or goal_quat is None:
-            raise RuntimeError(
-                "goal_state: container.pos_goal_in_world / quat_goal_to_world are missing. "
-                "Add the goal_pose module to post_physics_step_modules before observation."
-            )
+        # Relative to the robot, so it needs the goal in the environment frame.
+        goal_pos, goal_quat = goal_in_env_frame(container)
         robot_state = container.robot_state
 
         out[:] = _goal_state_obs_jit(

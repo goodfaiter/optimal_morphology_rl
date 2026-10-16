@@ -29,6 +29,23 @@ def _rpy_to_quat(rpy: list[float]) -> list[float]:
     ]
 
 
+def goal_in_env_frame(container: ModuleContainer) -> tuple[torch.Tensor, torch.Tensor]:
+    """Goal position ``(N, 3)`` and orientation ``(N, 4)`` in the environment frame.
+
+    'goal_pose' keeps the goal in its goal frame (``container.goal_position_in_goal_frame`` /
+    ``goal_orientation_in_goal_frame``) together with the frame (``container.goal_frame_quat`` /
+    ``goal_frame_pos``); modules that compare it with simulator poses (rewards, terminations,
+    visualization) convert it with this.
+    """
+    pos = container.get("goal_position_in_goal_frame")
+    if pos is None:
+        raise RuntimeError("The goal is missing: add the goal_pose module (it fills container.goal_position_in_goal_frame).")
+    frame_quat = container.goal_frame_quat
+    world_pos = quat_rotate(frame_quat, pos) + container.goal_frame_pos
+    world_quat = quat_mul(frame_quat, container.goal_orientation_in_goal_frame)
+    return world_pos, world_quat
+
+
 def _frame_chain(vsim_path: str, frame: str, sim_links: list[str]) -> tuple[str, list[dict[str, list[float]]]]:
     """Resolve a robot-description link to its nearest simulated ancestor and the joint origins to it.
 
@@ -64,12 +81,12 @@ class _GoalType:
         goal_orientation: "random"  # or a fixed [x, y, z, w] quaternion
         frame: Pinky_Abd            # optional, see below
 
-    With ``frame`` the goal positions are expressed in that robot-description link's frame at
-    the zero pose (read once on the first reset, right after 'create_robot' reset the
-    articulation) and transformed to the environment frame of ``pos_goal_in_world``. The link may
-    be one that vlearn merges away (fixed joints): its pose is then composed from its nearest
-    simulated ancestor and the vsim joint origins (see ``_frame_chain``). Orientations stay in
-    the environment frame.
+    Goals are sampled in the goal frame and written as is to ``container.goal_position_in_goal_frame``
+    / ``goal_orientation_in_goal_frame``. With ``frame`` the goal frame is that robot-description
+    link's frame at the zero pose (read once on the first reset, right after 'create_robot' reset the
+    articulation); the link may be one that vlearn merges away (fixed joints): its pose is then
+    composed from its nearest simulated ancestor and the vsim joint origins (see ``_frame_chain``).
+    Without ``frame`` the goal frame is the environment frame.
     """
 
     name = ""
@@ -81,16 +98,12 @@ class _GoalType:
         self.x_range, self.y_range, self.z_range = ((float(r[0]), float(r[1])) for r in ranges)
         self.goal_orientation = config.get("goal_orientation", "random")
         self.frame = config.get("frame")
-        self._frame_quat: torch.Tensor | None = None  # (N, 4) goal frame -> environment rotation
-        self._frame_pos: torch.Tensor | None = None  # (N, 3) goal frame origin in the environment frame
 
     def allocate(self, container: ModuleContainer) -> None:
         """Allocate per-env state."""
 
-    def read_frame(self, container: ModuleContainer) -> None:
-        """Read the ``frame`` pose of every env (environment frame) from the simulator and the vsim."""
-        if self.frame is None or self._frame_quat is not None:
-            return
+    def read_frame(self, container: ModuleContainer) -> tuple[torch.Tensor, torch.Tensor]:
+        """Pose of ``frame`` in every env's environment frame, ``(quat (N, 4), pos (N, 3))``, from the simulator and the vsim."""
         robot = container.get("robot")
         vsim_path = container.get("robot_vsim_path")
         if robot is None or vsim_path is None:
@@ -108,7 +121,7 @@ class _GoalType:
             offset_quat = torch.tensor(_rpy_to_quat(origin["rpy"]), device=pos.device, dtype=torch.float32)
             pos = pos + quat_rotate(quat, offset_pos)
             quat = quat_mul(quat, offset_quat.expand_as(quat))
-        self._frame_quat, self._frame_pos = quat, pos
+        return quat, pos
 
     def resample(self, container: ModuleContainer, mask: torch.Tensor) -> None:
         """Draw a new goal (pattern) for the envs selected by ``mask``."""
@@ -116,12 +129,6 @@ class _GoalType:
 
     def step(self, container: ModuleContainer, mask: torch.Tensor) -> None:
         """Advance the goals of the envs selected by ``mask`` by one control step."""
-
-    def _to_frame(self, pos: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """Map goal positions of the ``mask`` rows from the goal frame to the environment frame."""
-        if self._frame_quat is None:
-            return pos
-        return quat_rotate(self._frame_quat[mask], pos) + self._frame_pos[mask]
 
     def _sample_uniform(self, container: ModuleContainer, mask: torch.Tensor) -> None:
         """Sample uniform positions and configured orientations for the envs selected by ``mask``."""
@@ -132,7 +139,7 @@ class _GoalType:
             dim=-1,
         )
         self._sample_quat(container, mask)
-        container.pos_goal_in_world[mask] = self._to_frame(pos, mask)
+        container.goal_position_in_goal_frame[mask] = pos
 
     def _sample_quat(self, container: ModuleContainer, mask: torch.Tensor) -> None:
         """Sample orientations for the envs selected by ``mask``."""
@@ -141,7 +148,7 @@ class _GoalType:
             quat = random_uniform_quaternion(num, device=mask.device, dtype=torch.float32)
         else:
             quat = torch.tensor(self.goal_orientation, device=mask.device, dtype=torch.float32).expand(num, 4)
-        container.quat_goal_to_world[mask] = quat
+        container.goal_orientation_in_goal_frame[mask] = quat
 
     @staticmethod
     def _control_dt(container: ModuleContainer, name: str) -> float:
@@ -219,11 +226,11 @@ class _SinusoidalGoal(_GoalType):
         self._phase[mask] = 2.0 * torch.pi * torch.rand((num, 3), device=device)
         self._time_buf[mask] = 0.0
         self._sample_quat(container, mask)
-        container.pos_goal_in_world[mask] = self._to_frame(self._positions(mask), mask)
+        container.goal_position_in_goal_frame[mask] = self._positions(mask)
 
     def step(self, container: ModuleContainer, mask: torch.Tensor) -> None:
         self._time_buf += self._dt
-        container.pos_goal_in_world[mask] = self._to_frame(self._positions(mask), mask)
+        container.goal_position_in_goal_frame[mask] = self._positions(mask)
 
     def _positions(self, mask: torch.Tensor) -> torch.Tensor:
         t = self._time_buf[mask].unsqueeze(-1)
@@ -283,12 +290,12 @@ class _SquareGoal(_GoalType):
         self._start[mask] = self._perimeter * torch.rand(num, device=mask.device)
         self._time_buf[mask] = 0.0
         self._sample_quat(container, mask)
-        container.pos_goal_in_world[mask] = self._to_frame(self._positions(self._start[mask]), mask)
+        container.goal_position_in_goal_frame[mask] = self._positions(self._start[mask])
 
     def step(self, container: ModuleContainer, mask: torch.Tensor) -> None:
         self._time_buf += self._dt
         distance = self._start[mask] + self._speed[mask] * self._time_buf[mask]
-        container.pos_goal_in_world[mask] = self._to_frame(self._positions(distance), mask)
+        container.goal_position_in_goal_frame[mask] = self._positions(distance)
 
     def _positions(self, distance: torch.Tensor) -> torch.Tensor:
         """Map a distance along the perimeter to goal positions ``(N, 3)``."""
@@ -312,9 +319,12 @@ GOAL_TYPES: dict[str, type[_GoalType]] = {cls.name: cls for cls in (_DiscreteGoa
 
 @register_module("goal_pose")
 class GoalPoseModule(BaseModule):
-    """Samples ``container.pos_goal_in_world`` ``(total_num_envs, 3)`` and
-    ``container.quat_goal_to_world`` ``(total_num_envs, 4)`` (goal frame -> world rotation);
-    rewards and observations read these buffers.
+    """Samples the goal in its goal frame: ``container.goal_position_in_goal_frame`` ``(N, 3)`` and
+    ``container.goal_orientation_in_goal_frame`` ``(N, 4)``, i.e. within the configured
+    ``goal_position`` ranges, with no further transform. The goal frame of every env is published as
+    ``container.goal_frame_quat`` ``(N, 4)`` / ``goal_frame_pos`` ``(N, 3)`` (its pose in the environment
+    frame; identity for types without ``frame``). Observations read the goal-frame values; rewards,
+    terminations and visualization convert to the environment frame with :func:`goal_in_env_frame`.
 
     Every goal type under ``types`` (``discrete``, ``sinusoidal``, ``square``) is used, and the envs
     are split evenly (contiguous blocks, in block order) over them; an optional ``weight``
@@ -357,13 +367,16 @@ class GoalPoseModule(BaseModule):
             self.entries += [name] * weight
         self.goal_types = {name: GOAL_TYPES[name]({**shared, **block}) for name, block in blocks.items()}
         self._masks: dict[str, torch.Tensor] | None = None
+        self._frames_read = False
 
     def _allocate(self, container: ModuleContainer) -> None:
         """Allocate the goal buffers, assign each env a type and allocate the type states."""
         n = container.total_num_envs
         device = container.device
-        container.pos_goal_in_world = torch.zeros((n, 3), device=device, dtype=torch.float32)
-        container.quat_goal_to_world = torch.zeros((n, 4), device=device, dtype=torch.float32)
+        container.goal_position_in_goal_frame = torch.zeros((n, 3), device=device, dtype=torch.float32)
+        container.goal_orientation_in_goal_frame = torch.zeros((n, 4), device=device, dtype=torch.float32)
+        container.goal_frame_quat = torch.tensor([0.0, 0.0, 0.0, 1.0], device=device).repeat(n, 1)
+        container.goal_frame_pos = torch.zeros((n, 3), device=device, dtype=torch.float32)
 
         entry = torch.arange(n, device=device) * len(self.entries) // n
         entry_type = torch.tensor([list(self.goal_types).index(name) for name in self.entries], device=device)
@@ -374,12 +387,12 @@ class GoalPoseModule(BaseModule):
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate the goal buffers once the container is populated."""
-        if "pos_goal_in_world" not in container:
+        if "goal_position_in_goal_frame" not in container:
             self._allocate(container)
 
     def reset(self, container: ModuleContainer) -> None:
         """Resample the goal for the envs selected by the environment's reset buffer."""
-        if "pos_goal_in_world" not in container:
+        if "goal_position_in_goal_frame" not in container:
             if container.get("total_num_envs") is None or container.get("device") is None:
                 raise RuntimeError(
                     "goal_pose requires 'total_num_envs' and 'device' in the shared container. "
@@ -387,9 +400,17 @@ class GoalPoseModule(BaseModule):
                 )
             self._allocate(container)
 
+        if not self._frames_read:  # once, at the zero pose of the first reset
+            self._frames_read = True
+            for name, goal_type in self.goal_types.items():
+                if goal_type.frame is not None:
+                    quat, pos = goal_type.read_frame(container)
+                    own = self._masks[name]
+                    container.goal_frame_quat[own] = quat[own]
+                    container.goal_frame_pos[own] = pos[own]
+
         reset_buf = container.get("reset_buf")
         for name, goal_type in self.goal_types.items():
-            goal_type.read_frame(container)
             mask = self._masks[name] if reset_buf is None else self._masks[name] & reset_buf
             if mask.any():
                 goal_type.resample(container, mask)

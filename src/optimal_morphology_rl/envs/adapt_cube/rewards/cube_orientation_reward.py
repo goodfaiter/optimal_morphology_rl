@@ -11,6 +11,7 @@ from optimal_morphology_rl.helpers.numpy_vlearn import quaternion_to_6d
 from optimal_morphology_rl.modules.create_kinematic_sensor_module import (
     find_kinematic_sensor,
 )
+from optimal_morphology_rl.modules.goal_pose_module import goal_in_env_frame
 from optimal_morphology_rl.modules.rewards.reward_base_module import RewardBaseModule
 from optimal_morphology_rl.modules.rewards.reward_manager_module import register_reward
 
@@ -32,12 +33,7 @@ class CubeOrientationReward(RewardBaseModule):
                 "Ensure create_kinematic_sensor is listed."
             )
         quat_object_to_world = sensor.quat_sensor_to_world
-        quat_goal_to_world = container.get("quat_goal_to_world")
-        if quat_goal_to_world is None:
-            raise RuntimeError(
-                "cube_orientation_reward: container.quat_goal_to_world is missing. "
-                "Add the goal_pose module to post_physics_step_modules before observation."
-            )
+        _, quat_goal_to_world = goal_in_env_frame(container)
 
         _6d_object_to_world = quaternion_to_6d(quat_object_to_world)
         _6d_object_goal_to_world = quaternion_to_6d(quat_goal_to_world)
