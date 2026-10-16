@@ -134,7 +134,7 @@ def test_apply_ppo_overrides_play_mode() -> None:
     )
     out = apply_ppo_overrides(ppo_config, args, "hand_cube")
     cfg = out["params"]["config"]
-    assert cfg["num_actors"] == 4
+    assert cfg["num_actors"] == 1
     assert cfg["player"]["games_num"] == 5
     assert cfg["player"]["deterministic"] is True
 

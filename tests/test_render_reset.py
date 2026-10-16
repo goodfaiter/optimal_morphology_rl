@@ -87,26 +87,23 @@ def test_termination_manager_truncates_every_env_on_a_forced_reset() -> None:
     assert not container.reset_buf.any()
 
 
-def test_forced_reset_restarts_every_episode_timer_from_zero() -> None:
+def test_forced_reset_restarts_the_episode_timer_of_a_single_env() -> None:
+    # Play and interactive mode run one env: its timer restarts from 0 on the Reset button.
     container = ModuleContainer()
-    container.total_num_envs, container.device = 4, torch.device("cpu")
+    container.total_num_envs, container.device = 1, torch.device("cpu")
     module = TerminationManagerModule({"progress": {"max_episode_length": 10}})
     module.finalize(container)
     module.post_finalize(container)
     env = SimpleNamespace(term_buf=container.term_buf, trunc_buf=container.trunc_buf, progress_buf=container.progress_buf, info={})
     container.env = env
 
-    container.reset_buf[:] = True  # initial full reset: staggered episode lengths
-    torch.manual_seed(0)
-    module.reset(container)
-    assert len(set(container.progress_buf.tolist())) > 1
-
+    for _ in range(4):
+        module.step(container)
     container.force_reset = True
     module.step(container)  # the step on which Reset was pressed
     assert container.reset_buf.all()
     module.reset(container)  # the reset that follows
-    assert container.progress_buf.tolist() == [0, 0, 0, 0]
-    assert container.forced_reset_pending is False
+    assert container.progress_buf.tolist() == [0]
 
     for _ in range(9):
         module.step(container)

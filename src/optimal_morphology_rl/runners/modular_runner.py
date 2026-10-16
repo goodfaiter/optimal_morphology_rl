@@ -159,9 +159,10 @@ def apply_ppo_overrides(ppo_config: dict[str, Any], args: argparse.Namespace, ta
     cfg.setdefault("player", {})["use_vecenv"] = True
 
     if args.mode == "play":
-        # Default to 4 actors in play mode for visualization; user override wins.
+        # Default to 1 actor in play mode (the render menu's Reset then restarts its episode timer
+        # from 0; with several envs a full reset staggers the timers); user override wins.
         if args.num_envs is None:
-            cfg["num_actors"] = 4
+            cfg["num_actors"] = 1
         if args.games_num is not None:
             cfg["player"]["games_num"] = args.games_num
         if args.deterministic is not None:
@@ -409,7 +410,7 @@ def main() -> None:
         if args.headless is None:
             args.headless = "False"
         if args.num_envs is None:
-            args.num_envs = 1 if args.mode == "interactive" else 4
+            args.num_envs = 1
 
     if args.mode == "interactive":
         task_dir = args.task_root / args.task
