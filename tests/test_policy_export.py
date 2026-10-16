@@ -102,7 +102,7 @@ class _FakeManager:
 def test_export_info_reads_built_env() -> None:
     container = SimpleNamespace(timestep=1 / 200, frame_skip=1, root_slice=slice(0, 1), active_dof_slice=slice(1, 3))
     modules = {
-        "observation": SimpleNamespace(num_hist=40, hist_stride=10, config={"modules": ["spool_state", "goal_finger_tip"]}),
+        "observation": SimpleNamespace(num_hist=40, hist_stride=10, config={"modules": {"spool_state": {}, "goal_finger_tip": {}}}),
         "process_variable_actions": SimpleNamespace(
             min_velocity=torch.tensor([-0.5]),
             max_velocity=torch.tensor([0.5]),

@@ -37,18 +37,17 @@ def register_observation(name: str | None = None):
 class ObservationManagerModule(BaseModule):
     """Builds the observation vector from registered observation sub-modules.
 
-    Config shape::
+    Config shape (``modules`` maps each sub-module, in observation order, to its config)::
 
         observation:
           num_hist: 3
           hist_stride: 10
           modules:
-            - robot_state
-            - object_state
-            - goal_state
-
-    The sub-module configs live at the same level as ``modules`` inside the
-    ``observation`` block.
+            robot_state: {}
+            spool_state:
+              noise:
+                offset_range: [-0.1, 0.1]
+            goal_state: {}
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -66,14 +65,15 @@ class ObservationManagerModule(BaseModule):
 
     def _build_sub_manager(self) -> ModuleManager:
         """Create a ModuleManager for observation sub-modules."""
-        sub_config: dict[str, Any] = {"modules": {"init_modules": []}}
-        for key in self.config.keys():
-            if key.startswith("_"):
-                continue
-            if key == "modules":
-                sub_config["modules"]["init_modules"] = list(self.config[key])
-            else:
-                sub_config[key] = self.config[key]
+        modules = self.config.get("modules", {})
+        if not isinstance(modules, dict):
+            raise ValueError(
+                "observation 'modules' must map each observation sub-module to its config "
+                f"(e.g. 'robot_state: {{}}'), got {type(modules).__name__}: {modules}"
+            )
+        sub_config: dict[str, Any] = {"modules": {"init_modules": list(modules)}}
+        for name, module_config in modules.items():
+            sub_config[name] = dict(module_config or {})
         return ModuleManager.from_config(sub_config, registry=OBSERVATION_REGISTRY)
 
     def finalize(self, container: ModuleContainer) -> None:
@@ -145,7 +145,10 @@ class ObservationManagerModule(BaseModule):
         env.obs_buf[:] = self.obs_history.get().view(env.total_num_envs, -1)
 
     def reset(self, container: ModuleContainer) -> None:
-        """Reset the observation history."""
+        """Reset the observation history and the sub-modules (e.g. per-episode observation noise)."""
         reset_buf = container.get("reset_buf")
         if self.obs_history is not None and reset_buf is not None:
             self.obs_history.reset_idx(reset_buf)
+        env = container.get("env")
+        for module in self._obs_modules:
+            module.reset(env)

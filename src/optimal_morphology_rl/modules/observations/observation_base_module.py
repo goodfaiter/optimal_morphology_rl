@@ -37,5 +37,5 @@ class ObservationBaseModule(BaseModule):
         raise NotImplementedError
 
     def reset(self, env: Any) -> None:
-        """Optional reset hook."""
+        """Optional reset hook, called by the observation manager on every reset (``reset_buf`` selects the envs)."""
         pass

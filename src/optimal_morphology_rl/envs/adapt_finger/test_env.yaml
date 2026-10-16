@@ -109,7 +109,7 @@ observation:
   num_hist: 1
   hist_stride: 1
   modules:
-    - robot_state
+    robot_state: {}
 
 reward: {}
 
