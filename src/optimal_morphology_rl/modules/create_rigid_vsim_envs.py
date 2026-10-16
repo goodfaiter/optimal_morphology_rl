@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Any, List
+from typing import Any
 
 import numpy as np
 import torch
@@ -25,6 +25,10 @@ class CreateRigidVsimEnvs(BaseModule):
     modules can populate the environment definition in their ``finalize`` hooks,
     after which this module finalizes the definition and instantiates the
     environment group in ``post_finalize``.
+
+    ``num_envs_per_set`` (default: ``num_envs``, i.e. one env set) splits the envs into env
+    sets. Per-articulation-def properties such as joint friction are shared within an env set,
+    so ``num_envs_per_set: 1`` lets them be randomized per env. The last set holds the remainder.
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -44,6 +48,12 @@ class CreateRigidVsimEnvs(BaseModule):
         if self.num_envs <= 0:
             raise ValueError("num_envs must be a positive integer")
         self.total_num_envs = self.num_envs
+
+        self.num_envs_per_set = int(self.config.get("num_envs_per_set", self.num_envs))
+        if self.num_envs_per_set <= 0:
+            raise ValueError("num_envs_per_set must be a positive integer")
+        num_full_sets, remainder = divmod(self.num_envs, self.num_envs_per_set)
+        self.num_envs_list = [self.num_envs_per_set] * num_full_sets + ([remainder] if remainder else [])
 
         self.device = torch.device(self.config["device"])
         if self.device.type != "cuda":
@@ -122,7 +132,7 @@ class CreateRigidVsimEnvs(BaseModule):
         container.env_def_handle = self.env_def_handle
         container.env_def = self.env_def
         container.device = self.device
-        container.num_envs = [self.num_envs]
+        container.num_envs = list(self.num_envs_list)
         container.total_num_envs = self.total_num_envs
         container.timestep = self.timestep
         container.frame_skip = self.frame_skip
@@ -144,21 +154,21 @@ class CreateRigidVsimEnvs(BaseModule):
 
         container.env_def.finalize()
 
-        env_set_offsets = self._compute_env_set_offsets()
-        self.env_group = self.gym.create_environment_group(self.env_def_handle, [self.num_envs])
+        self.env_group = self.gym.create_environment_group(self.env_def_handle, self.num_envs_list)
 
-        # Arrange environments on a grid inside each environment set.
+        # Arrange all environments on one grid, in global env order, regardless of the set split.
         self.env_sets = list(self.env_group.get_environment_sets())
-        for env_set, offset in zip(self.env_sets, env_set_offsets):
-            num_envs_in_set = env_set.get_num_environments()
-            grid_size = math.ceil(math.sqrt(num_envs_in_set))
-            for i in range(num_envs_in_set):
-                x = i % grid_size
-                y = i // grid_size
-                env_pos = self.up_axis_rotation.rotate(self.spacing * v.Vec3(x, 0, y)) + offset
+        grid_size = math.ceil(math.sqrt(self.total_num_envs))
+        env_index = 0
+        for env_set in self.env_sets:
+            for i in range(env_set.get_num_environments()):
+                x = env_index % grid_size
+                y = env_index // grid_size
+                env_pos = self.up_axis_rotation.rotate(self.spacing * v.Vec3(x, 0, y))
                 env_handle = env_set.get_environment_handle(i)
                 environment = env_set.get_environment(env_handle)
                 environment.set_transform(v.Transform(v.Quat(0, 0, 0, 1), env_pos))
+                env_index += 1
 
         self.env_set_handles = list(self.env_group.get_environment_set_handles())
         self.env_set = self.env_sets[-1]
@@ -173,11 +183,3 @@ class CreateRigidVsimEnvs(BaseModule):
 
         self.gym.finalize()
         self.gym.update_scene_dependent_components()
-
-    def _compute_env_set_offsets(self) -> List[v.Vec3]:
-        """Return one offset per environment set.
-
-        For now a single environment set centered at the origin is used.  This
-        can be extended later to split environments across multiple sets.
-        """
-        return [v.Vec3(0, 0, 0)]

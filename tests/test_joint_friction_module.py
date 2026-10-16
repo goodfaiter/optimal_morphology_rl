@@ -19,6 +19,28 @@ class _FakeRobot:
         self.num_motors = num_joints
         self.num_joints = num_joints
         self.def_handle = 42
+        # Last DOF stands in for a non-revolute (e.g. tendon slider) DOF that keeps its defined friction.
+        self.revolute_dof_mask = torch.ones(num_joints, dtype=torch.bool)
+        self.revolute_dof_mask[-1] = num_joints == 1
+        self.art_def = _FakeArtDef(num_joints)
+
+
+class _FakeJointDef:
+    def __init__(self, index: int):
+        self.dof_start_index = index
+        self.dof = 1
+        self.joint_friction = 0.5
+
+
+class _FakeArtDef:
+    def __init__(self, num_joints: int):
+        self.joint_defs = [_FakeJointDef(i) for i in range(num_joints)]
+
+    def get_num_joint_defs(self) -> int:
+        return len(self.joint_defs)
+
+    def get_joint_def(self, i: int) -> _FakeJointDef:
+        return self.joint_defs[i]
 
 
 class _FakeGym:
@@ -76,8 +98,9 @@ def test_post_finalize_builds_command_and_samples(container: ModuleContainer) ->
 
     buf = container.set_joint_friction_buf
     assert buf.shape == (1, 3)
-    assert torch.all(buf >= 0.05)
-    assert torch.all(buf <= 0.2)
+    assert torch.all(buf[:, :2] >= 0.05)
+    assert torch.all(buf[:, :2] <= 0.2)
+    assert torch.all(buf[:, 2] == 0.5)  # non-revolute DOF keeps its defined friction
     assert container.env_group.commands[0][1] == ("wrapped", container.set_joint_friction_buf)
 
 
@@ -91,7 +114,7 @@ def test_reset_resamples_and_applies(container: ModuleContainer) -> None:
     torch.manual_seed(1)
     module.reset(container)
 
-    after = container.set_joint_friction_buf
+    after = container.set_joint_friction_buf[:, :2]
     assert torch.all(after >= 0.05)
     assert torch.all(after <= 0.2)
     assert not torch.allclose(after, torch.full_like(after, 0.2))
@@ -107,7 +130,7 @@ def test_pinned_range_keeps_constant(container: ModuleContainer) -> None:
     container.reset_buf = torch.ones(4, dtype=torch.bool)
     module.reset(container)
 
-    assert torch.allclose(container.set_joint_friction_buf, torch.full((1, 3), 0.1))
+    assert torch.allclose(container.set_joint_friction_buf, torch.tensor([[0.1, 0.1, 0.5]]))
     assert container.gym.calls[-1][0] == "set_joint_properties"
 
 
@@ -183,3 +206,22 @@ def test_supports_robots_with_various_dof_counts(monkeypatch) -> None:
     module.post_finalize(cont)
     assert cont.env_group.commands[1][3] == (0, 2)
     assert cont.set_joint_friction_buf.shape == (1, 2)
+
+
+def test_reset_resamples_only_env_sets_with_a_resetting_env(container: ModuleContainer) -> None:
+    container.num_envs = [1, 1, 2]  # env 0 -> set 0, env 1 -> set 1, envs 2, 3 -> set 2
+    module = _make_module([0.05, 0.2])
+    module.finalize(container)
+    module.post_finalize(container)
+    before = container.set_joint_friction_buf.clone()
+    assert before.shape == (3, 3)
+
+    container.reset_buf = torch.tensor([False, True, False, True])
+    module.reset(container)
+
+    after = container.set_joint_friction_buf
+    assert torch.equal(after[0], before[0])
+    assert not torch.equal(after[1, :2], before[1, :2])
+    assert not torch.equal(after[2, :2], before[2, :2])
+    assert torch.all(after[:, 2] == 0.5)
+    assert container.gym.calls[-1] == ("set_joint_properties", container.gpu_set_joint_friction_cmd)
