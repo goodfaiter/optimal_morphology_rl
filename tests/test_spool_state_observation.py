@@ -6,13 +6,15 @@ import torch
 
 from optimal_morphology_rl.modules.observations.spool_state_observation import SpoolStateObservation
 
+
 def _spool_env():
     servo = SimpleNamespace(model_tendon_indices=[0, 1], dof_indices=torch.tensor([3, 4]), pully_radius=torch.tensor([0.005, 0.01]))
     robot = SimpleNamespace(
         get_joint_pos_buf=torch.tensor([[9.0, 9.0, 9.0, 0.005, 0.02], [9.0, 9.0, 9.0, 0.0, 0.01]]),
         joint_velocity=torch.tensor([[9.0, 9.0, 9.0, 0.01, -0.01], [9.0, 9.0, 9.0, 0.0, 0.0]]),
     )
-    manager = SimpleNamespace(get=lambda name: servo, container=SimpleNamespace(robot=robot))
+    container = SimpleNamespace(robot=robot, spool=servo, get=lambda key: servo if key == "spool" else None)
+    manager = SimpleNamespace(container=container)
     return SimpleNamespace(module_manager=manager)
 
 

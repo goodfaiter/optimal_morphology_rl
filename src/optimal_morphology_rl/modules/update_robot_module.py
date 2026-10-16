@@ -173,7 +173,7 @@ class UpdateRobotModule(BaseModule):
     (the robot_state observation): "sim" (default) the simulator's buffers, "fd" the
     finite differences (``calculated_joint_velocity``, and the tendon length rate
     dL/dt ``calculated_tendon_length_rate = -calculated_tendon_velocity``, which
-    the simulator's tendon velocity buffer does not track). 'prismatic_force_m5'
+    the simulator's tendon velocity buffer does not track). 'create_spool'
     reads ``robot.joint_velocity`` and needs "fd" to hold the spool.
 
     For tendon-driven robots the module additionally computes filtered tendon

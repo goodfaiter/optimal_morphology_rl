@@ -2,6 +2,7 @@ modules:
   init_modules:
     - create_rigid_vsim_envs
     - create_robot
+    - create_spool
     - randomize_joint_friction
     - randomize_friction
     - termination
@@ -10,7 +11,8 @@ modules:
     - render
     - interactive_slider_control
     - process_variable_actions
-    - prismatic_force_m5
+    - create_spool
+    - apply_m5_forces
     - antagonistic_spring
     - apply_motor_forces
     - apply_root_forces
@@ -49,7 +51,7 @@ create_robot:
   # Make every motor controllable from the UI (no passive motors).
   passive_motor_substrings: []
 
-# Finite-difference velocities for the prismatic_force_m5 stop torque and the robot_state observation.
+# Finite-difference velocities for the apply_m5_forces stop torque and the robot_state observation.
 update_robot:
   velocity_source: fd
 
@@ -67,9 +69,17 @@ process_variable_actions:
   min_dof_scale: -1.0
   max_dof_scale: 1.0
 
-prismatic_force_m5:
+# Servo spools on the tendon actuator sliders: the prismatic joint is the spool rim
+# (theta = q / r) and the slider armature is the servo inertia. Builds the tendon action
+# space (replaces 'robot_control_tendons' + 'apply_tendon_forces'); the DIP tendon is
+# fixed and has no slider.
+create_spool:
   pully_radius: 0.005 # [m]
   model_tendon_indices: [0, 1]
+
+# M5-friction servo law on the spools: slider motor force (tau_motor + tau_friction) / r,
+# applied by 'apply_motor_forces'. Alternative to 'tendon_force_m5'/'tendon_est'.
+apply_m5_forces:
   # friction_model_path: 2026_10_14_m5_mlp_common_friction.pt
   motor_gain: 0.0389 # Nm/rad
   K_v: 0.002

@@ -23,6 +23,7 @@ from optimal_morphology_rl.modules.create_kinematic_sensor_module import CreateK
 from optimal_morphology_rl.modules.create_objects_module import CreateObjectsModule
 from optimal_morphology_rl.modules.create_rigid_vsim_envs import CreateRigidVsimEnvs
 from optimal_morphology_rl.modules.create_robot_module import RobotModule
+from optimal_morphology_rl.modules.create_spool_module import CreateSpoolModule
 from optimal_morphology_rl.modules.external_force_module import ExternalForceModule
 from optimal_morphology_rl.modules.goal_pose_module import GoalPoseModule
 from optimal_morphology_rl.modules.gravity_compensation_module import GravityCompensationModule
@@ -44,7 +45,6 @@ from optimal_morphology_rl.modules.observations import (
     RobotStateObservation,
     register_observation,
 )
-from optimal_morphology_rl.modules.prismatic_force_m5_module import PrismaticForceM5Module
 from optimal_morphology_rl.modules.process_fixed_actions_module import (
     ProcessFixedActionsModule,
 )
@@ -53,6 +53,7 @@ from optimal_morphology_rl.modules.process_variable_actions_module import (
 )
 from optimal_morphology_rl.modules.randomize_friction_module import RandomizeFrictionModule
 from optimal_morphology_rl.modules.randomize_joint_friction_module import RandomizeJointFrictionModule
+from optimal_morphology_rl.modules.randomize_spool_module import RandomizeSpoolModule
 from optimal_morphology_rl.modules.rewards import (
     REWARD_REGISTRY,
     RewardBaseModule,
@@ -104,6 +105,7 @@ __all__ = [
     "CreateKinematicSensorModule",
     "CreateObjectsModule",
     "CreateRigidVsimEnvs",
+    "CreateSpoolModule",
     "ExternalForceModule",
     "GoalPoseModule",
     "GoalStateObservation",
@@ -120,6 +122,7 @@ __all__ = [
     "ProcessVariableActionsModule",
     "RandomizeFrictionModule",
     "RandomizeJointFrictionModule",
+    "RandomizeSpoolModule",
     "RenderModule",
     "RewardBaseModule",
     "RewardManagerModule",
@@ -131,7 +134,6 @@ __all__ = [
     "RobotStateObservation",
     "TendonEstModule",
     "TendonForceM5Module",
-    "PrismaticForceM5Module",
     "TerminationBaseModule",
     "TerminationManagerModule",
     "UpdateContactsModule",
