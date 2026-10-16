@@ -221,6 +221,8 @@ class VlearnEnv(IVecEnv):
         }
         if hasattr(self.envs, "state_space"):
             env_info["state_space"] = convert_space(self.envs.state_space)
+        # Read by rl_games when it saves the deployment .pt (params.config.export keys take precedence).
+        env_info["export"] = export_info(self.envs.env)
         return env_info
 
 
@@ -244,6 +246,36 @@ def make_env_creator(env_config: dict[str, Any], mode: str):
         return NewToOldAPICompatilibity(env)
 
     return create_envs
+
+
+def export_info(env: ModularEnvironment) -> dict[str, Any]:
+    """Deployment parameters of a built env for rl_games' policy export.
+
+    Control frequency, observation history layout and the per-action command bounds that
+    ``process_variable_actions`` maps the [-1, 1] policy actions to.
+    """
+    manager = env.module_manager
+    container = manager.container
+    info: dict[str, Any] = {"frequency": 1.0 / (container.timestep * container.frame_skip)}
+
+    if "observation" in manager:
+        obs_module = manager.get("observation")
+        info["num_hist"] = obs_module.num_hist
+        info["hist_stride"] = obs_module.hist_stride
+        info["observation_modules"] = list(obs_module.config.get("modules", []))
+
+    if "process_variable_actions" in manager:
+        actions = manager.get("process_variable_actions")
+        num_actions = env.action_space.shape[0]
+        lower = torch.full((num_actions,), -1.0)
+        upper = torch.full((num_actions,), 1.0)
+        lower[container.root_slice] = actions.min_velocity.cpu()
+        upper[container.root_slice] = actions.max_velocity.cpu()
+        lower[container.active_dof_slice] = actions.min_dof_scale.cpu()
+        upper[container.active_dof_slice] = actions.max_dof_scale.cpu()
+        info["action_lower"] = lower.tolist()
+        info["action_upper"] = upper.tolist()
+    return info
 
 
 def register_colored_noise_algo(runner: Runner) -> None:
@@ -295,7 +327,7 @@ def run_rl_games(
     if checkpoint:
         run_args["checkpoint"] = checkpoint
 
-    # rl_games uses this folder when freezing the traced player at the end of training.
+    # rl_games writes the end-of-training reward log into this folder.
     run_args["experiment_name"] = experiment_name or "runs"
 
     use_wandb = mode == "train" and wandb
