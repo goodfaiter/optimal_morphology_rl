@@ -48,6 +48,10 @@ class ApplyM5ForcesModule(BaseModule):
     The tendon pulls the slider with -T and the servo inertia is the slider's armature, so the
     simulator closes the loop  J_eff * domega_m = tau_m + tau_f + tau_e  with the spool's J_eff.
 
+    With 'max_slider_velocity' (m/s) the servo speed is limited (vlearn does not enforce the slider
+    joint's velocity limit): tau_m + tau_f is capped so that this loop keeps |omega_m| within
+    max_slider_velocity / r on the next step.
+
     With 'friction_model_path' set, the M5 coefficients K_c, K_v, K_m, K_e, K_cs, K_ms, K_es are
     predicted each step by a TorchScript friction model (``model(omega, theta_desired, theta, tau_e)``,
     then ``model.last_coefficients``) instead of the configured constants, and v_s / alpha are the
@@ -127,6 +131,11 @@ class ApplyM5ForcesModule(BaseModule):
         )
 
         # Optional debug print of one (env, tendon) pair. Off by default: .item() forces a GPU sync.
+        max_v = self.config.get("max_slider_velocity")
+        self.max_slider_velocity = None if max_v is None else float(max_v)
+        if self.max_slider_velocity is not None and self.max_slider_velocity <= 0.0:
+            raise RuntimeError("ApplyM5Forces config 'max_slider_velocity' must be positive (m/s).")
+
         self.debug = bool(self.config.get("debug", False))
         self.debug_env = int(self.config.get("debug_env", 0))
         self.debug_tendon = int(self.config.get("debug_tendon", 0))
@@ -171,7 +180,13 @@ class ApplyM5ForcesModule(BaseModule):
         tau_f_stop = -(spool.j_eff / self.dt * omega_m + tau_m + tau_e)
         tau_f = torch.clamp(tau_f_stop, -tau_f_max, tau_f_max)
 
-        force = (tau_m + tau_f) / spool.pully_radius
+        tau = tau_m + tau_f
+        if self.max_slider_velocity is not None:
+            # Keep J_eff * (omega_next - omega_m) / dt = tau + tau_e within |omega_next| <= w_max.
+            w_max = self.max_slider_velocity / spool.pully_radius
+            inertia_dt = spool.j_eff / self.dt
+            tau = torch.minimum(torch.maximum(tau, inertia_dt * (-w_max - omega_m) - tau_e), inertia_dt * (w_max - omega_m) - tau_e)
+        force = tau / spool.pully_radius
         container.spool_motor_force_buf[:, spool.motor_indices] = force
 
         # Signals of the last step, shape (num_envs, num_model_tendons), for inspection tools.

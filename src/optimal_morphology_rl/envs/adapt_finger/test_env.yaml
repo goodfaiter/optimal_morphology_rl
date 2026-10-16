@@ -89,6 +89,7 @@ spool_plot:
 apply_m5_forces:
   # friction_model_path: 2026_10_14_m5_mlp_common_friction.pt
   motor_gain: 0.0389 # Nm/rad
+  max_slider_velocity: 0.0425 # m/s, servo speed limit (8.5 rad/s at a 5 mm pulley)
   K_v: 0.002
   K_c: 0.014
   K_m: 0.11

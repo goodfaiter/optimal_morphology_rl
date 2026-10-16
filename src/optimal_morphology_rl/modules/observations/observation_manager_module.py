@@ -46,7 +46,7 @@ class ObservationManagerModule(BaseModule):
             robot_state: {}
             spool_state:
               noise:
-                offset_range: [-0.1, 0.1]
+                angle_offset_range: [-0.1, 0.1]
             goal_state: {}
     """
 
