@@ -24,6 +24,7 @@ class RenderModule(BaseModule):
           capped_step: false     # true = user must advance each frame
           paused: false          # start with renderer paused
           raise_exception: null  # null -> same as env.rendering
+          reset_button: true     # "Reset" checkbox in the menu: resets every env
           camera:
             eye: [-0.671139, 0.073098, 0.726423]
             target: [0.755459, -0.009100, -0.655133]
@@ -34,6 +35,8 @@ class RenderModule(BaseModule):
         self.capped_step = bool(self.config.get("capped_step", True))
         self.paused = bool(self.config.get("paused", False))
         self.raise_exception = self.config.get("raise_exception", None)
+        self.reset_button = bool(self.config.get("reset_button", True))
+        self.reset_checkbox: v.UserCheckbox | None = None
         self.render_timestep: float | None = None
         self.camera = dict(
             self.config.get(
@@ -70,6 +73,11 @@ class RenderModule(BaseModule):
 
         gym_render.set_paused(False)
 
+        if self.reset_button:
+            # vlearn has no push button: a checkbox that unchecks itself once handled.
+            self.reset_checkbox = v.UserCheckbox("Reset", False)
+            gym_render.register_menu_item(self.reset_checkbox)
+
     def step(self, container: ModuleContainer) -> None:
         """Render the environment at the start of the control step."""
         env = container.env
@@ -80,3 +88,8 @@ class RenderModule(BaseModule):
         finished = gym_render.render(lambda: None)
         if finished and self.raise_exception:
             raise RuntimeError("Render window was closed.")
+        if self.reset_checkbox is not None and self.reset_checkbox.get_value():
+            self.reset_checkbox.set_value(False)
+            # The termination manager truncates every env on this step, so the reset follows the
+            # normal episode-end path (and rl_games sees the episodes end).
+            container.force_reset = True

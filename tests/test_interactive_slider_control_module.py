@@ -87,7 +87,6 @@ def test_post_finalize_noops_without_rendering(container: ModuleContainer) -> No
     module.post_finalize(container)
 
     assert module.sliders == []
-    assert module.reset_checkbox is None
     assert container.gym_render.items == []
 
 
@@ -99,7 +98,6 @@ def test_post_finalize_noops_without_gym_render(container: ModuleContainer) -> N
     module.post_finalize(container)
 
     assert module.sliders == []
-    assert module.reset_checkbox is None
 
 
 def test_post_finalize_noops_without_num_actions(container: ModuleContainer) -> None:
@@ -118,10 +116,8 @@ def test_post_finalize_creates_generic_sliders(container: ModuleContainer) -> No
     module.finalize(container)
     module.post_finalize(container)
 
-    checkbox = container.gym_render.items[0]
-    assert isinstance(checkbox, _FakeCheckbox)
-    assert checkbox.name == "Reset"
-
+    # Only sliders: resetting lives in the render module's menu.
+    assert container.gym_render.items == module.sliders
     assert len(module.sliders) == 3
     for i, slider in enumerate(module.sliders):
         assert slider.name == f"Action {i}"

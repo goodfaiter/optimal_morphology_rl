@@ -83,6 +83,11 @@ class TerminationManagerModule(BaseModule):
 
         for module in self._termination_modules:
             module.compute(env)
+        if container.get("force_reset"):
+            # Requested by the render menu's "Reset": end every episode now (as a truncation). The
+            # following reset restarts every episode from 0 ('progress' does not stagger it).
+            env.trunc_buf[:] = True
+            container.force_reset = False
 
         container.reset_buf[:] = torch.logical_or(env.term_buf, env.trunc_buf)
         container.inverse_reset_buf[:] = ~container.reset_buf

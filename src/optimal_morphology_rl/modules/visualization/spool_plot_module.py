@@ -19,7 +19,7 @@ class SpoolPlotModule(BaseModule):
     One row per spool: the commanded spool angle and theta_m (rad), and omega_m (rad/s). The plot
     runs in its own subprocess (``utils/live_plot.py``), so drawing never stalls the simulation and the
     window can be minimized or closed (closing it just stops the plot). The time axis is the sim time
-    since the env was built (it keeps running across resets). List it in
+    of the plotted env's episode: when that env resets, the plot is cleared and starts again at 0. List it in
     ``pre_physics_step_modules`` after 'create_spool' (it reads the state 'create_spool' just read and
     the command 'process_variable_actions' just scaled).
 
@@ -71,6 +71,12 @@ class SpoolPlotModule(BaseModule):
                 "save_path": self.save_path,
             }
         )
+
+    def reset(self, container: ModuleContainer) -> None:
+        """Restart the time axis when the plotted env resets (the plotter then clears its history)."""
+        reset_buf = container.get("reset_buf")
+        if self.plot is not None and reset_buf is not None and bool(reset_buf[self.env_index]):
+            self.steps = 0
 
     def step(self, container: ModuleContainer) -> None:
         if self.plot is None or not self.plot.alive:

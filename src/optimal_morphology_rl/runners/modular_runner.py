@@ -388,17 +388,10 @@ def run_interactive(env_config: dict[str, Any]) -> None:
     env = ModularEnvironment(env_config)
     action_shape = env.action_space.shape
 
-    slider_module = env.module_manager.get("interactive_slider_control")
-    reset_box = getattr(slider_module, "reset_checkbox", None)
-
-    print("Interactive mode started. Close the render window to exit.", flush=True)
+    print("Interactive mode started. Use the menu's Reset to reset, close the render window to exit.", flush=True)
 
     try:
         while True:
-            if reset_box is not None and reset_box.get_value():
-                env.reset()
-                reset_box.set_value(False)
-
             actions = torch.zeros((env.total_num_envs,) + action_shape, device=env.device)
             env.step(actions)
     except RuntimeError as exc:

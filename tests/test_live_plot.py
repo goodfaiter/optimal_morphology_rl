@@ -30,3 +30,37 @@ def test_send_is_a_noop_once_the_plotter_has_exited(tmp_path: Path) -> None:
     plot.close()
     assert not plot.alive
     plot.send(0.0, {"cmd": [0.0, 0.0], "theta": [0.0, 0.0], "omega": [0.0, 0.0]})  # must not raise or block
+
+
+def test_time_going_back_clears_the_history() -> None:
+    import io
+    import json
+
+    from optimal_morphology_rl.utils.live_plot import run_plotter
+
+    values = {"cmd": [0.0, 0.0], "theta": [0.0, 0.0], "omega": [0.0, 0.0]}
+    first = [[i * 0.01, values] for i in range(100)]  # 0 .. 0.99 s
+    after_reset = [[i * 0.01, values] for i in range(20)]  # episode restarted at 0
+    stream = io.StringIO("".join(json.dumps(sample) + "\n" for sample in first + after_reset))
+
+    times = run_plotter({**LAYOUT, "window_s": 10.0}, stream=stream)
+
+    assert times == [sample[0] for sample in after_reset]
+
+
+def test_spool_plot_restarts_its_clock_when_the_plotted_env_resets() -> None:
+    import torch
+
+    from optimal_morphology_rl.modules.module_container import ModuleContainer
+    from optimal_morphology_rl.modules.visualization.spool_plot_module import SpoolPlotModule
+
+    module = SpoolPlotModule({"env": 1})
+    module.plot = object()  # a running plot
+    container = ModuleContainer()
+    module.steps = 50
+    container.reset_buf = torch.tensor([True, False, False])
+    module.reset(container)
+    assert module.steps == 50  # another env reset
+    container.reset_buf = torch.tensor([False, True, False])
+    module.reset(container)
+    assert module.steps == 0

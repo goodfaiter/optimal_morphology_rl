@@ -22,7 +22,7 @@ from collections import deque
 from typing import Any
 
 
-def run_plotter(layout: dict[str, Any], stream=None) -> None:
+def run_plotter(layout: dict[str, Any], stream=None) -> list[float]:
     """Plotter loop: draws ``layout`` and appends the samples read from ``stream`` (default stdin).
 
     layout:
@@ -33,7 +33,11 @@ def run_plotter(layout: dict[str, Any], stream=None) -> None:
         fps: redraw rate
         backend: matplotlib backend (default "TkAgg"; e.g. "Agg" to run without a display)
         save_path: optional PNG the last frame is written to when the plotter ends
-    Samples (one JSON line each): ``[t, {key: [value per row]}]``; end of stream ends the plotter.
+    Returns the sample times shown at the end (used by the tests).
+
+    Samples (one JSON line each): ``[t, {key: [value per row]}]``; end of stream ends the plotter. A
+    sample earlier than the previous one starts over (e.g. the sender's episode was reset): the history
+    is cleared.
     """
     import matplotlib
 
@@ -88,6 +92,11 @@ def run_plotter(layout: dict[str, Any], stream=None) -> None:
                 running = False
                 break
             t, values = item
+            if times and t < times[-1]:  # time went back: new episode, start over
+                times.clear()
+                for per_row in history.values():
+                    for h in per_row:
+                        h.clear()
             times.append(t)
             for key, per_row in values.items():
                 for r, value in enumerate(per_row):
@@ -110,6 +119,7 @@ def run_plotter(layout: dict[str, Any], stream=None) -> None:
     if layout.get("save_path"):
         fig.savefig(layout["save_path"], dpi=80)
     plt.close(fig)
+    return list(times)
 
 
 class LivePlot:

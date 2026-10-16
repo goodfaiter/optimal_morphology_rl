@@ -25,10 +25,8 @@ class InteractiveSliderControlModule(BaseModule):
     One slider is created per action, regardless of tendons/motors, with the
     range given by the required ``slider_min`` / ``slider_max`` config keys;
     with ``shared: true`` a single slider drives every action (e.g. curl all
-    fingers together). A
-    reset checkbox is also exposed (label ``reset_name``, default
-    ``"Reset"``); the runner polls it and calls ``env.reset()`` when it
-    becomes checked.
+    fingers together). Resetting is done with the render module's "Reset"
+    checkbox.
 
     Config shape::
 
@@ -36,19 +34,16 @@ class InteractiveSliderControlModule(BaseModule):
           slider_min: 0.0        # required slider lower bound
           slider_max: 10.0       # required slider upper bound
           shared: false          # optional: one slider for all actions
-          reset_name: "Reset"    # optional reset checkbox label
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
         self.enabled = bool(self.config.get("enabled", True))
-        self.reset_name = str(self.config.get("reset_name", "Reset"))
         self.slider_min = self.config.get("slider_min")
         self.slider_max = self.config.get("slider_max")
         self.shared = bool(self.config.get("shared", False))
 
         self.sliders: list[v.UserSlider] = []
-        self.reset_checkbox: v.UserCheckbox | None = None
         self._num_actions: int | None = None
 
     def finalize(self, container: ModuleContainer) -> None:
@@ -72,7 +67,6 @@ class InteractiveSliderControlModule(BaseModule):
     def post_finalize(self, container: ModuleContainer) -> None:
         """Create renderer UI widgets once the renderer is available."""
         self.sliders.clear()
-        self.reset_checkbox = None
 
         if not self.enabled:
             return
@@ -89,9 +83,6 @@ class InteractiveSliderControlModule(BaseModule):
         if num_actions is None:
             return
         self._num_actions = num_actions
-
-        self.reset_checkbox = v.UserCheckbox(self.reset_name, False)
-        gym_render.register_menu_item(self.reset_checkbox)
 
         labels = ["All actions"] if self.shared else [f"Action {i}" for i in range(num_actions)]
         for label in labels:
