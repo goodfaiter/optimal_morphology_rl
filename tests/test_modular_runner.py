@@ -25,6 +25,7 @@ from optimal_morphology_rl.runners.modular_runner import (
     apply_ppo_overrides,
     load_task_configs,
     sync_num_envs,
+    sync_seed,
 )
 
 TASKS = [
@@ -143,6 +144,15 @@ def test_sync_num_envs() -> None:
     ppo_config = {"params": {"config": {"num_actors": 512}}}
     out = sync_num_envs(env_config, ppo_config)
     assert out["create_rigid_vsim_envs"]["num_envs"] == 512
+
+
+def test_sync_seed_copies_the_ppo_seed_to_the_simulator() -> None:
+    out = sync_seed({"create_rigid_vsim_envs": {"num_envs": 4}}, {"params": {"seed": 200964}})
+    assert out["create_rigid_vsim_envs"]["seed"] == 200964
+    out = sync_seed({"create_rigid_vsim_envs": {"seed": 1}}, {"params": {"seed": 7}})
+    assert out["create_rigid_vsim_envs"]["seed"] == 7
+    env_config = {"create_rigid_vsim_envs": {"seed": 1}}
+    assert sync_seed(env_config, {"params": {}}) == env_config
 
 
 def test_adjust_minibatch_size() -> None:

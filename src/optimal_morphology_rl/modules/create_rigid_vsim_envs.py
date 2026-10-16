@@ -84,6 +84,10 @@ class CreateRigidVsimEnvs(BaseModule):
 
         # Misc.
         self.spacing = float(self.config.get("spacing", 0.5))
+        # vlearn's enhanced determinism mode. Note: it does not make the GPU solver bitwise
+        # reproducible across runs for tendon-driven scenes; the seed is what makes every random
+        # draw (randomization modules, goals, simulator seed) identical.
+        self.enhanced_determinism = bool(self.config.get("enhanced_determinism", False))
         self.print_hash = bool(self.config.get("print_hash", False))
 
         # Gravity / up axis.
@@ -117,6 +121,7 @@ class CreateRigidVsimEnvs(BaseModule):
             cuda_device=self.device.index,
             enable_graph_captures=True,
             seed=self.config.get("seed", None),
+            enable_enhanced_determinism=self.enhanced_determinism,
             verbose=True,
         )
 

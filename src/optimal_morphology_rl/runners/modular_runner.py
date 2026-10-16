@@ -178,6 +178,23 @@ def sync_num_envs(env_config: dict[str, Any], ppo_config: dict[str, Any]) -> dic
     return env_config
 
 
+def sync_seed(env_config: dict[str, Any], ppo_config: dict[str, Any]) -> dict[str, Any]:
+    """Make ``params.seed`` of the ppo config the one seed of the run.
+
+    rl_games seeds torch / numpy / random with it when it loads the config; copying it to
+    ``create_rigid_vsim_envs.seed`` re-seeds them identically when the env is built and seeds the
+    vlearn simulator, so every randomization module draws the same values for the same seed.
+    """
+    env_config = copy.deepcopy(env_config)
+    seed = ppo_config.get("params", {}).get("seed")
+    if seed is not None:
+        sim = env_config.setdefault("create_rigid_vsim_envs", {})
+        if sim.get("seed") not in (None, seed):
+            print(f"Overriding create_rigid_vsim_envs seed {sim['seed']} with the ppo params seed {seed}.")
+        sim["seed"] = int(seed)
+    return env_config
+
+
 def adjust_minibatch_size(config_dict: dict, num_envs: int, horizon_len: int) -> None:
     mb_size = config_dict["minibatch_size"]
     batch_size = horizon_len * num_envs
@@ -417,6 +434,7 @@ def main() -> None:
     env_config = apply_env_overrides(env_config, args)
     ppo_config = apply_ppo_overrides(ppo_config, args, args.task)
     env_config = sync_num_envs(env_config, ppo_config)
+    env_config = sync_seed(env_config, ppo_config)
 
     if args.mode == "step":
         run_step(env_config, args.steps)
