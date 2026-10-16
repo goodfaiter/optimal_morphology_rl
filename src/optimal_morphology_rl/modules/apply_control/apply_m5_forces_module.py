@@ -12,6 +12,20 @@ from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 from optimal_morphology_rl.modules.tendon_scale_utils import build_tendon_scale_tensor
 
+# Config key -> attribute of the servo law parameters (each (num_envs, num_model_tendons)).
+M5_PARAMS = {
+    "motor_gain": "motor_gain",
+    "K_v": "k_v",
+    "K_c": "k_c",
+    "K_m": "k_m",
+    "K_e": "k_e",
+    "v_s": "v_s",
+    "alpha": "alpha",
+    "K_cs": "k_cs",
+    "K_ms": "k_ms",
+    "K_es": "k_es",
+}
+
 
 def _resolve_model_path(path: str) -> Path:
     """Absolute paths are used as is, relative ones resolve against the assets 'models/actuators' folder."""
@@ -42,6 +56,10 @@ class ApplyM5ForcesModule(BaseModule):
     is stateful (input history per row): it runs one forward pass over num_envs x num_model_tendons
     rows and is reset per row on environment resets.
 
+    The parameters (``motor_gain`` and the M5 coefficients, see ``M5_PARAMS``) are per env and
+    tendon ``(num_envs, num_model_tendons)`` so they can be randomized ('randomize_m5'); the
+    configured values are kept in ``nominal``.
+
     The forces go to ``container.spool_motor_force_buf`` and are applied by 'apply_motor_forces'.
     List it in ``pre_physics_step_modules`` after 'create_spool'.
     """
@@ -71,6 +89,11 @@ class ApplyM5ForcesModule(BaseModule):
         self.k_es = coef("K_es", 0.00117)
         if torch.any(self.v_s <= 0.0):
             raise RuntimeError("ApplyM5Forces config 'v_s' entries must be positive.")
+        # Configured values per tendon; the attributes become per env so they can be randomized.
+        num_envs = container.total_num_envs
+        self.nominal = {key: getattr(self, attr).clone() for key, attr in M5_PARAMS.items()}
+        for key, attr in M5_PARAMS.items():
+            setattr(self, attr, self.nominal[key].expand(num_envs, num_tendons).clone())
         for key in ("pully_radius", "model_tendon_indices", "slider_joint_suffix", "velocity_source"):
             if key in self.config:
                 raise RuntimeError(f"ApplyM5Forces: '{key}' belongs to the 'create_spool' (or 'update_robot') config.")
