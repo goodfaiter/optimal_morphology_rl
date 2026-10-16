@@ -165,8 +165,8 @@ class UpdateRobotModule(BaseModule):
     the joint positions (``(q - q_prev)/dt`` per step). The simulator's joint
     velocity misses the motion a tendon constraint imposes on a joint (e.g. the
     tendon actuator sliders read ~0 while they creep). On reset the history is
-    replaced by the reset state (the read buffers still show the pre-reset state
-    on the next step).
+    replaced by the reset state written by 'create_robot' (the joint reads that
+    follow already show it).
 
     ``velocity_source`` selects the velocities published as ``robot.joint_velocity``
     / ``robot.tendon_velocity`` and as the ``dof_vel_buf`` of ``container.robot_state``
@@ -185,9 +185,8 @@ class UpdateRobotModule(BaseModule):
       (``-(L - L_prev)/dt`` per step, winding convention ``dL = -radius *
       dtheta`` as in 'tendon_est'), exponentially smoothed (``vel = a*vel_raw +
       (1-a)*vel_prev`` with the ``vel_filter_alpha`` coefficient, 1.0 = raw),
-      spike-guarded (``max_tendon_speed`` — on the reset step the buffers still
-      show the pre-teleport state, so the next step would otherwise see a
-      phantom velocity jump) and soft-debanded (``vel_deadband``, attenuates
+      spike-guarded (``max_tendon_speed`` — rejects phantom jumps such as a
+      length read across a reset teleport) and soft-debanded (``vel_deadband``, attenuates
       the residual length-jitter noise floor so the acceleration finite
       difference cannot amplify it into bang-bang chatter at near-zero
       velocity)
@@ -291,10 +290,9 @@ class UpdateRobotModule(BaseModule):
         vel_raw = -1.0 * (tendon_lengths - self.prev_length) / self.dt
         vel_raw = torch.where(has_history, vel_raw, torch.zeros_like(vel_raw))
 
-        # Spike guard: on the reset step the buffers still show the pre-teleport state,
-        # so the first stored length is stale and the next step sees a phantom velocity
-        # jump far beyond the physical joint speed limit (which launches the finger).
-        # Jumps beyond max_tendon_speed are phantom velocities, not motion.
+        # Spike guard: a length read across a reset teleport (or any other discontinuity)
+        # would give a phantom velocity far beyond the physical joint speed limit (which
+        # launches the finger). Jumps beyond max_tendon_speed are not motion.
         vel_raw = torch.where(vel_raw.abs() > self.max_tendon_speed, torch.zeros_like(vel_raw), vel_raw)
 
         # Exponential smoothing of the noisy finite-difference velocity.
@@ -336,8 +334,8 @@ class UpdateRobotModule(BaseModule):
     def reset(self, container: ModuleContainer) -> None:
         """Reset the joint and tendon finite-difference history of the environments selected by the reset buffer.
 
-        The read buffers still show the pre-reset state on the next step, so the joint history
-        is replaced by the reset state written by 'create_robot' (listed before this module).
+        The joint history is replaced by the reset state written by 'create_robot' (listed
+        before this module), which the following joint reads show.
         """
         robot = container.get("robot")
         if robot is None:

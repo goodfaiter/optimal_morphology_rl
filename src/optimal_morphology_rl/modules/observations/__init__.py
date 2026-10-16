@@ -21,6 +21,9 @@ from optimal_morphology_rl.modules.observations.observation_manager_module impor
 from optimal_morphology_rl.modules.observations.robot_state_observation import (
     RobotStateObservation,
 )
+from optimal_morphology_rl.modules.observations.spool_state_observation import (
+    SpoolStateObservation,
+)
 
 __all__ = [
     "OBSERVATION_REGISTRY",
@@ -30,5 +33,6 @@ __all__ = [
     "ObservationBaseModule",
     "ObservationManagerModule",
     "RobotStateObservation",
+    "SpoolStateObservation",
     "register_observation",
 ]

@@ -122,9 +122,9 @@ class GoalPoseSquareModule(GoalPoseBaseModule):
         self._sample_quat(container.quat_goal_to_world, mask)
 
         if mask is None:
-            pos_buf[:] = self._positions(distance)
+            pos_buf[:] = self._to_frame(self._positions(distance))
         else:
-            pos_buf[mask] = self._positions(distance)
+            pos_buf[mask] = self._to_frame(self._positions(distance), mask)
 
     def _positions(self, distance: torch.Tensor) -> torch.Tensor:
         """Map a distance along the perimeter to goal positions ``(N, 3)``."""
@@ -149,4 +149,4 @@ class GoalPoseSquareModule(GoalPoseBaseModule):
             return
         self._time_buf += self._dt
         distance = self._start + self._speed * self._time_buf
-        container.pos_goal_in_world[:] = self._positions(distance)
+        container.pos_goal_in_world[:] = self._to_frame(self._positions(distance))

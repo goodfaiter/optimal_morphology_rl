@@ -108,9 +108,9 @@ class GoalPoseSinusoidalModule(GoalPoseBaseModule):
         self._sample_quat(container.quat_goal_to_world, mask)
 
         if mask is None:
-            pos_buf[:] = pos
+            pos_buf[:] = self._to_frame(pos)
         else:
-            pos_buf[mask] = pos
+            pos_buf[mask] = self._to_frame(pos, mask)
 
     def step(self, container: ModuleContainer) -> None:
         """Advance the sinusoid one control step and write the goal positions."""
@@ -118,6 +118,4 @@ class GoalPoseSinusoidalModule(GoalPoseBaseModule):
             return
         self._time_buf += self._dt
         t = self._time_buf.unsqueeze(-1)
-        container.pos_goal_in_world[:] = self._center + self._amp * torch.sin(
-            self._two_pi * self._freq * t + self._phase
-        )
+        container.pos_goal_in_world[:] = self._to_frame(self._center + self._amp * torch.sin(self._two_pi * self._freq * t + self._phase))

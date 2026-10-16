@@ -193,7 +193,7 @@ class PrismaticForceM5Module(BaseModule):
         self.debug_tendon = int(self.config.get("debug_tendon", 0))
 
     def reset(self, container: ModuleContainer) -> None:
-        """The read buffers still show the pre-reset state on the next step: use the reset state instead."""
+        """On the next step use the commanded reset state (and zero tension) for the reset envs."""
         self.just_reset |= container.reset_buf
 
     def _friction_budget(self, tau_m, tau_e, w_abs, coefficients=None):
