@@ -165,10 +165,35 @@ def test_sinusoid_follows_its_pattern() -> None:
     goal = module.goal_types["sinusoidal"]
     for _ in range(10):
         module.step(container)
-    t = torch.full((4, 1), 10 * 0.01)
+    t = goal._direction.unsqueeze(-1) * 10 * 0.01
     expected = goal._center + goal._amp * torch.sin(2 * math.pi * goal._freq * t + goal._phase)
     assert torch.allclose(container.goal_position_in_goal_frame, expected, atol=1e-6)
     assert torch.all(goal._amp[:, 1] == 0.0)  # degenerate y range
+
+
+@pytest.mark.parametrize("goal_type", ["square", "sinusoidal"])
+def test_moving_goals_draw_both_directions(goal_type) -> None:
+    torch.manual_seed(0)
+    module, _ = _module([goal_type], num_envs=256)
+    direction = module.goal_types[goal_type]._direction
+    assert set(direction.tolist()) == {-1.0, 1.0}
+    assert 0.35 < (direction > 0).float().mean().item() < 0.65
+
+
+def test_square_direction_reverses_the_motion_along_the_perimeter() -> None:
+    module, container = _module(["square"], num_envs=2)
+    goal = module.goal_types["square"]
+    goal._direction[:] = torch.tensor([1.0, -1.0])
+    goal._speed[:] = 0.01
+    goal._start[:] = 0.02  # on the bottom edge (z = 0.3), 2 cm from the (x = 0, z = 0.3) corner
+    goal._time_buf[:] = 0.0
+    module.step(container)  # one 10 ms step: 0.1 mm along the perimeter
+    x = container.goal_position_in_goal_frame[:, 0]
+    assert torch.allclose(x, torch.tensor([0.0201, 0.0199]), atol=1e-6)
+    for _ in range(300):  # backwards past the start corner wraps onto the left edge
+        module.step(container)
+    pos = container.goal_position_in_goal_frame
+    assert torch.isclose(pos[1, 0], torch.tensor(0.0), atol=1e-6) and pos[1, 2] > 0.3
 
 
 def test_partial_reset_only_changes_reset_envs_and_restarts_their_time() -> None:

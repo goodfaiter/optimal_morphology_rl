@@ -186,8 +186,9 @@ class _SinusoidalGoal(_GoalType):
     """Goals moving along a per-env random sinusoid per axis, ``center + amp * sin(2pi f t + phase)``.
 
     Every reset draws a new pattern: amplitude a random fraction (``min/max_amplitude_fraction``)
-    of each axis's half-range, frequency in ``[min_frequency, max_frequency]`` Hz and phase in
-    ``[0, 2pi)``, so the goal never leaves the configured ranges. Config block ``sinusoidal``.
+    of each axis's half-range, frequency in ``[min_frequency, max_frequency]`` Hz, phase in
+    ``[0, 2pi)`` and a direction (time runs forward or backward along the pattern, 50/50), so the
+    goal never leaves the configured ranges. Config block ``sinusoidal``.
     """
 
     name = "sinusoidal"
@@ -215,6 +216,7 @@ class _SinusoidalGoal(_GoalType):
         self._freq = torch.zeros((n, 3), device=device, dtype=torch.float32)
         self._phase = torch.zeros((n, 3), device=device, dtype=torch.float32)
         self._amp = torch.zeros((n, 3), device=device, dtype=torch.float32)
+        self._direction = torch.ones(n, device=device, dtype=torch.float32)  # +1 / -1 per env
 
     def resample(self, container: ModuleContainer, mask: torch.Tensor) -> None:
         num = int(mask.sum().item())
@@ -224,6 +226,7 @@ class _SinusoidalGoal(_GoalType):
         self._amp[mask] = fraction * self._half_range
         self._freq[mask] = self.min_frequency + (self.max_frequency - self.min_frequency) * torch.rand((num, 3), device=device)
         self._phase[mask] = 2.0 * torch.pi * torch.rand((num, 3), device=device)
+        self._direction[mask] = torch.where(torch.rand(num, device=device) < 0.5, -1.0, 1.0)
         self._time_buf[mask] = 0.0
         self._sample_quat(container, mask)
         container.goal_position_in_goal_frame[mask] = self._positions(mask)
@@ -233,7 +236,7 @@ class _SinusoidalGoal(_GoalType):
         container.goal_position_in_goal_frame[mask] = self._positions(mask)
 
     def _positions(self, mask: torch.Tensor) -> torch.Tensor:
-        t = self._time_buf[mask].unsqueeze(-1)
+        t = (self._direction[mask] * self._time_buf[mask]).unsqueeze(-1)
         return self._center + self._amp[mask] * torch.sin(2.0 * torch.pi * self._freq[mask] * t + self._phase[mask])
 
 
@@ -242,7 +245,8 @@ class _SquareGoal(_GoalType):
 
     The square spans the two axes in ``plane`` (axis indices, default: the two largest
     half-ranges); the third axis stays at the center of its range. Every reset draws a speed in
-    ``speed: {min, max}`` (m/s) and a random start along the perimeter.
+    ``speed: {min, max}`` (m/s), a random start along the perimeter and a direction (clockwise or
+    counterclockwise, 50/50).
     """
 
     name = "square"
@@ -283,18 +287,21 @@ class _SquareGoal(_GoalType):
         self._time_buf = torch.zeros(n, device=device, dtype=torch.float32)
         self._speed = torch.zeros(n, device=device, dtype=torch.float32)
         self._start = torch.zeros(n, device=device, dtype=torch.float32)
+        self._direction = torch.ones(n, device=device, dtype=torch.float32)  # +1 / -1 per env
 
     def resample(self, container: ModuleContainer, mask: torch.Tensor) -> None:
         num = int(mask.sum().item())
-        self._speed[mask] = self.min_speed + (self.max_speed - self.min_speed) * torch.rand(num, device=mask.device)
-        self._start[mask] = self._perimeter * torch.rand(num, device=mask.device)
+        device = mask.device
+        self._speed[mask] = self.min_speed + (self.max_speed - self.min_speed) * torch.rand(num, device=device)
+        self._start[mask] = self._perimeter * torch.rand(num, device=device)
+        self._direction[mask] = torch.where(torch.rand(num, device=device) < 0.5, -1.0, 1.0)
         self._time_buf[mask] = 0.0
         self._sample_quat(container, mask)
         container.goal_position_in_goal_frame[mask] = self._positions(self._start[mask])
 
     def step(self, container: ModuleContainer, mask: torch.Tensor) -> None:
         self._time_buf += self._dt
-        distance = self._start[mask] + self._speed[mask] * self._time_buf[mask]
+        distance = self._start[mask] + self._direction[mask] * self._speed[mask] * self._time_buf[mask]
         container.goal_position_in_goal_frame[mask] = self._positions(distance)
 
     def _positions(self, distance: torch.Tensor) -> torch.Tensor:
