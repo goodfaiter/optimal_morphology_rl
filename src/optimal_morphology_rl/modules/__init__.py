@@ -27,6 +27,7 @@ from optimal_morphology_rl.modules.create_spool_module import CreateSpoolModule
 from optimal_morphology_rl.modules.external_force_module import ExternalForceModule
 from optimal_morphology_rl.modules.goal_pose_module import GoalPoseModule
 from optimal_morphology_rl.modules.gravity_compensation_module import GravityCompensationModule
+from optimal_morphology_rl.modules.initial_state_bank_module import InitialStateBankModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import (
     DEFAULT_REGISTRY,
@@ -55,6 +56,7 @@ from optimal_morphology_rl.modules.randomize_friction_module import RandomizeFri
 from optimal_morphology_rl.modules.randomize_joint_friction_module import RandomizeJointFrictionModule
 from optimal_morphology_rl.modules.randomize_link_inertia_module import RandomizeLinkInertiaModule
 from optimal_morphology_rl.modules.randomize_m5_module import RandomizeM5Module
+from optimal_morphology_rl.modules.randomize_slider_velocity_module import RandomizeSliderVelocityModule
 from optimal_morphology_rl.modules.randomize_spool_module import RandomizeSpoolModule
 from optimal_morphology_rl.modules.rewards import (
     REWARD_REGISTRY,
@@ -114,6 +116,7 @@ __all__ = [
     "GoalStateObservation",
     "GoalVisualizationModule",
     "GravityCompensationModule",
+    "InitialStateBankModule",
     "InteractiveSliderControlModule",
     "ModuleContainer",
     "ModuleManager",
@@ -127,6 +130,7 @@ __all__ = [
     "RandomizeJointFrictionModule",
     "RandomizeLinkInertiaModule",
     "RandomizeM5Module",
+    "RandomizeSliderVelocityModule",
     "RandomizeSpoolModule",
     "RenderModule",
     "SpoolPlotModule",
