@@ -169,7 +169,7 @@ class ApplyM5ForcesModule(BaseModule):
         theta_m, omega_m, tau_e = spool.theta_m, spool.omega_m, spool.tau_e
 
         actions = spool.commanded_angle(container)
-        tau_m = self.motor_gain * (actions - theta_m)
+        tau_m = self.motor_gain * actions
 
         if self.friction_model is not None:
             with torch.no_grad():
