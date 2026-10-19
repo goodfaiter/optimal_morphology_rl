@@ -50,7 +50,9 @@ class ApplyM5ForcesModule(BaseModule):
 
     With 'max_slider_velocity' (m/s) the servo speed is limited (vlearn does not enforce the slider
     joint's velocity limit): tau_m + tau_f is capped so that this loop keeps |omega_m| within
-    max_slider_velocity / r on the next step.
+    max_slider_velocity / r on the next step. The limit is per env and tendon
+    ``(num_envs, num_model_tendons)`` so it can be randomized ('randomize_slider_velocity'); the
+    configured value is kept in ``nominal_max_slider_velocity``.
 
     With 'friction_model_path' set, the M5 coefficients K_c, K_v, K_m, K_e, K_cs, K_ms, K_es are
     predicted each step by a TorchScript friction model (``model(omega, theta_desired, theta, tau_e)``,
@@ -130,12 +132,17 @@ class ApplyM5ForcesModule(BaseModule):
             (container.total_num_envs, container.robot.num_motors), device=device, dtype=torch.float32
         )
 
-        # Optional debug print of one (env, tendon) pair. Off by default: .item() forces a GPU sync.
         max_v = self.config.get("max_slider_velocity")
-        self.max_slider_velocity = None if max_v is None else float(max_v)
-        if self.max_slider_velocity is not None and self.max_slider_velocity <= 0.0:
-            raise RuntimeError("ApplyM5Forces config 'max_slider_velocity' must be positive (m/s).")
+        self.nominal_max_slider_velocity = None if max_v is None else float(max_v)
+        self.max_slider_velocity = None
+        if self.nominal_max_slider_velocity is not None:
+            if self.nominal_max_slider_velocity <= 0.0:
+                raise RuntimeError("ApplyM5Forces config 'max_slider_velocity' must be positive (m/s).")
+            self.max_slider_velocity = torch.full(
+                (num_envs, num_tendons), self.nominal_max_slider_velocity, device=device, dtype=torch.float32
+            )
 
+        # Optional debug print of one (env, tendon) pair. Off by default: .item() forces a GPU sync.
         self.debug = bool(self.config.get("debug", False))
         self.debug_env = int(self.config.get("debug_env", 0))
         self.debug_tendon = int(self.config.get("debug_tendon", 0))
