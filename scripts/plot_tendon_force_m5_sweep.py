@@ -1,4 +1,4 @@
-"""Sweep the prismatic-force-m5 action and plot the servo spool signals.
+"""Sweep the spool (create_spool + apply_m5_forces) action and plot the servo spool signals.
 
 Drives the adapt_finger test environment (``test_env.yaml``, headless) with a
 raw action ramped linearly from 0 up to ``SWEEP_MAX`` and back down to 0, and
@@ -9,7 +9,7 @@ selected model tendon (set ``TENDON`` to "mcp" = tendon 0 or "pip" = tendon 1):
   commanded motor angle, and the matching finger joint angle,
 - the spool velocity omega_m (slider position FD / r) and the tendon tension,
 - the ``tau_m`` / ``tau_e`` / ``tau_f`` torque terms and the slider force
-  ``(tau_m + tau_f) / r`` the 'prismatic_force_m5' module applies.
+  ``(tau_m + tau_f) / r`` the 'apply_m5_forces' module applies.
 
 The torques are computed right before each step from the same simulator
 buffers and module state the module reads, using the module's own
@@ -92,18 +92,19 @@ def main() -> None:
     env = ModularEnvironment(config)
     container = env.module_manager.container
     robot = container.robot
-    m5 = env.module_manager.get("prismatic_force_m5")
+    m5 = env.module_manager.get("apply_m5_forces")
+    spool = container.spool
 
-    if tendon_idx not in m5.model_tendon_indices:
+    if tendon_idx not in spool.model_tendon_indices:
         raise RuntimeError(
             f"Tendon {tendon_idx} ({TENDON}) is not a model tendon of the config "
-            f"(model_tendon_indices: {m5.model_tendon_indices})."
+            f"(model_tendon_indices: {spool.model_tendon_indices})."
         )
-    t = m5.model_tendon_indices.index(tendon_idx)
-    slider_dof = m5.dof_indices_list[t]
-    slider_motor = m5.motor_indices_list[t]
+    t = spool.model_tendon_indices.index(tendon_idx)
+    slider_dof = spool.dof_indices_list[t]
+    slider_motor = spool.motor_indices_list[t]
     finger_dof = robot.art_def.get_joint_dof_def_names().index(FINGER_JOINT[TENDON])
-    action_slot = m5.action_slots_list[t]
+    action_slot = spool.action_slots_list[t]
 
     actions = torch.zeros(
         (env.total_num_envs,) + tuple(env.action_space.shape), device=env.device
@@ -118,9 +119,9 @@ def main() -> None:
     max_force_err = 0.0
 
     def coef(tensor: torch.Tensor) -> float:
-        return float(tensor[t].item())
+        return float(tensor[..., t].reshape(-1)[0].item())  # per-tendon or per-env (env 0)
 
-    r = coef(m5.pully_radius)
+    r = coef(spool.pully_radius)
 
     with contextlib.redirect_stdout(io.StringIO()):
         for _ in range(SETTLE_STEPS):
@@ -131,7 +132,7 @@ def main() -> None:
 
             # Same inputs the module reads in its step (just_reset is clear after settling).
             q = float(robot.get_joint_pos_buf[0, slider_dof].item())
-            if m5.velocity_source == "fd":
+            if robot.velocity_source == "fd":
                 qd = float(robot.calculated_joint_velocity[0, slider_dof].item())
             else:
                 qd = float(robot.get_joint_vel_buf[0, slider_dof].item())
@@ -146,15 +147,15 @@ def main() -> None:
                     torch.tensor(tau_m, device=env.device),
                     torch.tensor(tau_e, device=env.device),
                     torch.tensor(abs(omega_m), device=env.device),
-                )[t].item()
+                )[0, t].item()
             )
-            tau_f_stop = -(coef(m5.j_eff) / m5.dt * omega_m + tau_m + tau_e)
+            tau_f_stop = -(coef(spool.j_eff) / m5.dt * omega_m + tau_m + tau_e)
             tau_f = float(np.clip(tau_f_stop, -tau_f_max, tau_f_max))
             force = (tau_m + tau_f) / r
 
             env.step(actions)
 
-            applied = float(container.prismatic_motor_force_buf[0, slider_motor].item())
+            applied = float(container.spool_motor_force_buf[0, slider_motor].item())
             max_force_err = max(max_force_err, abs(applied - force))
 
             traces["commanded"][i] = float(
@@ -206,7 +207,7 @@ def main() -> None:
         ax.set_ylabel(ylabel)
         ax.grid(True, alpha=0.3)
     axes[0].set_title(
-        f"prismatic_force_m5: raw action ramp 0 $\\rightarrow$ {SWEEP_MAX:.2f} $\\rightarrow$ 0 rad ({tendon_name})"
+        f"apply_m5_forces: raw action ramp 0 $\\rightarrow$ {SWEEP_MAX:.2f} $\\rightarrow$ 0 rad ({tendon_name})"
     )
     axes[0].legend(loc="upper left")
     axes[-1].set_xlabel("Time (s)  [ramp up | ramp down]")
