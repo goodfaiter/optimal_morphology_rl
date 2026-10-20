@@ -25,6 +25,8 @@ M5_PARAMS = {
     "K_ms": "k_ms",
     "K_es": "k_es",
 }
+# Coefficients predicted by a learned friction model, in the order of its last dimension.
+MODEL_COEFFICIENTS = ["K_c", "K_v", "K_m", "K_e", "K_cs", "K_ms", "K_es"]
 
 
 def _resolve_model_path(path: str) -> Path:
@@ -39,9 +41,10 @@ def _resolve_model_path(path: str) -> Path:
 class ApplyM5ForcesModule(BaseModule):
     """Servo motor law with M5 friction on the spools of 'create_spool' (``container.spool``).
 
-    From the spool state (theta_m, omega_m, tau_e) and the commanded spool angle:
+    From the spool state (theta_m, omega_m, tau_e) and the policy action (rad):
 
-        tau_m   = motor_gain * (action - theta_m)
+        action  = max(action, -theta_m)                  (theta_m + action never below 0, as on the robot)
+        tau_m   = motor_gain * action
         tau_f   = M5 friction, Karnopp stop torque capped by the friction budget
         F       = (tau_m + tau_f) / r                    (motor force on the slider DOF)
 
@@ -57,7 +60,9 @@ class ApplyM5ForcesModule(BaseModule):
     With 'friction_model_path' set, the M5 coefficients K_c, K_v, K_m, K_e, K_cs, K_ms, K_es are
     predicted each step by a TorchScript friction model (``model(omega, theta_desired, theta, tau_e)``,
     then ``model.last_coefficients``) instead of the configured constants, and v_s / alpha are the
-    model's fixed Stribeck parameters. The budget itself is still computed here, on this module's
+    model's fixed Stribeck parameters. The predicted coefficients are multiplied by
+    ``model_coefficient_scale`` ``(num_envs, num_model_tendons, 7)`` (ones; randomized by 'randomize_m5').
+    The budget itself is still computed here, on this module's
     tau_m, tau_e and omega_m, and the Karnopp stop torque still uses the simulator's J_eff. The model
     is stateful (input history per row): it runs one forward pass over num_envs x num_model_tendons
     rows and is reset per row on environment resets.
@@ -121,10 +126,11 @@ class ApplyM5ForcesModule(BaseModule):
                 getattr(self.friction_model, "motor_position_gain", float("nan"))
             )
             names = list(self.friction_model.coefficient_names)
-            expected = ["K_c", "K_v", "K_m", "K_e", "K_cs", "K_ms", "K_es"]
-            if names != expected:
-                raise RuntimeError(f"ApplyM5Forces: friction model coefficients {names} != {expected}.")
+            if names != MODEL_COEFFICIENTS:
+                raise RuntimeError(f"ApplyM5Forces: friction model coefficients {names} != {MODEL_COEFFICIENTS}.")
             self.model_v_s = float(self.friction_model.stribeck_velocity)
+            # Per env and tendon factors on the predicted coefficients (randomize_m5 draws them).
+            self.model_coefficient_scale = torch.ones((num_envs, num_tendons, len(names)), device=device, dtype=torch.float32)
             self.model_alpha = float(self.friction_model.stribeck_exponent)
             print(f"ApplyM5Forces: friction budget from '{model_path.name}' (model motor gain {model_gain:.6g} Nm/rad)")
 
@@ -168,7 +174,9 @@ class ApplyM5ForcesModule(BaseModule):
         spool = container.spool
         theta_m, omega_m, tau_e = spool.theta_m, spool.omega_m, spool.tau_e
 
-        actions = spool.commanded_angle(container)
+        # Cap the action so that theta_m + action >= 0: the "desired" spool angle never asks to unwind below the
+        # tared taut angle (the hand controller applies the same cap on the robot).
+        actions = torch.maximum(spool.commanded_angle(container), -theta_m)
         tau_m = self.motor_gain * actions
 
         if self.friction_model is not None:
@@ -180,7 +188,7 @@ class ApplyM5ForcesModule(BaseModule):
                     self.friction_model.reset(reset_rows)
                 # Only the predicted M5 coefficients are used; the model's own tau_f is discarded.
                 self.friction_model(omega_m.reshape(-1), actions.reshape(-1), theta_m.reshape(-1), tau_e.reshape(-1))
-                self.last_coefficients = self.friction_model.last_coefficients.view(*theta_m.shape, -1)
+                self.last_coefficients = self.friction_model.last_coefficients.view(*theta_m.shape, -1) * self.model_coefficient_scale
             tau_f_max = self._friction_budget(tau_m, tau_e, omega_m.abs(), self.last_coefficients)
         else:
             tau_f_max = self._friction_budget(tau_m, tau_e, omega_m.abs())

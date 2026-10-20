@@ -85,13 +85,44 @@ def test_explicit_params_including_motor_gain() -> None:
     assert torch.all(_ratio(m5, "K_c") == 1.0)
 
 
-def test_friction_model_allows_only_motor_gain() -> None:
-    module, container, _ = _make({"scale": 0.1}, friction_model=object())
-    with pytest.raises(RuntimeError, match="friction model"):
-        module.reset(container)
-    module, container, m5 = _make({"scale": 0.1, "params": ["motor_gain"]}, friction_model=object())
+def _with_model(m5):
+    m5.model_coefficient_scale = torch.ones(NUM_ENVS, NUM_TENDONS, 7)
+    return m5
+
+
+def test_friction_model_coefficients_share_the_scale() -> None:
+    module, container, m5 = _make({"scale": 0.1}, friction_model=object())
+    _with_model(m5)
+    module.reset(container)
+    factor = m5.model_coefficient_scale
+    assert torch.all((factor >= 0.9 - 1e-6) & (factor <= 1.1 + 1e-6))
+    assert torch.unique(factor).numel() > NUM_ENVS  # independent per env, tendon and coefficient
+    for key in DEFAULT_PARAMS:  # the constants are unused with a model and stay nominal
+        assert torch.all(_ratio(m5, key) == 1.0), key
+
+
+def test_friction_model_scale_zero_keeps_the_predictions() -> None:
+    module, container, m5 = _make({"scale": 0.0}, friction_model=object())
+    _with_model(m5)
+    module.reset(container)
+    assert torch.all(m5.model_coefficient_scale == 1.0)
+
+
+def test_friction_model_partial_reset_and_motor_gain() -> None:
+    module, container, m5 = _make({"scale": 0.2, "params": ["motor_gain", "K_c"]}, friction_model=object())
+    _with_model(m5)
     module.reset(container)
     assert not torch.all(_ratio(m5, "motor_gain") == 1.0)
+    assert torch.all(_ratio(m5, "K_c") == 1.0)
+    factor = m5.model_coefficient_scale
+    assert not torch.all(factor[..., 0] == 1.0)  # K_c, the only listed model coefficient
+    assert torch.all(factor[..., 1:] == 1.0)
+    before = m5.model_coefficient_scale.clone()
+    container.reset_buf[:] = False
+    container.reset_buf[[2, 7]] = True
+    module.reset(container)
+    changed = (m5.model_coefficient_scale != before).flatten(1).any(1)
+    assert changed.nonzero().flatten().tolist() == [2, 7]
 
 
 def test_missing_m5_module_raises() -> None:

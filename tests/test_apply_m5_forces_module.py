@@ -76,3 +76,13 @@ def test_no_effect_below_the_limit_or_without_it() -> None:
 def test_invalid_limit_raises() -> None:
     with pytest.raises(RuntimeError, match="max_slider_velocity"):
         _module(torch.tensor([0.0]), command=0.0, max_slider_velocity=0.0)
+
+
+def test_action_is_capped_so_the_desired_angle_stays_above_zero() -> None:
+    omega = torch.zeros(3)
+    module, container = _module(omega, command=-2.0, max_slider_velocity=None)
+    container.spool.theta_m = torch.tensor([[0.0], [0.5], [3.0]])  # spool angles; command -2 rad
+    module.step(container)
+    applied = module.last_signals["action"][:, 0]
+    assert torch.allclose(applied, torch.tensor([0.0, -0.5, -2.0]))  # max(action, -theta)
+    assert torch.allclose(container.spool_motor_force_buf[:, 0], applied / R)  # no friction: F = motor_gain * action / r
