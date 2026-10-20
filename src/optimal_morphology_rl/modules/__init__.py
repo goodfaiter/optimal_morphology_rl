@@ -27,7 +27,6 @@ from optimal_morphology_rl.modules.create_spool_module import CreateSpoolModule
 from optimal_morphology_rl.modules.external_force_module import ExternalForceModule
 from optimal_morphology_rl.modules.goal_pose_module import GoalPoseModule
 from optimal_morphology_rl.modules.gravity_compensation_module import GravityCompensationModule
-from optimal_morphology_rl.modules.initial_state_bank_module import InitialStateBankModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import (
     DEFAULT_REGISTRY,
