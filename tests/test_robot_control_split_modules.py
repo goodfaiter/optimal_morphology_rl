@@ -177,7 +177,7 @@ def test_tendons_module_composes_forces(container: ModuleContainer) -> None:
     assert torch.allclose(container.set_motor_cmd_buf, torch.full((1, 4), 3.0))
 
 
-def test_tendons_module_applies_model_and_rigid_overrides(container: ModuleContainer) -> None:
+def test_tendons_module_adds_rigid_forces(container: ModuleContainer) -> None:
     module = RobotControlTendonsModule({})
     module.finalize(container)
     module.post_finalize(container)
@@ -185,15 +185,13 @@ def test_tendons_module_applies_model_and_rigid_overrides(container: ModuleConta
     container.set_tendon_controls_buf = torch.full((1, 2), 0.5)
     container.set_force_torque_buf = torch.zeros((1, 1, 6))
 
-    container.tendon_force_buf = torch.tensor([[10.0, 20.0]])
-    container.tendon_model_indices = torch.tensor([0, 1])
     container.rigid_tendon_force_buf = torch.tensor([[1.0, 2.0]])
     container.rigid_tendon_indices = torch.tensor([0, 1])
 
     module.step(container)
 
-    # Model forces override the clamped actions; rigid forces accumulate on top.
-    assert torch.allclose(container.set_tendon_controls_buf, torch.tensor([[11.0, 22.0]]))
+    # Rigid forces accumulate on top of the clamped actions (0.5).
+    assert torch.allclose(container.set_tendon_controls_buf, torch.tensor([[1.5, 2.5]]))
 
 
 def test_tendons_module_requires_tendon_robot(container: ModuleContainer) -> None:

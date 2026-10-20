@@ -1,5 +1,7 @@
 """Unit tests for the antagonistic_spring module."""
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 
@@ -11,11 +13,18 @@ class _FakeEnv:
     pass
 
 
+class _FakeArtDef:
+    def get_motor_def(self, i: int):
+        return SimpleNamespace(name=f"motor_{i}")
+
+
 class _FakeRobot:
     def __init__(self, num_motors: int = 2):
         self.use_tendon = False
         self.num_motors = num_motors
+        self.art_def = _FakeArtDef()
         self.motor_to_joint_dof_index = torch.arange(num_motors, dtype=torch.long)
+        self.revolute_dof_mask = torch.ones(num_motors, dtype=torch.bool)
         self.get_joint_pos_buf = torch.zeros((1, num_motors), dtype=torch.float32)
 
 
@@ -111,6 +120,18 @@ def test_supports_tendon_robots() -> None:
     module.post_finalize(cont)
 
     assert cont.antagonistic_spring_force_buf.shape == (1, 2)
+
+
+def test_step_skips_non_revolute_motors(container: ModuleContainer) -> None:
+    # Motor 1 drives a prismatic dof (a spool slider): no spring on it.
+    container.robot.revolute_dof_mask = torch.tensor([True, False])
+    module = _make_module(0.1)
+    module.finalize(container)
+    module.post_finalize(container)
+    module.step(container)
+
+    assert container.antagonistic_spring_force_buf[:, 0].item() == pytest.approx(-0.1)
+    assert container.antagonistic_spring_force_buf[:, 1].item() == 0.0
 
 
 def test_finalize_requires_robot(container: ModuleContainer) -> None:

@@ -296,10 +296,12 @@ def test_vsim_emits_fingertip_kinematic_sensor() -> None:
     urdf = URDF.load(str(u.INPUT_URDF), build_scene_graph=False, load_meshes=False)
     vsim = u.URDFVsimQueryWrapper(urdf)
     u.add_sensors(vsim)
-    u.add_kinematic_sensors(vsim)
+    u.add_kinematic_sensors(vsim, u.INPUT_URDF.parent)
 
     text = u.urdf_to_text_rounded(vsim)
     assert "<kinematicSensor>" in text
     assert 'name="Pinky_DP_kine_sensor"' in text
     assert 'link="Pinky_DP"' in text
     assert 'flags="transform velocity"' in text
+    # At the fingertip (the far end of the distal mesh, 20 mm from the DIP), not the link origin.
+    assert 'offset="0.02 -0.0003 0.0055"' in text

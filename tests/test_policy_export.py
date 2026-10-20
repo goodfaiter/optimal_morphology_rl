@@ -119,3 +119,27 @@ def test_export_info_reads_built_env() -> None:
     assert info["observation_modules"] == ["spool_state", "goal_finger_tip"]
     assert info["action_lower"] == pytest.approx([-0.5, 0.0, 0.0])
     assert info["action_upper"] == pytest.approx([0.5, 3.3, 3.3])
+
+
+def test_mlp_actor_is_exported_lean_and_frozen(tmp_path: Path) -> None:
+    """A plain MLP actor is exported without the critic (single env, 1-D input) and still matches the full model."""
+    _, _, ppo_config = load_task_configs("adapt_finger", TASK_ROOT, context={"mode": "play"})
+    obs_dim, num_hist = 7, 3
+    model = _build_model(ppo_config, obs_dim * num_hist, 2)
+    config = {"num_hist": num_hist, "hist_stride": 1}
+    path = export_history_policy(model, obs_dim * num_hist, tmp_path / "policy.pt", config, clip_actions=False)
+    extra = {"metadata.json": ""}
+    policy = torch.jit.load(str(path), map_location="cpu", _extra_files=extra)
+    assert json.loads(extra["metadata.json"])["network"] == "lean_actor"
+    assert not any("critic" in name for name, _ in policy.named_parameters())
+
+    policy.reset()
+    frames = [torch.randn(obs_dim) for _ in range(10)]
+    for k, frame in enumerate(frames):
+        exported = policy(frame)
+        stacked = torch.cat([frames[k - i] if k - i >= 0 else torch.zeros(obs_dim) for i in range(num_hist)])
+        with torch.no_grad():
+            mu = model({"obs": stacked.unsqueeze(0), "is_train": False, "prev_actions": None})["mus"].reshape(-1)
+        assert torch.allclose(exported, mu, atol=1e-5)
+    policy.reset()
+    assert torch.count_nonzero(policy.history) == 0

@@ -15,6 +15,7 @@ class _FakeRobot:
     def __init__(self, num_tendons: int = 3):
         self.use_tendon = True
         self.num_tendons = num_tendons
+        self.num_joints = 2
         self.get_tendon_lengths_buf = torch.zeros((1, num_tendons), dtype=torch.float32)
         self.get_tendon_vel_buf = torch.zeros((1, num_tendons), dtype=torch.float32)
         self.get_tendon_force_buf = torch.zeros((1, num_tendons), dtype=torch.float32)
@@ -46,6 +47,13 @@ def _make_module(**overrides) -> UpdateRobotModule:
 
 
 def _setup(container: ModuleContainer, module: UpdateRobotModule) -> None:
+    # Joint state and the reset state that 'create_robot' writes, which reset() restores the joint history from.
+    num_envs, num_joints = container.total_num_envs, container.robot.num_joints
+    container.robot.get_joint_pos_buf = torch.zeros((num_envs, num_joints))
+    container.robot.calculated_joint_velocity = torch.zeros((num_envs, num_joints))
+    container.reset_joint_pos_buf = torch.zeros((num_envs, num_joints))
+    container.reset_joint_vel_buf = torch.zeros((num_envs, num_joints))
+    module._setup_joint_velocity(container)
     module._setup_tendon_dynamics(container)
 
 
@@ -328,3 +336,31 @@ def test_length_rate_is_negated_tendon_velocity(container: ModuleContainer) -> N
     expected = torch.tensor([[1.0, -2.0, 0.0]])
     assert torch.allclose(container.robot.calculated_tendon_length_rate, expected, atol=1e-4)
     assert torch.allclose(container.robot.calculated_tendon_length_rate, -container.robot.calculated_tendon_velocity)
+
+
+def test_reset_restores_joint_history_from_reset_state(container: ModuleContainer) -> None:
+    container.total_num_envs = 2
+    container.robot.get_tendon_lengths_buf = torch.tensor([[2.0, 3.0, 9.0], [2.0, 3.0, 9.0]])
+    container.robot.calculated_tendon_velocity = torch.zeros((2, 3))
+    container.robot.calculated_tendon_length_rate = torch.zeros((2, 3))
+    container.robot.calculated_tendon_acceleration = torch.zeros((2, 3))
+    module = _make_module()
+    _setup(container, module)
+
+    container.robot.get_joint_pos_buf = torch.tensor([[0.1, 0.2], [0.3, 0.4]])
+    module._compute_joint_velocity(container.robot)
+    assert torch.allclose(container.robot.calculated_joint_velocity, torch.tensor([[10.0, 20.0], [30.0, 40.0]]))
+
+    container.reset_joint_pos_buf = torch.tensor([[1.0, -1.0], [9.0, 9.0]])
+    container.reset_joint_vel_buf = torch.tensor([[0.5, -0.5], [9.0, 9.0]])
+    container.reset_buf = torch.tensor([True, False])
+    module.reset(container)
+
+    # Env 0 takes the reset state; env 1 keeps its history.
+    assert torch.allclose(module.prev_joint_pos, torch.tensor([[1.0, -1.0], [0.3, 0.4]]))
+    assert torch.allclose(container.robot.calculated_joint_velocity, torch.tensor([[0.5, -0.5], [30.0, 40.0]]))
+
+    # The next finite difference of env 0 starts from the reset pose, not the pre-reset one.
+    container.robot.get_joint_pos_buf = torch.tensor([[1.01, -1.0], [0.3, 0.4]])
+    module._compute_joint_velocity(container.robot)
+    assert container.robot.calculated_joint_velocity[0, 0].item() == pytest.approx(1.0, abs=1e-4)
