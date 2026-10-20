@@ -54,6 +54,11 @@ params:
     kl_threshold: 0.016
     score_to_win: 20000000
     max_epochs: 5000
+    # Stop once the mean reward has not improved by more than 1 % for 15 epochs (rl_games RewardPlateauStopper).
+    early_stopping:
+      patience: 15
+      min_delta: 0.01
+      min_epochs: 30
     save_best_after: 50
     save_frequency: 100
     print_stats: True

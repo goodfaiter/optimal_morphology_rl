@@ -3,8 +3,6 @@ modules:
     - create_rigid_vsim_envs
     - create_robot
     - create_spool
-    - randomize_joint_friction
-    - randomize_friction
     - termination
     - render
   pre_physics_step_modules:
@@ -67,8 +65,8 @@ interactive_slider_control:
   slider_max: 6.6
 
 process_variable_actions:
-  min_dof_scale: -1.0
-  max_dof_scale: 1.0
+  min_dof_scale: [0, 0] # desired spool angle [rad] (MCP, PIP), as in env.yaml
+  max_dof_scale: [5, 8]
 
 # Servo spools on the tendon actuator sliders: the prismatic joint is the spool rim
 # (theta = q / r) and the slider armature is the servo inertia. Builds the tendon action
@@ -79,7 +77,7 @@ create_spool:
   model_tendon_indices: [0, 1]
 
 # M5-friction servo law on the spools: slider motor force (tau_motor + tau_friction) / r,
-# applied by 'apply_motor_forces'. Alternative to 'tendon_force_m5'/'tendon_est'.
+# applied by 'apply_motor_forces'.
 # Live plot of every spool's command, angle and velocity (env 0) in its own window; it can be
 # minimized or closed without affecting the simulation.
 spool_plot:
@@ -89,7 +87,7 @@ spool_plot:
 apply_m5_forces:
   # friction_model_path: 2026_10_14_m5_mlp_common_friction.pt
   motor_gain: 0.0389 # Nm/rad
-  max_slider_velocity: 0.0425 # m/s, servo speed limit (8.5 rad/s at a 5 mm pulley)
+  max_slider_velocity: 0.038 # m/s, servo speed limit (7.6 rad/s at a 5 mm pulley, measured: PWM saturates)
   K_v: 0.002
   K_c: 0.014
   K_m: 0.11
@@ -101,10 +99,7 @@ apply_m5_forces:
   K_es: 0.03
 
 antagonistic_spring:
-  spring_constant_range: [0.005, 0.005]
-
-randomize_joint_friction:
-  joint_friction_range: [0.0, 0.0]
+  spring_constants: [0.066, 0.082, 0.082]
 
 observation:
   num_hist: 1
