@@ -11,7 +11,7 @@ from optimal_morphology_rl.modules.module_container import ModuleContainer
 R, J, DT = 0.005, 1.0e-3, 0.005  # pulley radius (m), J_eff (kg m^2), control step (s)
 
 
-def _module(omega, command, max_slider_velocity=0.0425, tension=0.0):
+def _module(omega, command, max_slider_velocity=0.0425, tension=0.0, **overrides):
     num_envs = omega.shape[0]
     spool = SimpleNamespace(
         model_tendon_indices=[0],
@@ -33,6 +33,7 @@ def _module(omega, command, max_slider_velocity=0.0425, tension=0.0):
     config = {"motor_gain": 1.0, "K_v": 0.0, "K_c": 0.0, "K_m": 0.0, "K_e": 0.0, "K_cs": 0.0, "K_ms": 0.0, "K_es": 0.0}
     if max_slider_velocity is not None:
         config["max_slider_velocity"] = max_slider_velocity
+    config.update(overrides)
     module = ApplyM5ForcesModule(config)
     module.finalize(container)
     module.post_finalize(container)
@@ -86,3 +87,53 @@ def test_action_is_capped_so_the_desired_angle_stays_above_zero() -> None:
     applied = module.last_signals["action"][:, 0]
     assert torch.allclose(applied, torch.tensor([0.0, -0.5, -2.0]))  # max(action, -theta)
     assert torch.allclose(container.spool_motor_force_buf[:, 0], applied / R)  # no friction: F = motor_gain * action / r
+
+
+def test_friction_false_applies_only_the_motor_torque() -> None:
+    # A large Coulomb budget holds a stalled spool against a small command; without friction F = tau_m / r.
+    omega = torch.zeros(1)
+    with_friction, c1 = _module(omega, command=0.01, max_slider_velocity=None, K_c=1.0)
+    frictionless, c2 = _module(omega, command=0.01, max_slider_velocity=None, K_c=1.0, friction=False)
+    with_friction.step(c1)
+    frictionless.step(c2)
+    assert torch.allclose(c1.spool_motor_force_buf[:, 0], torch.zeros(1))  # stuck: tau_f cancels tau_m
+    assert torch.allclose(c2.spool_motor_force_buf[:, 0], torch.tensor([0.01 / R]))
+    assert torch.all(frictionless.last_signals["tau_f"] == 0.0)
+
+
+class _ConstantFrictionModel(torch.nn.Module):
+    """Friction-model stand-in: constant coefficients (K_c = 1, others 0), same interface as the real one."""
+
+    coefficient_names: list[str]
+
+    def __init__(self):
+        super().__init__()
+        self.dt = DT
+        self.stribeck_velocity = 0.1
+        self.stribeck_exponent = 2.0
+        self.coefficient_names = ["K_c", "K_v", "K_m", "K_e", "K_cs", "K_ms", "K_es"]
+        self.register_buffer("needs_init", torch.ones(1, dtype=torch.bool))
+        self.register_buffer("last_coefficients", torch.zeros(1, 7))
+
+    def forward(self, omega, desired, theta, tau_e):
+        coefficients = torch.zeros(omega.shape[0], 7)
+        coefficients[:, 0] = 1.0
+        self.last_coefficients = coefficients
+        self.needs_init = torch.zeros(omega.shape[0], dtype=torch.bool)
+        return coefficients[:, 0]
+
+    @torch.jit.export
+    def reset(self, mask: torch.Tensor | None = None) -> None:
+        pass
+
+
+@pytest.mark.parametrize("gain", [1.0, 0.5])
+def test_model_coefficient_gain_scales_the_predicted_friction(tmp_path, gain) -> None:
+    path = tmp_path / "friction.pt"
+    torch.jit.script(_ConstantFrictionModel()).save(str(path))
+    # Stalled spool, command 10 rad: tau_m = 10 Nm against a K_c * gain budget, so tau_f = -K_c * gain.
+    module, container = _module(torch.zeros(1), command=10.0, max_slider_velocity=None, friction_model_path=str(path),
+                                model_coefficient_gain=gain)
+    module.step(container)
+    assert module.last_signals["tau_f_max"].item() == pytest.approx(gain)
+    assert container.spool_motor_force_buf[0, 0].item() == pytest.approx((10.0 - gain) / R)

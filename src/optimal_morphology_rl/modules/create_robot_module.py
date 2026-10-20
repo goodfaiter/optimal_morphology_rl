@@ -14,6 +14,24 @@ from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
 
+def set_kinematic_sensor_offsets(art_def, vsim_path: str) -> None:
+    """Set the vsim's kinematic sensor offsets on ``art_def`` (call after import, before finalize).
+
+    vlearn's importer drops the offset of articulation kinematic sensors (it loads as 0, at the link
+    origin), so it is read from the vsim file. The offset is in the link frame (e.g. the fingertip on
+    the distal link).
+    """
+    offsets = {
+        s.get("name"): [float(c) for c in s.get("offset", "0 0 0").split()]
+        for block in ET.parse(vsim_path).getroot().iter("kinematicSensor")
+        for s in block.iter("sensor")
+    }
+    for i in range(art_def.get_num_kinematic_sensor_defs()):
+        sensor_def = art_def.get_kinematic_sensor_def(i)
+        if sensor_def.name in offsets:
+            sensor_def.offset = v.Vec3(*offsets[sensor_def.name])
+
+
 class Robot:
     """Robot hand metadata and loaded articulation handles.
 
@@ -99,6 +117,8 @@ class Robot:
             v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, 0)),
             "hand",
         )
+
+        set_kinematic_sensor_offsets(self.art_def, vsim_path)
 
         self.num_joints = self.art_def.get_num_joint_dof_defs()
         self.num_links = self.art_def.get_num_link_defs()

@@ -61,11 +61,15 @@ class ApplyM5ForcesModule(BaseModule):
     predicted each step by a TorchScript friction model (``model(omega, theta_desired, theta, tau_e)``,
     then ``model.last_coefficients``) instead of the configured constants, and v_s / alpha are the
     model's fixed Stribeck parameters. The predicted coefficients are multiplied by
-    ``model_coefficient_scale`` ``(num_envs, num_model_tendons, 7)`` (ones; randomized by 'randomize_m5').
+    ``model_coefficient_scale`` ``(num_envs, num_model_tendons, 7)`` (ones; randomized by 'randomize_m5')
+    and by the constant ``model_coefficient_gain`` (default 1.0; e.g. 0.5 halves the model's friction).
     The budget itself is still computed here, on this module's
     tau_m, tau_e and omega_m, and the Karnopp stop torque still uses the simulator's J_eff. The model
     is stateful (input history per row): it runs one forward pass over num_envs x num_model_tendons
     rows and is reset per row on environment resets.
+
+    With ``friction: false`` the friction torque is left out (tau_f = 0, F = tau_m / r): an ideal,
+    frictionless servo, e.g. to compare against the M5 law on the robot.
 
     The parameters (``motor_gain`` and the M5 coefficients, see ``M5_PARAMS``) are per env and
     tendon ``(num_envs, num_model_tendons)`` so they can be randomized ('randomize_m5'); the
@@ -132,6 +136,9 @@ class ApplyM5ForcesModule(BaseModule):
             # Per env and tendon factors on the predicted coefficients (randomize_m5 draws them).
             self.model_coefficient_scale = torch.ones((num_envs, num_tendons, len(names)), device=device, dtype=torch.float32)
             self.model_alpha = float(self.friction_model.stribeck_exponent)
+            self.model_coefficient_gain = float(self.config.get("model_coefficient_gain", 1.0))
+            if self.model_coefficient_gain < 0.0:
+                raise RuntimeError("ApplyM5Forces config 'model_coefficient_gain' must be non-negative.")
             print(f"ApplyM5Forces: friction budget from '{model_path.name}' (model motor gain {model_gain:.6g} Nm/rad)")
 
         container.spool_motor_force_buf = torch.zeros(
@@ -147,6 +154,8 @@ class ApplyM5ForcesModule(BaseModule):
             self.max_slider_velocity = torch.full(
                 (num_envs, num_tendons), self.nominal_max_slider_velocity, device=device, dtype=torch.float32
             )
+
+        self.friction = bool(self.config.get("friction", True))
 
         # Optional debug print of one (env, tendon) pair. Off by default: .item() forces a GPU sync.
         self.debug = bool(self.config.get("debug", False))
@@ -179,7 +188,9 @@ class ApplyM5ForcesModule(BaseModule):
         actions = torch.maximum(spool.commanded_angle(container), -theta_m)
         tau_m = self.motor_gain * actions
 
-        if self.friction_model is not None:
+        if not self.friction:
+            tau_f_max = torch.zeros_like(tau_m)
+        elif self.friction_model is not None:
             with torch.no_grad():
                 # Restart the input history of the reset rows (the model allocates and fills its
                 # history itself on the first call, when its buffers do not match the row count yet).
@@ -188,7 +199,8 @@ class ApplyM5ForcesModule(BaseModule):
                     self.friction_model.reset(reset_rows)
                 # Only the predicted M5 coefficients are used; the model's own tau_f is discarded.
                 self.friction_model(omega_m.reshape(-1), actions.reshape(-1), theta_m.reshape(-1), tau_e.reshape(-1))
-                self.last_coefficients = self.friction_model.last_coefficients.view(*theta_m.shape, -1) * self.model_coefficient_scale
+                coefficients = self.friction_model.last_coefficients.view(*theta_m.shape, -1)
+                self.last_coefficients = coefficients * (self.model_coefficient_gain * self.model_coefficient_scale)
             tau_f_max = self._friction_budget(tau_m, tau_e, omega_m.abs(), self.last_coefficients)
         else:
             tau_f_max = self._friction_budget(tau_m, tau_e, omega_m.abs())
