@@ -79,26 +79,21 @@ def test_invalid_limit_raises() -> None:
         _module(torch.tensor([0.0]), command=0.0, max_slider_velocity=0.0)
 
 
-def test_action_is_capped_so_the_desired_angle_stays_above_zero() -> None:
+def test_action_is_the_desired_spool_angle() -> None:
+    # No friction: tau = motor_gain * (target - theta), with motor_gain = 1.
+    module, container = _module(torch.zeros(3), command=1.0, max_slider_velocity=None)
+    container.spool.theta_m = torch.tensor([[0.0], [0.4], [1.5]])
+    module.step(container)
+    assert torch.allclose(container.spool_motor_force_buf[:, 0], torch.tensor([1.0, 0.6, -0.5]) / R)
+
+
+def test_target_is_capped_at_zero() -> None:
     omega = torch.zeros(3)
     module, container = _module(omega, command=-2.0, max_slider_velocity=None)
     container.spool.theta_m = torch.tensor([[0.0], [0.5], [3.0]])  # spool angles; command -2 rad
     module.step(container)
-    applied = module.last_signals["action"][:, 0]
-    assert torch.allclose(applied, torch.tensor([0.0, -0.5, -2.0]))  # max(action, -theta)
-    assert torch.allclose(container.spool_motor_force_buf[:, 0], applied / R)  # no friction: F = motor_gain * action / r
-
-
-def test_friction_false_applies_only_the_motor_torque() -> None:
-    # A large Coulomb budget holds a stalled spool against a small command; without friction F = tau_m / r.
-    omega = torch.zeros(1)
-    with_friction, c1 = _module(omega, command=0.01, max_slider_velocity=None, K_c=1.0)
-    frictionless, c2 = _module(omega, command=0.01, max_slider_velocity=None, K_c=1.0, friction=False)
-    with_friction.step(c1)
-    frictionless.step(c2)
-    assert torch.allclose(c1.spool_motor_force_buf[:, 0], torch.zeros(1))  # stuck: tau_f cancels tau_m
-    assert torch.allclose(c2.spool_motor_force_buf[:, 0], torch.tensor([0.01 / R]))
-    assert torch.all(frictionless.last_signals["tau_f"] == 0.0)
+    assert torch.all(module.last_signals["action"] == 0.0)  # max(target, 0)
+    assert torch.allclose(container.spool_motor_force_buf[:, 0], torch.tensor([0.0, -0.5, -3.0]) / R)  # (0 - theta) / r
 
 
 class _ConstantFrictionModel(torch.nn.Module):

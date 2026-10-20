@@ -41,10 +41,10 @@ def _resolve_model_path(path: str) -> Path:
 class ApplyM5ForcesModule(BaseModule):
     """Servo motor law with M5 friction on the spools of 'create_spool' (``container.spool``).
 
-    From the spool state (theta_m, omega_m, tau_e) and the policy action (rad):
+    From the spool state (theta_m, omega_m, tau_e) and the policy action, the desired spool angle (rad):
 
-        action  = max(action, -theta_m)                  (theta_m + action never below 0, as on the robot)
-        tau_m   = motor_gain * action
+        target  = max(action, 0)                         (never below the tared taut angle, as on the robot)
+        tau_m   = motor_gain * (target - theta_m)        (the servo's P law on the spool angle)
         tau_f   = M5 friction, Karnopp stop torque capped by the friction budget
         F       = (tau_m + tau_f) / r                    (motor force on the slider DOF)
 
@@ -183,10 +183,10 @@ class ApplyM5ForcesModule(BaseModule):
         spool = container.spool
         theta_m, omega_m, tau_e = spool.theta_m, spool.omega_m, spool.tau_e
 
-        # Cap the action so that theta_m + action >= 0: the "desired" spool angle never asks to unwind below the
-        # tared taut angle (the hand controller applies the same cap on the robot).
-        actions = torch.maximum(spool.commanded_angle(container), -theta_m)
-        tau_m = self.motor_gain * actions
+        # The action is the desired spool angle, capped at 0: it never asks to unwind below the tared taut angle
+        # (the hand controller applies the same cap on the robot).
+        actions = spool.commanded_angle(container).clamp(min=0.0)
+        tau_m = self.motor_gain * (actions - theta_m)
 
         if not self.friction:
             tau_f_max = torch.zeros_like(tau_m)
