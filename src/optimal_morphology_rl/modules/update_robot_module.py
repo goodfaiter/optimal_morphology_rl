@@ -183,7 +183,7 @@ class UpdateRobotModule(BaseModule):
 
     - ``calculated_tendon_velocity``: the negated length finite difference
       (``-(L - L_prev)/dt`` per step, winding convention ``dL = -radius *
-      dtheta`` as in 'tendon_est'), exponentially smoothed (``vel = a*vel_raw +
+      dtheta``), exponentially smoothed (``vel = a*vel_raw +
       (1-a)*vel_prev`` with the ``vel_filter_alpha`` coefficient, 1.0 = raw),
       spike-guarded (``max_tendon_speed`` — rejects phantom jumps such as a
       length read across a reset teleport) and soft-debanded (``vel_deadband``, attenuates
@@ -196,7 +196,7 @@ class UpdateRobotModule(BaseModule):
 
     Entries without length history (first step after (re)initialization or
     reset) use zero velocity. Both signals are stored on the robot and
-    published in ``container.robot_state``; 'tendon_force_m5' consumes them.
+    published in ``container.robot_state``.
     The filter parameters are scalars, or one entry per tendon.
     """
 
