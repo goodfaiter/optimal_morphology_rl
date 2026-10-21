@@ -46,7 +46,7 @@ class RandomizeSpoolModule(BaseModule):
 
         randomize_spool:
           pully_radius_range: [0.0045, 0.0055]
-          armature_range: [34.9, 52.35]
+          armature_range: [38.4, 57.6]
     """
 
     def __init__(self, config: dict[str, Any] | None = None):

@@ -29,8 +29,8 @@ def _module(omega, command, max_slider_velocity=0.0425, tension=0.0, **overrides
     container = ModuleContainer()
     container.spool, container.device, container.total_num_envs = spool, torch.device("cpu"), num_envs
     container.robot = SimpleNamespace(num_motors=1)
-    # No friction: the servo law is tau = motor_gain * (command - theta).
-    config = {"motor_gain": 1.0, "K_v": 0.0, "K_c": 0.0, "K_m": 0.0, "K_e": 0.0, "K_cs": 0.0, "K_ms": 0.0, "K_es": 0.0}
+    # No friction and a unit motor without deadband: tau = command - theta.
+    config = {"motor_position_gain": 1.0, "torque_constant": 1.0, "current_deadband": 0.0, "K_v": 0.0, "K_c": 0.0, "K_m": 0.0, "K_e_wind": 0.0, "K_e_unwind": 0.0, "K_cs": 0.0, "K_ms": 0.0, "K_es": 0.0}
     if max_slider_velocity is not None:
         config["max_slider_velocity"] = max_slider_velocity
     config.update(overrides)
@@ -80,7 +80,7 @@ def test_invalid_limit_raises() -> None:
 
 
 def test_action_is_the_desired_spool_angle() -> None:
-    # No friction: tau = motor_gain * (target - theta), with motor_gain = 1.
+    # No friction, unit motor: tau = target - theta.
     module, container = _module(torch.zeros(3), command=1.0, max_slider_velocity=None)
     container.spool.theta_m = torch.tensor([[0.0], [0.4], [1.5]])
     module.step(container)
@@ -96,39 +96,102 @@ def test_target_is_capped_at_zero() -> None:
     assert torch.allclose(container.spool_motor_force_buf[:, 0], torch.tensor([0.0, -0.5, -3.0]) / R)  # (0 - theta) / r
 
 
-class _ConstantFrictionModel(torch.nn.Module):
-    """Friction-model stand-in: constant coefficients (K_c = 1, others 0), same interface as the real one."""
+def test_motor_torque_has_a_current_deadband() -> None:
+    # i = 0.1 A/rad * (target - theta); tau = 0.48 Nm/A * sign(i) * max(|i| - 0.042 A, 0).
+    module, container = _module(torch.zeros(4), command=0.0, max_slider_velocity=None,
+                                motor_position_gain=0.1, torque_constant=0.48, current_deadband=0.042)
+    error = torch.tensor([[0.3], [0.42], [1.0], [-1.0]])  # rad: inside, at the edge of and past the deadband
+    expected = 0.48 * torch.sign(0.1 * error) * torch.clamp((0.1 * error).abs() - 0.042, min=0.0)
+    assert torch.allclose(module._motor_torque(error), expected)
+    assert torch.all(module._motor_torque(error)[:2] == 0.0)
+    assert module._motor_torque(error)[2].item() == pytest.approx(0.48 * 0.058)
+    assert module._motor_torque(error)[3].item() == pytest.approx(-0.48 * 0.058)
 
-    coefficient_names: list[str]
+
+class _EnvelopeModel(torch.nn.Module):
+    """Envelope-model stand-in with the real interface: tau_f_max = 0.5 + |theta_delta| (Nm), per-row history."""
 
     def __init__(self):
         super().__init__()
-        self.dt = DT
-        self.stribeck_velocity = 0.1
-        self.stribeck_exponent = 2.0
-        self.coefficient_names = ["K_c", "K_v", "K_m", "K_e", "K_cs", "K_ms", "K_es"]
-        self.register_buffer("needs_init", torch.ones(1, dtype=torch.bool))
-        self.register_buffer("last_coefficients", torch.zeros(1, 7))
+        self.frequency = 200
+        self.register_buffer("force_buffer", torch.zeros(0, 1))
+        self.register_buffer("resets", torch.zeros(0))
 
-    def forward(self, omega, desired, theta, tau_e):
-        coefficients = torch.zeros(omega.shape[0], 7)
-        coefficients[:, 0] = 1.0
-        self.last_coefficients = coefficients
-        self.needs_init = torch.zeros(omega.shape[0], dtype=torch.bool)
-        return coefficients[:, 0]
+    def forward(self, omega: torch.Tensor, theta_delta: torch.Tensor) -> torch.Tensor:
+        if self.force_buffer.shape[0] != omega.shape[0]:
+            self.force_buffer = torch.zeros(omega.shape[0], 1)
+            self.resets = torch.zeros(omega.shape[0])
+        return 0.5 + theta_delta.abs()
 
     @torch.jit.export
-    def reset(self, mask: torch.Tensor | None = None) -> None:
-        pass
+    def reset(self, env_ids: torch.Tensor | None = None) -> None:
+        if env_ids is None:
+            self.resets += 1.0
+        else:
+            self.resets[env_ids] += 1.0
+
+
+def _with_envelope_model(tmp_path, **overrides):
+    path = tmp_path / "envelope.pt"
+    torch.jit.script(_EnvelopeModel()).save(str(path))
+    return _module(torch.zeros(2), command=1.0, max_slider_velocity=None, friction_model_path=str(path), **overrides)
 
 
 @pytest.mark.parametrize("gain", [1.0, 0.5])
-def test_model_coefficient_gain_scales_the_predicted_friction(tmp_path, gain) -> None:
-    path = tmp_path / "friction.pt"
-    torch.jit.script(_ConstantFrictionModel()).save(str(path))
-    # Stalled spool, command 10 rad: tau_m = 10 Nm against a K_c * gain budget, so tau_f = -K_c * gain.
-    module, container = _module(torch.zeros(1), command=10.0, max_slider_velocity=None, friction_model_path=str(path),
-                                model_coefficient_gain=gain)
+def test_friction_model_envelope_is_the_budget(tmp_path, gain) -> None:
+    # Stalled spools, target 1 rad, theta 0 / 0.4: envelope 0.5 + |target - theta| (x gain); unit motor tau = error.
+    module, container = _with_envelope_model(tmp_path, friction_model_gain=gain)
+    container.spool.theta_m = torch.tensor([[0.0], [0.4]])
     module.step(container)
-    assert module.last_signals["tau_f_max"].item() == pytest.approx(gain)
-    assert container.spool_motor_force_buf[0, 0].item() == pytest.approx((10.0 - gain) / R)
+    envelope = gain * torch.tensor([1.5, 1.1])
+    assert torch.allclose(module.last_signals["tau_f_max"][:, 0], envelope)
+    # The stall torque tau_m (1.0 / 0.6) is held up to the envelope.
+    tau = torch.tensor([1.0, 0.6]) - torch.minimum(torch.tensor([1.0, 0.6]), envelope)
+    assert torch.allclose(container.spool_motor_force_buf[:, 0], tau / R)
+
+
+def test_friction_model_scale_and_reset_rows(tmp_path) -> None:
+    module, container = _with_envelope_model(tmp_path)
+    module.step(container)  # allocates the model's per-row state
+    module.friction_model_scale[:] = torch.tensor([[2.0], [1.0]])
+    module.step(container)
+    assert torch.allclose(module.last_signals["tau_f_max"][:, 0], torch.tensor([3.0, 1.5]))
+    container.reset_buf = torch.tensor([False, True])
+    module.reset(container)
+    assert module.friction_model.resets.tolist() == [0.0, 1.0]  # only the reset env's row restarts
+
+
+def test_friction_model_reset_before_the_first_step_is_skipped(tmp_path) -> None:
+    module, container = _with_envelope_model(tmp_path)
+    container.reset_buf = torch.ones(2, dtype=torch.bool)
+    module.reset(container)  # no per-row state yet: nothing to restart
+    module.step(container)
+    assert module.friction_model.resets.tolist() == [0.0, 0.0]
+
+
+@pytest.mark.parametrize("omega, tau_m, tau_e, k_e", [
+    (1.0, 0.0, -0.1, 0.12),    # winding (theta increasing)
+    (-1.0, 0.0, -0.1, 0.41),   # unwinding
+    (0.0, 0.2, -0.1, 0.12),    # at rest, pushed to wind (tau_m + tau_e > 0)
+    (0.0, 0.05, -0.1, 0.41),   # at rest, the tendon pulls it to unwind
+])
+def test_load_friction_depends_on_the_winding_direction(omega, tau_m, tau_e, k_e) -> None:
+    # Only the load term: budget = K_c + |K_m tau_m - K_e tau_e| with K_c = K_m = 0 -> K_e * |tau_e|.
+    module, _ = _module(torch.zeros(1), command=0.0, max_slider_velocity=None, K_e_wind=0.12, K_e_unwind=0.41)
+    budget = module._friction_budget(torch.tensor([[tau_m]]), torch.tensor([[tau_e]]), torch.tensor([[omega]]))
+    assert budget.item() == pytest.approx(k_e * abs(tau_e))
+
+
+def test_friction_model_torque_output_is_applied_as_is(tmp_path) -> None:
+    # The stand-in returns 0.5 + |theta_delta|; as a torque model that is tau_f itself (no stop torque, no clamp).
+    module, container = _with_envelope_model(tmp_path, friction_model_output="torque", friction_model_gain=0.5)
+    container.spool.theta_m = torch.tensor([[0.0], [0.4]])
+    module.step(container)
+    tau_f = 0.5 * torch.tensor([1.5, 1.1])
+    assert torch.allclose(module.last_signals["tau_f"][:, 0], tau_f)
+    assert torch.allclose(container.spool_motor_force_buf[:, 0], (torch.tensor([1.0, 0.6]) + tau_f) / R)
+
+
+def test_invalid_friction_model_output_raises(tmp_path) -> None:
+    with pytest.raises(RuntimeError, match="friction_model_output"):
+        _with_envelope_model(tmp_path, friction_model_output="budget")

@@ -64,11 +64,6 @@ class AntagonisticSpring(BaseModule):
         robot = container.robot
         device = container.device
 
-        if "spring_constant_range" in self.config:
-            raise RuntimeError(
-                "AntagonisticSpring 'spring_constant_range' was removed: set 'spring_constants' and randomize them "
-                "with the 'randomize_antagonistic_springs' module."
-            )
         spring_constants = self.config.get("spring_constants")
         if spring_constants is None:
             raise RuntimeError(

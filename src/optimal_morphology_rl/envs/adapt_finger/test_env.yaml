@@ -65,8 +65,8 @@ interactive_slider_control:
   slider_max: 6.6
 
 process_variable_actions:
-  min_dof_scale: [0, 0] # desired spool angle [rad] (MCP, PIP), as in env.yaml
-  max_dof_scale: [5, 8]
+  min_dof_scale: [-1, -1] # desired spool angle [rad] (MCP, PIP), as in env.yaml
+  max_dof_scale: [1, 1]
 
 # Servo spools on the tendon actuator sliders: the prismatic joint is the spool rim
 # (theta = q / r) and the slider armature is the servo inertia. Builds the tendon action
@@ -85,21 +85,25 @@ spool_plot:
   window_s: 5.0
 
 apply_m5_forces:
-  # friction_model_path: 2026_10_14_m5_mlp_common_friction.pt
-  motor_gain: 0.0389 # Nm/rad
+  friction_model_path: mlp_dynamic_envelope.pt # learned tau_f_max(omega, target - theta)
+  friction_model_output: envelope # the budget tau_f_max of the stick logic (torque: a signed tau_f applied as is)
+  motor_position_gain: 0.1 # A/rad, current = gain * (target - position), as on the robot
+  torque_constant: 0.500 # Nm/A, torque = K_t * sign(i) * max(|i| - i_0, 0)
+  current_deadband: 0.0496 # A, i_0
   max_slider_velocity: 0.038 # m/s, servo speed limit (7.6 rad/s at a 5 mm pulley, measured: PWM saturates)
-  K_v: 0.002
-  K_c: 0.014
-  K_m: 0.11
-  K_e: 0.12
-  v_s: 0.09
+  K_v: 0.0045
+  K_c: 0.0024
+  K_m: 0.007
+  K_e_wind: 0.243
+  K_e_unwind: 0.385
+  v_s: 0.2
   alpha: 1.6
-  K_cs: 0.005
-  K_ms: 0.09
-  K_es: 0.03
+  K_cs: 0.0028
+  K_ms: 0.153
+  K_es: 0.260
 
 antagonistic_spring:
-  spring_constants: [0.066, 0.082, 0.082]
+  spring_constants: [0.005, 0.005, 0.005]
 
 observation:
   num_hist: 1

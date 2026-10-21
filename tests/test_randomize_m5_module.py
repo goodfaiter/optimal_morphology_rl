@@ -50,7 +50,7 @@ def test_full_reset_draws_every_default_parameter_within_the_scale() -> None:
         ratio = _ratio(m5, key)
         assert torch.all((ratio >= 0.9 - 1e-6) & (ratio <= 1.1 + 1e-6)), key
         assert torch.unique(ratio).numel() > NUM_ENVS  # independent per env and tendon
-    assert torch.all(_ratio(m5, "motor_gain") == 1.0)  # not in the defaults
+    assert torch.all(_ratio(m5, "torque_constant") == 1.0)  # not in the defaults
 
 
 def test_parameters_are_drawn_independently() -> None:
@@ -77,51 +77,48 @@ def test_scale_zero_keeps_the_nominal_values() -> None:
         assert torch.allclose(_ratio(m5, key), torch.ones(NUM_ENVS, NUM_TENDONS))
 
 
-def test_explicit_params_including_motor_gain() -> None:
-    module, container, m5 = _make({"scale": 0.2, "params": ["motor_gain"]})
+def test_explicit_params_including_a_motor_constant() -> None:
+    module, container, m5 = _make({"scale": 0.2, "params": ["torque_constant"]})
     module.reset(container)
-    ratio = _ratio(m5, "motor_gain")
+    ratio = _ratio(m5, "torque_constant")
     assert torch.all((ratio >= 0.8 - 1e-6) & (ratio <= 1.2 + 1e-6)) and not torch.all(ratio == 1.0)
     assert torch.all(_ratio(m5, "K_c") == 1.0)
 
 
 def _with_model(m5):
-    m5.model_coefficient_scale = torch.ones(NUM_ENVS, NUM_TENDONS, 7)
+    m5.friction_model_scale = torch.ones(NUM_ENVS, NUM_TENDONS)
     return m5
 
 
-def test_friction_model_coefficients_share_the_scale() -> None:
+def test_friction_model_envelope_is_scaled_within_the_scale() -> None:
     module, container, m5 = _make({"scale": 0.1}, friction_model=object())
     _with_model(m5)
     module.reset(container)
-    factor = m5.model_coefficient_scale
+    factor = m5.friction_model_scale
     assert torch.all((factor >= 0.9 - 1e-6) & (factor <= 1.1 + 1e-6))
-    assert torch.unique(factor).numel() > NUM_ENVS  # independent per env, tendon and coefficient
+    assert torch.unique(factor).numel() > NUM_ENVS  # independent per env and tendon
     for key in DEFAULT_PARAMS:  # the constants are unused with a model and stay nominal
         assert torch.all(_ratio(m5, key) == 1.0), key
 
 
-def test_friction_model_scale_zero_keeps_the_predictions() -> None:
+def test_friction_model_scale_zero_keeps_the_envelope() -> None:
     module, container, m5 = _make({"scale": 0.0}, friction_model=object())
     _with_model(m5)
     module.reset(container)
-    assert torch.all(m5.model_coefficient_scale == 1.0)
+    assert torch.all(m5.friction_model_scale == 1.0)
 
 
-def test_friction_model_partial_reset_and_motor_gain() -> None:
-    module, container, m5 = _make({"scale": 0.2, "params": ["motor_gain", "K_c"]}, friction_model=object())
+def test_friction_model_partial_reset_and_motor_constant() -> None:
+    module, container, m5 = _make({"scale": 0.2, "params": ["torque_constant", "K_c"]}, friction_model=object())
     _with_model(m5)
     module.reset(container)
-    assert not torch.all(_ratio(m5, "motor_gain") == 1.0)
-    assert torch.all(_ratio(m5, "K_c") == 1.0)
-    factor = m5.model_coefficient_scale
-    assert not torch.all(factor[..., 0] == 1.0)  # K_c, the only listed model coefficient
-    assert torch.all(factor[..., 1:] == 1.0)
-    before = m5.model_coefficient_scale.clone()
+    assert not torch.all(_ratio(m5, "torque_constant") == 1.0)
+    assert torch.all(_ratio(m5, "K_c") == 1.0)  # a friction constant: unused with a model
+    before = m5.friction_model_scale.clone()
     container.reset_buf[:] = False
     container.reset_buf[[2, 7]] = True
     module.reset(container)
-    changed = (m5.model_coefficient_scale != before).flatten(1).any(1)
+    changed = (m5.friction_model_scale != before).any(1)
     assert changed.nonzero().flatten().tolist() == [2, 7]
 
 

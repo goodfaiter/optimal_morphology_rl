@@ -53,11 +53,8 @@ def _make_envs(num_envs: int, joint_pos: torch.Tensor | None = None) -> ModuleCo
     return cont
 
 
-def _make_module(spring_constants=0.1, spring_constant_range=None) -> AntagonisticSpring:
-    cfg = {"spring_constants": spring_constants}
-    if spring_constant_range is not None:
-        cfg["spring_constant_range"] = spring_constant_range
-    return AntagonisticSpring(cfg)
+def _make_module(spring_constants=0.1) -> AntagonisticSpring:
+    return AntagonisticSpring({"spring_constants": spring_constants})
 
 
 def test_post_finalize_builds_constants_and_allocates_buffer(container: ModuleContainer) -> None:
@@ -196,10 +193,3 @@ def test_post_finalize_fills_the_per_env_buffer_with_the_constants() -> None:
     assert torch.allclose(module.spring_constants_buf, torch.tensor([[0.1, 0.3]] * num_envs))
     assert torch.allclose(cont.antagonistic_spring_force_buf, torch.tensor([[-0.1, 0.6]] * num_envs))
 
-
-def test_spring_constant_range_is_rejected(container: ModuleContainer) -> None:
-    # Randomization moved to the 'randomize_antagonistic_springs' module.
-    module = _make_module(0.1, spring_constant_range=[0.05, 0.2])
-    module.finalize(container)
-    with pytest.raises(RuntimeError, match="randomize_antagonistic_springs"):
-        module.post_finalize(container)
