@@ -2,7 +2,7 @@ params:
   seed: 200964
 
   algo:
-    name: a2c_continuous
+    name: a2c_continuous_pink
 
   model:
     name: continuous_a2c_logstd
@@ -54,7 +54,19 @@ params:
     kl_threshold: 0.016
     score_to_win: 20000000
     max_epochs: 5000
+    early_stopping:
+      patience: 50
+      min_delta: 0.01 # if less than 1% improvement in the last 50 epochs, stop training
+      min_epochs: 30 # warm-up
+    curriculum:
+      levels: ${eval:'[0.0, 0.25, 0.5, 0.75, 1.0] if mode == "train" else [1.0]'}
+      patience: 20
+      min_delta: 0.01
+      min_epochs: 20 # warm-up
     save_best_after: 50
+    # Mean episode reward over the last 1000 episodes (~9 epochs at 1024 envs) instead of 100 (~1 epoch): ~3x less
+    # noise for the best checkpoint, early stopping and the curriculum, which react a few epochs later.
+    games_to_track: 1000 # at 4096 envs ~3 epochs of episodes
     save_frequency: 100
     print_stats: True
     grad_norm: 1.0
@@ -63,10 +75,36 @@ params:
     ppo: True
     e_clip: 0.2
     horizon_length: 128
-    minibatch_size: 4096
+    minibatch_size: ${num_envs}
     mini_epochs: 1
-    critic_coef: 1.0
+    critic_coef: 0.0 # Should not matter with central_value_config (the actor's own critic is unused, the central critic's values give the advantages).
     clip_actions: False
     clip_value: False
     seq_length: 4
     bounds_loss_coef: 0.0
+    # With central_value_config the actor model's own critic tower is unused (the central critic's values give the
+    # advantages); False skips its value loss, so the actor model trains the policy only.
+    use_experimental_cv: False
+    # Asymmetric actor-critic: a separate critic on obs + the privileged observations (observation.privileged_modules
+    # in env.yaml). Only the actor is exported for the robot.
+    central_value_config:
+      minibatch_size: ${num_envs}
+      mini_epochs: 1
+      learning_rate: 3e-4
+      lr_schedule: fixed
+      kl_threshold: 0.016
+      clip_value: False
+      normalize_input: True
+      truncate_grads: False
+      grad_norm: 1.0
+      network:
+        name: actor_critic
+        central_value: True
+        mlp:
+          units: [256, 128, 64]
+          activation: tanh
+          d2rl: False
+          initializer:
+            name: default
+          regularizer:
+            name: None
