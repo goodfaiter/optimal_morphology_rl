@@ -10,8 +10,8 @@ modules:
     - interactive_slider_control
     - process_variable_actions
     - create_spool
-    - spool_plot
     - apply_m5_forces
+    - spool_plot
     - antagonistic_spring
     - apply_motor_forces
     - apply_root_forces
@@ -65,7 +65,7 @@ interactive_slider_control:
   slider_max: 6.6
 
 process_variable_actions:
-  min_dof_scale: [-1, -1] # desired spool angle [rad] (MCP, PIP), as in env.yaml
+  min_dof_scale: [-1, -1] # change of the spool angle [rad] (MCP, PIP), as in env.yaml
   max_dof_scale: [1, 1]
 
 # Servo spools on the tendon actuator sliders: the prismatic joint is the spool rim

@@ -37,6 +37,11 @@ def register_observation(name: str | None = None):
 class ObservationManagerModule(BaseModule):
     """Builds the observation vector from registered observation sub-modules.
 
+    ``privileged_modules`` (optional, same shape as ``modules``) build the privileged observation of the
+    current step (no history): ``container.priv_obs_buf`` and ``env.privileged_observation_space``. The env
+    then returns ``{"obs", "priv_obs"}``, and the critic (rl_games ``central_value_config``) sees obs + priv_obs
+    while the policy keeps the robot's observations.
+
     Config shape (``modules`` maps each sub-module, in observation order, to its config)::
 
         observation:
@@ -48,6 +53,9 @@ class ObservationManagerModule(BaseModule):
               noise:
                 angle_offset_range: [-0.1, 0.1]
             goal_state: {}
+          privileged_modules:  # optional, critic only
+            spool_torques:
+              signals: [tau_f_max]
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -55,20 +63,25 @@ class ObservationManagerModule(BaseModule):
         self.num_hist = int(self.config.get("num_hist", 1))
         self.hist_stride = int(self.config.get("hist_stride", 1))
 
-        self.sub_manager = self._build_sub_manager()
+        self.sub_manager = self._build_sub_manager("modules")
         self._obs_modules: list[ObservationBaseModule] = [m for m in self.sub_manager if isinstance(m, ObservationBaseModule)]
+        self._priv_modules: list[ObservationBaseModule] = []
+        if self.config.get("privileged_modules"):
+            self.priv_sub_manager = self._build_sub_manager("privileged_modules")
+            self._priv_modules = [m for m in self.priv_sub_manager if isinstance(m, ObservationBaseModule)]
+        self._priv_slices: dict[str, slice] = {}
 
         self.base_obs: torch.Tensor | None = None
         self.obs_history: Any | None = None
         self._obs_slices: dict[str, slice] | None = None
         self._base_obs_dim: int | None = None
 
-    def _build_sub_manager(self) -> ModuleManager:
-        """Create a ModuleManager for observation sub-modules."""
-        modules = self.config.get("modules", {})
+    def _build_sub_manager(self, key: str) -> ModuleManager:
+        """Create a ModuleManager for the observation sub-modules of ``key`` ('modules' / 'privileged_modules')."""
+        modules = self.config.get(key, {})
         if not isinstance(modules, dict):
             raise ValueError(
-                "observation 'modules' must map each observation sub-module to its config "
+                f"observation '{key}' must map each observation sub-module to its config "
                 f"(e.g. 'robot_state: {{}}'), got {type(modules).__name__}: {modules}"
             )
         sub_config: dict[str, Any] = {"modules": {"init_modules": list(modules)}}
@@ -102,6 +115,19 @@ class ObservationManagerModule(BaseModule):
 
         print(f"Observation space size: {num_obs} (base={self._base_obs_dim}, num_hist={self.num_hist}, stride={self.hist_stride})")
 
+        if self._priv_modules:
+            offset = 0
+            for module in self._priv_modules:
+                dim = module.get_obs_dim(env)
+                self._priv_slices[type(module).__name__] = slice(offset, offset + dim)
+                offset += dim
+            env.privileged_observation_space = Box(
+                low=np.full(offset, np.finfo("f").min, dtype=np.float32),
+                high=np.full(offset, np.finfo("f").max, dtype=np.float32),
+                dtype=np.float32,
+            )
+            print(f"Privileged observation size: {offset} (critic: {num_obs + offset})")
+
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate observation buffer, base obs, and history buffers."""
         env = container.env
@@ -115,6 +141,9 @@ class ObservationManagerModule(BaseModule):
         )
 
         self.base_obs = torch.zeros((total_num_envs, self._base_obs_dim), device=device, dtype=torch.float32)
+        if self._priv_modules:
+            dim = env.privileged_observation_space.shape[0]
+            container.priv_obs_buf = torch.zeros((total_num_envs, dim), device=device, dtype=torch.float32)
 
         obs_history_length = 1 + (self.num_hist - 1) * self.hist_stride
         # Lazy import to avoid a hard dependency if history is not used.
@@ -144,11 +173,14 @@ class ObservationManagerModule(BaseModule):
         self.obs_history.add(self.base_obs)
         env.obs_buf[:] = self.obs_history.get().view(env.total_num_envs, -1)
 
+        for module in self._priv_modules:
+            module.compute_observation(env, container.priv_obs_buf[:, self._priv_slices[type(module).__name__]])
+
     def reset(self, container: ModuleContainer) -> None:
         """Reset the observation history and the sub-modules (e.g. per-episode observation noise)."""
         reset_buf = container.get("reset_buf")
         if self.obs_history is not None and reset_buf is not None:
             self.obs_history.reset_idx(reset_buf)
         env = container.get("env")
-        for module in self._obs_modules:
+        for module in self._obs_modules + self._priv_modules:
             module.reset(env)

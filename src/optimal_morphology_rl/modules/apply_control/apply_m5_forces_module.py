@@ -44,9 +44,10 @@ def _resolve_model_path(path: str) -> Path:
 class ApplyM5ForcesModule(BaseModule):
     """Servo motor law with M5 friction on the spools of 'create_spool' (``container.spool``).
 
-    From the spool state (theta_m, omega_m, tau_e) and the policy action, the desired spool angle (rad):
+    From the spool state (theta_m, omega_m, tau_e) and the policy action, the change of the spool angle (rad):
 
-        target  = max(action, 0)                         (never below the tared taut angle, as on the robot)
+        target  = max(theta_m + action, -1)              (desired spool angle, at most 1 rad below the tared taut
+                                                          angle, as on the robot)
         i       = motor_position_gain * (target - theta_m)            (the servo's current command, A)
         tau_m   = torque_constant * sign(i) * max(|i| - current_deadband, 0)   (motor torque, Nm)
         tau_f   = M5 friction, Karnopp stop torque capped by the friction budget; the load coefficient K_e is
@@ -67,9 +68,13 @@ class ApplyM5ForcesModule(BaseModule):
     ``model(omega, theta_delta)`` with the spool speed (rad/s) and theta_delta = target - theta_m (rad), at
     the 200 Hz control rate. ``friction_model_output`` says what it predicts: ``envelope`` (default) the
     friction budget tau_f_max (the Karnopp stop torque still uses the simulator's J_eff), ``torque`` the
-    signed friction torque tau_f itself (applied as is). Its output is multiplied by the constant
-    ``friction_model_gain`` (default 1.0) and by ``friction_model_scale`` ``(num_envs,
-    num_model_tendons)`` (ones; randomized by 'randomize_m5'). The model is stateful (input history per row): it runs one forward pass over
+    signed friction torque tau_f itself (applied as is).
+
+    The friction (budget, or the model's torque) is scaled by the training curriculum factor
+    (``curriculum_factor``: rl_games 'curriculum' levels, e.g. 0 -> 1; 1.0 outside a curriculum) and by
+    ``friction_scale`` ``(num_envs, 1)``, one factor per env (ones; redrawn on reset by 'randomize_m5').
+
+    The model is stateful (input history per row): it runs one forward pass over
     num_envs x num_model_tendons rows, and ``reset`` restarts the rows of the resetting envs.
 
     With ``friction: false`` the friction torque is left out (tau_f = 0, F = tau_m / r): an ideal,
@@ -137,12 +142,11 @@ class ApplyM5ForcesModule(BaseModule):
             self.friction_model_output = str(self.config.get("friction_model_output", "envelope"))
             if self.friction_model_output not in ("envelope", "torque"):
                 raise RuntimeError("ApplyM5Forces config 'friction_model_output' must be 'envelope' or 'torque'.")
-            self.friction_model_gain = float(self.config.get("friction_model_gain", 1.0))
-            if self.friction_model_gain < 0.0:
-                raise RuntimeError("ApplyM5Forces config 'friction_model_gain' must be non-negative.")
-            # Per env and tendon factor on the envelope (randomize_m5 draws it).
-            self.friction_model_scale = torch.ones((num_envs, num_tendons), device=device, dtype=torch.float32)
-            print(f"ApplyM5Forces: friction {self.friction_model_output} from '{model_path.name}' (gain {self.friction_model_gain:g})")
+            print(f"ApplyM5Forces: friction {self.friction_model_output} from '{model_path.name}'")
+
+        # Per env factor on the friction (randomize_m5 redraws it on reset).
+        self.friction_scale = torch.ones((num_envs, 1), device=device, dtype=torch.float32)
+        self.num_tendons = num_tendons
 
         container.spool_motor_force_buf = torch.zeros(
             (container.total_num_envs, container.robot.num_motors), device=device, dtype=torch.float32
@@ -186,7 +190,7 @@ class ApplyM5ForcesModule(BaseModule):
         """Restart the friction model's input history of the resetting envs (rows env * num_tendons + tendon)."""
         if self.friction_model is None:
             return
-        rows = container.reset_buf.unsqueeze(-1).expand_as(self.friction_model_scale).reshape(-1)
+        rows = container.reset_buf.unsqueeze(-1).expand(-1, self.num_tendons).reshape(-1)
         # Before its first call the model has no per-row state yet (it allocates it fresh then).
         if self.friction_model.force_buffer.shape[0] == rows.numel() and bool(rows.any()):
             with torch.no_grad():
@@ -196,15 +200,15 @@ class ApplyM5ForcesModule(BaseModule):
         """Learned model output (envelope or friction torque), one batched forward pass over every env and tendon."""
         with torch.no_grad():
             output = self.friction_model(omega_m.reshape(-1), theta_delta.reshape(-1)).view_as(omega_m)
-        return output * (self.friction_model_gain * self.friction_model_scale)
+        return output
 
     def step(self, container: ModuleContainer) -> None:
         spool = container.spool
         theta_m, omega_m, tau_e = spool.theta_m, spool.omega_m, spool.tau_e
 
-        # The action is the desired spool angle, capped at 0: it never asks to unwind below the tared taut angle
-        # (the hand controller applies the same cap on the robot).
-        actions = spool.commanded_angle(container).clamp(min=0.0)
+        # The action is the change of the spool angle: desired = theta_m + action, capped at -1 rad, so it asks to unwind
+        # at most 1 rad below the tared taut angle (the hand controller applies the same law and cap on the robot).
+        actions = (theta_m + spool.commanded_angle(container)).clamp(min=-1.0)  # desired spool angle
         tau_m = self._motor_torque(actions - theta_m)
 
         if not self.friction:
@@ -213,6 +217,7 @@ class ApplyM5ForcesModule(BaseModule):
             tau_f_max = self._model_output(omega_m, actions - theta_m)
         else:
             tau_f_max = self._friction_budget(tau_m, tau_e, omega_m)
+        tau_f_max = tau_f_max * (self.curriculum_factor * self.friction_scale)
         if self.friction and self.friction_model is not None and self.friction_model_output == "torque":
             tau_f = tau_f_max  # the model's friction torque itself
             tau_f_max = tau_f.abs()

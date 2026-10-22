@@ -12,16 +12,22 @@ from optimal_morphology_rl.modules.module_manager import register_module
 from optimal_morphology_rl.utils.live_plot import LivePlot
 
 
+# apply_m5_forces signals in the torque column: (last_signals key, legend label).
+TORQUES = [("tau_m", r"$\tau_m$"), ("tau_e", r"$\tau_e$"), ("tau_f", r"$\tau_f$"), ("tau_f_max", r"$\tau_{f,max}$")]
+
+
 @register_module("spool_plot")
 class SpoolPlotModule(BaseModule):
     """Scrolling plots of every 'create_spool' spool of env ``env`` (debug / interactive use).
 
-    One row per spool: the commanded spool angle and theta_m (rad), and omega_m (rad/s). The plot
+    One row per spool: the commanded spool angle and theta_m (rad), omega_m (rad/s) and, with 'apply_m5_forces',
+    its torques tau_m, tau_e, tau_f and tau_f_max (Nm). The plot
     runs in its own subprocess (``utils/live_plot.py``), so drawing never stalls the simulation and the
     window can be minimized or closed (closing it just stops the plot). The time axis is the sim time
     of the plotted env's episode: when that env resets, the plot is cleared and starts again at 0. List it in
     ``pre_physics_step_modules`` after 'create_spool' (it reads the state 'create_spool' just read and
-    the command 'process_variable_actions' just scaled).
+    the command 'process_variable_actions' just scaled), after 'apply_m5_forces' so the torques are of the same
+    step.
 
     Config shape::
 
@@ -57,14 +63,19 @@ class SpoolPlotModule(BaseModule):
         spool, robot = container.spool, container.robot
         rows = [robot.art_def.get_spatial_tendon_def(i).name.removesuffix("_tendon") for i in spool.model_tendon_indices]
         self.dt = spool.dt
+        manager = container.env.module_manager
+        self.m5 = manager.get("apply_m5_forces") if "apply_m5_forces" in manager else None
+        columns = [
+            {"ylabel": "spool angle (rad)", "signals": [("cmd", "command"), ("theta", r"$\theta_m$")]},
+            {"ylabel": "spool velocity (rad/s)", "signals": [("omega", r"$\omega_m$")]},
+        ]
+        if self.m5 is not None:
+            columns.append({"ylabel": "torque (Nm)", "signals": [(key, label) for key, label in TORQUES]})
         self.plot = LivePlot(
             {
                 "title": "spool state",
                 "rows": rows,
-                "columns": [
-                    {"ylabel": "spool angle (rad)", "signals": [("cmd", "command"), ("theta", r"$\theta_m$")]},
-                    {"ylabel": "spool velocity (rad/s)", "signals": [("omega", r"$\omega_m$")]},
-                ],
+                "columns": columns,
                 "window_s": self.window_s,
                 "fps": self.fps,
                 "backend": self.backend,
@@ -85,5 +96,12 @@ class SpoolPlotModule(BaseModule):
         if self.steps % self.every:
             return
         spool, e = container.spool, self.env_index
-        sample = torch.stack([spool.commanded_angle(container)[e], spool.theta_m[e], spool.omega_m[e]]).cpu().tolist()
-        self.plot.send(self.steps * self.dt, {"cmd": sample[0], "theta": sample[1], "omega": sample[2]})
+        signals = {"cmd": spool.commanded_angle(container)[e], "theta": spool.theta_m[e], "omega": spool.omega_m[e]}
+        if self.m5 is not None:
+            # Every sample carries every signal (the plotter keeps one history per signal): NaN (a gap) until
+            # apply_m5_forces has run, e.g. when it is listed after this module.
+            last = getattr(self.m5, "last_signals", None)
+            nan = torch.full_like(signals["theta"], float("nan"))
+            signals.update({key: last[key][e] if last is not None else nan for key, _ in TORQUES})
+        values = torch.stack(list(signals.values())).cpu().tolist()  # one GPU -> CPU copy
+        self.plot.send(self.steps * self.dt, dict(zip(signals, values)))

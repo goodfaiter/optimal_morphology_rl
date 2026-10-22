@@ -14,6 +14,9 @@ class BaseModule(ABC):
     list.
     """
 
+    # Training curriculum progress (rl_games 'curriculum' levels, e.g. 0 -> 1); 1.0 = the full task (play, export).
+    curriculum_factor: float = 1.0
+
     def __init__(self, config: dict[str, Any] | None = None):
         """Initialize the module with its own config slice.
 
@@ -46,6 +49,10 @@ class BaseModule(ABC):
     def step(self, container: ModuleContainer) -> None:
         """Main step function called at pre/post gym/physics steps."""
         pass
+
+    def set_curriculum_factor(self, factor: float, container: ModuleContainer) -> None:
+        """Called whenever the training curriculum changes level; modules read ``self.curriculum_factor``."""
+        self.curriculum_factor = float(factor)
 
     def reset(self, container: ModuleContainer) -> None:
         """Reset the modules selected by the environment's reset buffer.

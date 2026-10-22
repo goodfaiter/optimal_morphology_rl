@@ -214,7 +214,7 @@ class ModularEnvironment:
         self.module_manager.post_physics_step()
 
         return (
-            self.obs_buf.clone(),
+            self._observations(),
             self.rew_buf.clone(),
             self.term_buf.clone(),
             self.trunc_buf.clone(),
@@ -228,4 +228,11 @@ class ModularEnvironment:
         self.gym.step()
         self.gym.compute_kinematics()
         self.module_manager.post_physics_step()
-        return self.obs_buf.clone(), {}
+        return self._observations(), {}
+
+    def _observations(self) -> torch.Tensor | dict[str, torch.Tensor]:
+        """The policy observations, or {"obs", "priv_obs"} with privileged (critic only) observations."""
+        priv_obs = self.module_manager.container.get("priv_obs_buf")
+        if priv_obs is None:
+            return self.obs_buf.clone()
+        return {"obs": self.obs_buf.clone(), "priv_obs": priv_obs.clone()}

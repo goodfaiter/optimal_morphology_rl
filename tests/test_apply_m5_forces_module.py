@@ -79,21 +79,22 @@ def test_invalid_limit_raises() -> None:
         _module(torch.tensor([0.0]), command=0.0, max_slider_velocity=0.0)
 
 
-def test_action_is_the_desired_spool_angle() -> None:
-    # No friction, unit motor: tau = target - theta.
+def test_action_is_the_change_of_the_spool_angle() -> None:
+    # No friction, unit motor: desired = theta + action, so tau = action wherever the spool is.
     module, container = _module(torch.zeros(3), command=1.0, max_slider_velocity=None)
     container.spool.theta_m = torch.tensor([[0.0], [0.4], [1.5]])
     module.step(container)
-    assert torch.allclose(container.spool_motor_force_buf[:, 0], torch.tensor([1.0, 0.6, -0.5]) / R)
+    assert torch.allclose(module.last_signals["action"][:, 0], torch.tensor([1.0, 1.4, 2.5]))  # the desired spool angle
+    assert torch.allclose(container.spool_motor_force_buf[:, 0], torch.ones(3) / R)
 
 
-def test_target_is_capped_at_zero() -> None:
+def test_desired_angle_is_capped_at_minus_one() -> None:
     omega = torch.zeros(3)
     module, container = _module(omega, command=-2.0, max_slider_velocity=None)
-    container.spool.theta_m = torch.tensor([[0.0], [0.5], [3.0]])  # spool angles; command -2 rad
+    container.spool.theta_m = torch.tensor([[0.0], [0.5], [3.0]])  # spool angles; action -2 rad
     module.step(container)
-    assert torch.all(module.last_signals["action"] == 0.0)  # max(target, 0)
-    assert torch.allclose(container.spool_motor_force_buf[:, 0], torch.tensor([0.0, -0.5, -3.0]) / R)  # (0 - theta) / r
+    assert torch.allclose(module.last_signals["action"][:, 0], torch.tensor([-1.0, -1.0, 1.0]))  # max(theta - 2, -1)
+    assert torch.allclose(container.spool_motor_force_buf[:, 0], torch.tensor([-1.0, -1.5, -2.0]) / R)  # (desired - theta) / r
 
 
 def test_motor_torque_has_a_current_deadband() -> None:
@@ -137,23 +138,25 @@ def _with_envelope_model(tmp_path, **overrides):
     return _module(torch.zeros(2), command=1.0, max_slider_velocity=None, friction_model_path=str(path), **overrides)
 
 
-@pytest.mark.parametrize("gain", [1.0, 0.5])
+@pytest.mark.parametrize("gain", [1.0, 0.5, 0.0])
 def test_friction_model_envelope_is_the_budget(tmp_path, gain) -> None:
-    # Stalled spools, target 1 rad, theta 0 / 0.4: envelope 0.5 + |target - theta| (x gain); unit motor tau = error.
-    module, container = _with_envelope_model(tmp_path, friction_model_gain=gain)
+    # Stalled spools, action 1 rad (theta_delta = desired - theta = 1, theta 0 / 0.4): envelope 0.5 + |theta_delta|
+    # (x the curriculum factor); unit motor tau = theta_delta.
+    module, container = _with_envelope_model(tmp_path)
+    module.set_curriculum_factor(gain, container)
     container.spool.theta_m = torch.tensor([[0.0], [0.4]])
     module.step(container)
-    envelope = gain * torch.tensor([1.5, 1.1])
+    envelope = gain * torch.tensor([1.5, 1.5])
     assert torch.allclose(module.last_signals["tau_f_max"][:, 0], envelope)
-    # The stall torque tau_m (1.0 / 0.6) is held up to the envelope.
-    tau = torch.tensor([1.0, 0.6]) - torch.minimum(torch.tensor([1.0, 0.6]), envelope)
+    # The stall torque tau_m (1.0) is held up to the envelope.
+    tau = torch.ones(2) - torch.minimum(torch.ones(2), envelope)
     assert torch.allclose(container.spool_motor_force_buf[:, 0], tau / R)
 
 
-def test_friction_model_scale_and_reset_rows(tmp_path) -> None:
+def test_friction_scale_and_reset_rows(tmp_path) -> None:
     module, container = _with_envelope_model(tmp_path)
     module.step(container)  # allocates the model's per-row state
-    module.friction_model_scale[:] = torch.tensor([[2.0], [1.0]])
+    module.friction_scale[:] = torch.tensor([[2.0], [1.0]])  # per env
     module.step(container)
     assert torch.allclose(module.last_signals["tau_f_max"][:, 0], torch.tensor([3.0, 1.5]))
     container.reset_buf = torch.tensor([False, True])
@@ -184,14 +187,32 @@ def test_load_friction_depends_on_the_winding_direction(omega, tau_m, tau_e, k_e
 
 def test_friction_model_torque_output_is_applied_as_is(tmp_path) -> None:
     # The stand-in returns 0.5 + |theta_delta|; as a torque model that is tau_f itself (no stop torque, no clamp).
-    module, container = _with_envelope_model(tmp_path, friction_model_output="torque", friction_model_gain=0.5)
+    module, container = _with_envelope_model(tmp_path, friction_model_output="torque")
+    module.set_curriculum_factor(0.5, container)
     container.spool.theta_m = torch.tensor([[0.0], [0.4]])
     module.step(container)
-    tau_f = 0.5 * torch.tensor([1.5, 1.1])
+    tau_f = 0.5 * torch.tensor([1.5, 1.5])  # theta_delta = the action, 1 rad
     assert torch.allclose(module.last_signals["tau_f"][:, 0], tau_f)
-    assert torch.allclose(container.spool_motor_force_buf[:, 0], (torch.tensor([1.0, 0.6]) + tau_f) / R)
+    assert torch.allclose(container.spool_motor_force_buf[:, 0], (torch.ones(2) + tau_f) / R)
 
 
 def test_invalid_friction_model_output_raises(tmp_path) -> None:
     with pytest.raises(RuntimeError, match="friction_model_output"):
         _with_envelope_model(tmp_path, friction_model_output="budget")
+
+
+def test_curriculum_factor_scales_the_m5_friction() -> None:
+    # Stalled spool, unit motor: tau_m = 1 against a K_c budget of 0.5 x factor.
+    for factor, held in ((1.0, 0.5), (0.5, 0.25), (0.0, 0.0)):
+        module, container = _module(torch.zeros(1), command=1.0, max_slider_velocity=None, K_c=0.5)
+        module.set_curriculum_factor(factor, container)
+        module.step(container)
+        assert container.spool_motor_force_buf[0, 0].item() == pytest.approx((1.0 - held) / R)
+
+
+def test_friction_scale_scales_the_m5_budget_per_env() -> None:
+    # Stalled spools, unit motor: tau_m = 1 against a K_c budget of 0.5 x the env's friction scale.
+    module, container = _module(torch.zeros(2), command=1.0, max_slider_velocity=None, K_c=0.5)
+    module.friction_scale[:] = torch.tensor([[1.5], [0.5]])
+    module.step(container)
+    assert torch.allclose(container.spool_motor_force_buf[:, 0], torch.tensor([1.0 - 0.75, 1.0 - 0.25]) / R)

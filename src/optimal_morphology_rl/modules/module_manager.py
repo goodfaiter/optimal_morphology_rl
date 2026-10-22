@@ -260,6 +260,12 @@ class ModuleManager:
         """Call ``reset`` on every module in order."""
         self._call_hook("reset")
 
+    def set_curriculum_factor(self, factor: float) -> None:
+        """Hand the training curriculum factor to every module (and the container)."""
+        self.container.curriculum_factor = float(factor)
+        for module in self._all_unique_modules():
+            module.set_curriculum_factor(factor, self.container)
+
     def _call_hook(self, hook: str) -> None:
         """Dispatch a hook to all unique modules that implement it."""
         for module in self._all_unique_modules():

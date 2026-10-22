@@ -147,7 +147,7 @@ class CreateSpoolModule(BaseModule):
         self.j_eff[:] = (self.slider_armature + self.slider_mass) * self.pully_radius**2
 
     def commanded_angle(self, container: ModuleContainer) -> torch.Tensor:
-        """Spool angle targets (rad) of the scaled policy actions, ``(num_envs, num_model_tendons)``."""
+        """Scaled policy actions per spool (rad): the change of the spool angle, ``(num_envs, num_model_tendons)``."""
         return container.scaled_act_buf[:, container.active_dof_slice][:, self.action_slots]
 
     def reset(self, container: ModuleContainer) -> None:

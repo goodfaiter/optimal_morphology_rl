@@ -232,6 +232,13 @@ class VlearnEnv(IVecEnv):
     def reset(self):
         return self.envs.reset()
 
+    def set_train_info(self, env_frames, *args, **kwargs):
+        """rl_games hands the agent each epoch: pass its curriculum factor on to the modules when it changes."""
+        factor = float(getattr(args[0], "curriculum_factor", 1.0)) if args else 1.0
+        if factor != getattr(self, "_curriculum_factor", None):
+            self._curriculum_factor = factor
+            self.envs.env.module_manager.set_curriculum_factor(factor)
+
     def get_env_info(self):
         env_info = {
             "observation_space": convert_space(self.envs.observation_space),

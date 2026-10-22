@@ -1,6 +1,9 @@
 """Reward sub-modules and manager."""
 
 # Import generic reward modules so their @register_reward decorators run.
+from optimal_morphology_rl.modules.rewards.action_oscillation_reward import (
+    ActionOscillationReward,
+)
 from optimal_morphology_rl.modules.rewards.action_penalty_reward import (
     ActionPenaltyReward,
 )
@@ -31,6 +34,7 @@ from optimal_morphology_rl.modules.rewards.reward_manager_module import (
 
 __all__ = [
     "REWARD_REGISTRY",
+    "ActionOscillationReward",
     "ActionPenaltyReward",
     "ActionSmoothnessReward",
     "FingertipContactReward",
