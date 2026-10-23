@@ -11,7 +11,7 @@ modules:
     - process_variable_actions
     - create_spool
     - apply_m5_forces
-    - spool_plot
+    # - spool_plot
     - antagonistic_spring
     - apply_motor_forces
     - apply_root_forces
@@ -58,9 +58,11 @@ update_robot:
 apply_motor_forces: {}
 apply_root_forces: {}
 
+# One slider per spool: the desired spool angle (rad); the action sent is still the change, target - angle.
 interactive_slider_control:
-  slider_min: -3
-  slider_max: 3
+  slider_min: -1
+  slider_max: 4
+  spool_positions: true
 
 process_variable_actions:
   min_dof_scale: -1 # change of the spool angle [rad] per spool, as in adapt_finger

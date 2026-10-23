@@ -110,6 +110,8 @@ class ProcessVariableActionsModule(BaseModule):
 
         self.min_dof_scale = _build_scale_tensor(self.config["min_dof_scale"], num_active, device, "min_dof_scale")
         self.max_dof_scale = _build_scale_tensor(self.config["max_dof_scale"], num_active, device, "max_dof_scale")
+        # Shared so an action source can invert the scaling (interactive_slider_control 'spool_positions').
+        container.dof_scale_range = (self.min_dof_scale, self.max_dof_scale)
 
     def step(self, container: ModuleContainer) -> None:
         """Update action history, copy new actions, and scale them."""
