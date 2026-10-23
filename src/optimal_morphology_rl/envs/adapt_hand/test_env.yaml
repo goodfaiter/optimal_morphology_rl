@@ -56,10 +56,6 @@ create_robot:
   fixed_tendon_substrings: ["dip"]
   passive_motor_substrings: []
 
-# Finite-difference velocities for the apply_m5_forces stop torque and the robot_state observation.
-update_robot:
-  velocity_source: fd
-
 apply_motor_forces: {}
 
 # One slider drives every spool (mcp + pip of the four fingers) to the same angle, in rad:

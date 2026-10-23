@@ -50,19 +50,13 @@ create_robot:
   # Make every motor controllable from the UI (no passive motors).
   passive_motor_substrings: []
 
-# Finite-difference velocities for the apply_m5_forces stop torque and the robot_state observation.
-update_robot:
-  velocity_source: fd
-
 apply_motor_forces: {}
 apply_root_forces: {}
-
-randomize_friction:
-  friction_coefficient: 0.8
 
 interactive_slider_control:
   slider_min: 0.0
   slider_max: 6.6
+  spool_positions: true
 
 process_variable_actions:
   min_dof_scale: [-1, -1] # change of the spool angle [rad] (MCP, PIP), as in env.yaml

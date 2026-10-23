@@ -51,10 +51,6 @@ create_robot:
   # Make every motor controllable from the UI (no passive motors).
   passive_motor_substrings: []
 
-# Finite-difference velocities for the apply_m5_forces stop torque and the robot_state observation.
-update_robot:
-  velocity_source: fd
-
 apply_motor_forces: {}
 apply_root_forces: {}
 
