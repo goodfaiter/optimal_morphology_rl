@@ -19,7 +19,8 @@ class CreateSpoolModule(BaseModule):
     tendon, with +q pulling the tendon. The slider is the rim of the spool, so the spool state is
     read straight from the simulator:
 
-        theta_m = q / r,  omega_m = qdot / r            (winding positive; qdot from 'update_robot')
+        theta_m = q / r,  omega_m = qdot / r            (winding positive; qdot the finite difference of q,
+                                                          see slider_velocity)
         tau_e   = -r * T                                 (T: measured tendon tension, previous step)
 
     The servo inertia is the slider's armature: the simulator integrates
@@ -139,6 +140,8 @@ class CreateSpoolModule(BaseModule):
         self.tension = torch.zeros(shape, device=device, dtype=torch.float32)
         self.tau_e = torch.zeros(shape, device=device, dtype=torch.float32)
         self.just_reset = torch.ones(num_envs, device=device, dtype=torch.bool)
+        # Slider positions read by the last step, for the finite-difference velocity (see slider_velocity).
+        self.last_slider_pos = torch.zeros(shape, device=device, dtype=torch.float32)
         self.reset_rows = torch.zeros(num_envs, device=device, dtype=torch.bool)  # envs reset before this step
 
     def update_inertia(self) -> None:
@@ -153,23 +156,36 @@ class CreateSpoolModule(BaseModule):
         """On the next step use the commanded reset state (and zero tension) for the reset envs."""
         self.just_reset |= container.reset_buf
 
+    def slider_velocity(self, container: ModuleContainer) -> torch.Tensor:
+        """Slider velocity (m/s) since the last step's read: the finite difference of the slider positions.
+
+        The simulator's slider velocity reads ~-0.005 to -0.015 rad/s at the spool while the spool stands still,
+        and the Karnopp stop torque of 'apply_m5_forces' cancelling that phantom velocity pushes the spool: a held
+        spool creeps at ~0.02 rad/s (the simulator then reads 0). A deadband does not help (a real creep below it
+        is never braked). Envs reset since the last step use the reset velocity.
+        """
+        slider_pos = container.robot.get_joint_pos_buf[:, self.dof_indices]
+        velocity = (slider_pos - self.last_slider_pos) / self.dt
+        just_reset = self.just_reset.unsqueeze(-1)
+        return torch.where(just_reset, container.reset_joint_vel_buf[:, self.dof_indices], velocity)
+
     def step(self, container: ModuleContainer) -> None:
         """Read the spool state of every model tendon from the simulator."""
         robot = container.robot
         r = self.pully_radius
 
         slider_pos = robot.get_joint_pos_buf[:, self.dof_indices]
-        slider_vel = robot.get_joint_vel_buf[:, self.dof_indices]
+        slider_vel = self.slider_velocity(container)
         tension = robot.get_tendon_force_buf[:, self.model_tendon_indices].clamp(min=0.0)
 
         self.reset_rows[:] = self.just_reset
         if bool(torch.any(self.just_reset)):
             just_reset = self.just_reset.unsqueeze(-1)
             slider_pos = torch.where(just_reset, container.reset_joint_pos_buf[:, self.dof_indices], slider_pos)
-            slider_vel = torch.where(just_reset, container.reset_joint_vel_buf[:, self.dof_indices], slider_vel)
             tension = torch.where(just_reset, torch.zeros_like(tension), tension)
             self.just_reset[:] = False
 
+        self.last_slider_pos[:] = slider_pos
         # New tensors every step, so references kept by readers (e.g. last_signals) stay valid.
         self.theta_m = slider_pos / r
         self.omega_m = slider_vel / r

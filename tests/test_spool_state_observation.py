@@ -13,6 +13,8 @@ def _spool_env():
         get_joint_pos_buf=torch.tensor([[9.0, 9.0, 9.0, 0.005, 0.02], [9.0, 9.0, 9.0, 0.0, 0.01]]),
         get_joint_vel_buf=torch.tensor([[9.0, 9.0, 9.0, 0.01, -0.01], [9.0, 9.0, 9.0, 0.0, 0.0]]),
     )
+    # create_spool's finite-difference slider velocity, here the given joint velocity of the slider dofs.
+    servo.slider_velocity = lambda container: container.robot.get_joint_vel_buf[:, servo.dof_indices]
     container = SimpleNamespace(robot=robot, spool=servo, get=lambda key: servo if key == "spool" else None)
     manager = SimpleNamespace(container=container)
     return SimpleNamespace(module_manager=manager)

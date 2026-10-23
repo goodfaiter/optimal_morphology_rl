@@ -26,8 +26,8 @@ class SpoolStateObservation(ObservationBaseModule):
 
     For every model tendon of 'create_spool' the slider joint position and velocity are
     converted to the spool angle ``theta_m = q / r`` (rad, 0 = hand open) and velocity
-    ``omega_m = qdot / r`` (rad/s), with ``r`` the spool's (per env) ``pully_radius`` and ``qdot`` the simulator's
-    slider velocity.
+    ``omega_m = qdot / r`` (rad/s), with ``r`` the spool's (per env) ``pully_radius`` and ``qdot`` the finite-difference
+    slider velocity of 'create_spool' (``slider_velocity``; the simulator's reads an offset while the spool stands still).
 
     Layout: ``[theta_m (num_model_tendons), omega_m (num_model_tendons)]``.
 
@@ -115,7 +115,7 @@ class SpoolStateObservation(ObservationBaseModule):
         spool = self._spool(env)
         robot = env.module_manager.container.robot
         dofs = spool.dof_indices
-        out[:] = _spool_state_obs_jit(robot.get_joint_pos_buf[:, dofs], robot.get_joint_vel_buf[:, dofs], spool.pully_radius)
+        out[:] = _spool_state_obs_jit(robot.get_joint_pos_buf[:, dofs], spool.slider_velocity(env.module_manager.container), spool.pully_radius)
         if self.angle_offset is None:
             return
         n = self.angle_offset.shape[1]

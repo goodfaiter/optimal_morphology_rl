@@ -154,9 +154,9 @@ class UpdateRobotModule(BaseModule):
     """Refreshes robot state buffers for the robot created by ``create_robot``.
 
     Joint and tendon velocities are the simulator's (``robot.get_joint_vel_buf``, ``robot.get_tendon_vel_buf``).
-    The tendon actuator sliders' velocities match the finite difference of their positions (moving: rms error
-    < 1 %; static: an offset of ~-0.01 rad/s at the spool). The finger joints read a steady offset of up to
-    ~0.2 rad/s while static, and the spatial tendon velocity buffer does not track the tendon length rate.
+    While a joint stands still under load they read an offset (sliders ~-0.005 rad/s at the spool, finger joints
+    up to ~0.2 rad/s), and the spatial tendon velocity buffer does not track the tendon length rate. The spools
+    therefore use the finite-difference slider velocity of 'create_spool' (``slider_velocity``).
     """
 
     def post_finalize(self, container: ModuleContainer) -> None:
