@@ -22,7 +22,7 @@ def _env(last_signals=SIGNALS):
     container = ModuleContainer()
     container.device, container.total_num_envs = torch.device("cpu"), 2
     container.spool = SimpleNamespace(model_tendon_indices=[0, 1], dof_indices=torch.tensor([3, 4]), pully_radius=torch.tensor([0.005, 0.005]))
-    container.robot = SimpleNamespace(get_joint_pos_buf=torch.zeros(2, 5), joint_velocity=torch.zeros(2, 5))
+    container.robot = SimpleNamespace(get_joint_pos_buf=torch.zeros(2, 5), get_joint_vel_buf=torch.zeros(2, 5))
     m5 = SimpleNamespace(last_signals=last_signals) if last_signals is not None else SimpleNamespace()
     env = SimpleNamespace(device=torch.device("cpu"), total_num_envs=2,
                           module_manager=SimpleNamespace(container=container, get=lambda name: m5))

@@ -123,9 +123,9 @@ class ApplyM5ForcesModule(BaseModule):
         self.nominal = {key: getattr(self, attr).clone() for key, attr in M5_PARAMS.items()}
         for key, attr in M5_PARAMS.items():
             setattr(self, attr, self.nominal[key].expand(num_envs, num_tendons).clone())
-        for key in ("pully_radius", "model_tendon_indices", "slider_joint_suffix", "velocity_source"):
+        for key in ("pully_radius", "model_tendon_indices", "slider_joint_suffix"):
             if key in self.config:
-                raise RuntimeError(f"ApplyM5Forces: '{key}' belongs to the 'create_spool' (or 'update_robot') config.")
+                raise RuntimeError(f"ApplyM5Forces: '{key}' belongs to the 'create_spool' config.")
 
         # Optional learned friction envelope (TorchScript: model(omega, theta_delta) -> tau_f_max, Nm).
         self.friction_model = None

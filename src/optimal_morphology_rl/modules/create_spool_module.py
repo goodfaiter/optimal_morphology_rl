@@ -140,7 +140,6 @@ class CreateSpoolModule(BaseModule):
         self.tau_e = torch.zeros(shape, device=device, dtype=torch.float32)
         self.just_reset = torch.ones(num_envs, device=device, dtype=torch.bool)
         self.reset_rows = torch.zeros(num_envs, device=device, dtype=torch.bool)  # envs reset before this step
-        self.checked_velocity_source = False  # checked on the first step, once update_robot is set up
 
     def update_inertia(self) -> None:
         """Recompute the rotary inertia J_eff = (armature + slider_mass) * r**2 the simulator integrates."""
@@ -159,14 +158,8 @@ class CreateSpoolModule(BaseModule):
         robot = container.robot
         r = self.pully_radius
 
-        if not self.checked_velocity_source:
-            self.checked_velocity_source = True
-            # The simulator's joint velocity misses the motion the tendon constraint imposes on the
-            # slider (it reads ~0 while the slider creeps), so a stop torque built on it cannot hold the spool.
-            if robot.velocity_source != "fd":
-                print("CreateSpool: WARNING update_robot 'velocity_source' is not 'fd': the stop torque cannot hold the spool.")
         slider_pos = robot.get_joint_pos_buf[:, self.dof_indices]
-        slider_vel = robot.joint_velocity[:, self.dof_indices]
+        slider_vel = robot.get_joint_vel_buf[:, self.dof_indices]
         tension = robot.get_tendon_force_buf[:, self.model_tendon_indices].clamp(min=0.0)
 
         self.reset_rows[:] = self.just_reset

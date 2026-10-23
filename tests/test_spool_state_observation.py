@@ -11,7 +11,7 @@ def _spool_env():
     servo = SimpleNamespace(model_tendon_indices=[0, 1], dof_indices=torch.tensor([3, 4]), pully_radius=torch.tensor([0.005, 0.01]))
     robot = SimpleNamespace(
         get_joint_pos_buf=torch.tensor([[9.0, 9.0, 9.0, 0.005, 0.02], [9.0, 9.0, 9.0, 0.0, 0.01]]),
-        joint_velocity=torch.tensor([[9.0, 9.0, 9.0, 0.01, -0.01], [9.0, 9.0, 9.0, 0.0, 0.0]]),
+        get_joint_vel_buf=torch.tensor([[9.0, 9.0, 9.0, 0.01, -0.01], [9.0, 9.0, 9.0, 0.0, 0.0]]),
     )
     container = SimpleNamespace(robot=robot, spool=servo, get=lambda key: servo if key == "spool" else None)
     manager = SimpleNamespace(container=container)
@@ -86,7 +86,7 @@ def test_velocity_low_pass_and_offset() -> None:
     assert torch.allclose(out[:, 2:], RAW[:, 2:] + 0.5)
     assert torch.allclose(out[:, :2], RAW[:, :2])  # angle unaffected
 
-    robot.joint_velocity = robot.joint_velocity * 0.0  # the spools stop
+    robot.get_joint_vel_buf = robot.get_joint_vel_buf * 0.0  # the spools stop
     for k in range(1, 4):
         module.compute_observation(env, out)
         assert torch.allclose(out[:, 2:], RAW[:, 2:] * (1.0 - alpha) ** k + 0.5)  # decays towards 0, lagging
@@ -98,7 +98,7 @@ def test_zero_lag_follows_the_measurement() -> None:
     module.reset(env)
     out = torch.zeros((2, 4))
     module.compute_observation(env, out)
-    env.module_manager.container.robot.joint_velocity = env.module_manager.container.robot.joint_velocity * 3.0
+    env.module_manager.container.robot.get_joint_vel_buf = env.module_manager.container.robot.get_joint_vel_buf * 3.0
     module.compute_observation(env, out)
     assert torch.allclose(out[:, 2:], RAW[:, 2:] * 3.0)
 

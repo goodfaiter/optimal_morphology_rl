@@ -15,7 +15,6 @@ from optimal_morphology_rl.modules.module_manager import register_module
 from optimal_morphology_rl.modules.observations.observation_jit_helpers import (
     _quaternion_to_6d_jit,
 )
-from optimal_morphology_rl.modules.tendon_scale_utils import build_tendon_scale_tensor
 
 
 def _allocate_read_buffers(robot: Robot, total_num_envs: int, device: torch.device) -> None:
@@ -24,7 +23,6 @@ def _allocate_read_buffers(robot: Robot, total_num_envs: int, device: torch.devi
     robot.get_joint_vel_buf = torch.zeros((total_num_envs, robot.num_joints), device=device, dtype=torch.float32)
     robot.get_root_transform_buf = torch.zeros((total_num_envs, 7), device=device, dtype=torch.float32)
     robot.get_root_vel_buf = torch.zeros((total_num_envs, 6), device=device, dtype=torch.float32)
-    robot.calculated_joint_velocity = torch.zeros((total_num_envs, robot.num_joints), device=device, dtype=torch.float32)
 
     robot.robot_pos_in_world = torch.zeros((total_num_envs, 3), device=device, dtype=torch.float32)
     robot.quat_robot_to_world = torch.zeros((total_num_envs, 4), device=device, dtype=torch.float32)
@@ -41,10 +39,6 @@ def _allocate_read_buffers(robot: Robot, total_num_envs: int, device: torch.devi
         robot.get_tendon_lengths_buf = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
         robot.get_tendon_vel_buf = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
         robot.get_tendon_force_buf = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
-        robot.calculated_tendon_velocity = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
-        robot.calculated_tendon_acceleration = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
-        # Tendon length rate dL/dt from the finite difference (= -calculated_tendon_velocity).
-        robot.calculated_tendon_length_rate = torch.zeros((total_num_envs, robot.num_tendons), dtype=torch.float32, device=device)
 
     if robot.num_distal_links > 0:
         robot.distal_link_transform_buf = torch.zeros(
@@ -148,12 +142,10 @@ def _get_state(container: ModuleContainer) -> dict[str, torch.Tensor]:
     }
     if robot.use_tendon:
         state["dof_pos_buf"] = robot.get_tendon_lengths_buf
-        state["dof_vel_buf"] = robot.tendon_velocity
-        state["calculated_tendon_velocity"] = robot.calculated_tendon_velocity
-        state["calculated_tendon_acceleration"] = robot.calculated_tendon_acceleration
+        state["dof_vel_buf"] = robot.get_tendon_vel_buf
     else:
         state["dof_pos_buf"] = robot.get_joint_pos_buf
-        state["dof_vel_buf"] = robot.joint_velocity
+        state["dof_vel_buf"] = robot.get_joint_vel_buf
     return state
 
 
@@ -161,164 +153,18 @@ def _get_state(container: ModuleContainer) -> dict[str, torch.Tensor]:
 class UpdateRobotModule(BaseModule):
     """Refreshes robot state buffers for the robot created by ``create_robot``.
 
-    The module computes ``calculated_joint_velocity``, the finite difference of
-    the joint positions (``(q - q_prev)/dt`` per step). The simulator's joint
-    velocity misses the motion a tendon constraint imposes on a joint (e.g. the
-    tendon actuator sliders read ~0 while they creep). On reset the history is
-    replaced by the reset state written by 'create_robot' (the joint reads that
-    follow already show it).
-
-    ``velocity_source`` selects the velocities published as ``robot.joint_velocity``
-    / ``robot.tendon_velocity`` and as the ``dof_vel_buf`` of ``container.robot_state``
-    (the robot_state observation): "sim" (default) the simulator's buffers, "fd" the
-    finite differences (``calculated_joint_velocity``, and the tendon length rate
-    dL/dt ``calculated_tendon_length_rate = -calculated_tendon_velocity``, which
-    the simulator's tendon velocity buffer does not track). 'create_spool'
-    reads ``robot.joint_velocity`` and needs "fd" to hold the spool.
-
-    For tendon-driven robots the module additionally computes filtered tendon
-    velocity and acceleration signals per tendon column from the finite
-    difference of the tendon lengths (the simulator's tendon velocity buffer is
-    unreliable and unused):
-
-    - ``calculated_tendon_velocity``: the negated length finite difference
-      (``-(L - L_prev)/dt`` per step, winding convention ``dL = -radius *
-      dtheta``), exponentially smoothed (``vel = a*vel_raw +
-      (1-a)*vel_prev`` with the ``vel_filter_alpha`` coefficient, 1.0 = raw),
-      spike-guarded (``max_tendon_speed`` — rejects phantom jumps such as a
-      length read across a reset teleport) and soft-debanded (``vel_deadband``, attenuates
-      the residual length-jitter noise floor so the acceleration finite
-      difference cannot amplify it into bang-bang chatter at near-zero
-      velocity)
-    - ``calculated_tendon_acceleration``: the finite difference of the velocity
-      in tendon units, exponentially smoothed (``acc_filter_alpha`` coefficient,
-      1.0 = raw) and soft-debanded (``acc_deadband``)
-
-    Entries without length history (first step after (re)initialization or
-    reset) use zero velocity. Both signals are stored on the robot and
-    published in ``container.robot_state``.
-    The filter parameters are scalars, or one entry per tendon.
+    Joint and tendon velocities are the simulator's (``robot.get_joint_vel_buf``, ``robot.get_tendon_vel_buf``).
+    The tendon actuator sliders' velocities match the finite difference of their positions (moving: rms error
+    < 1 %; static: an offset of ~-0.01 rad/s at the spool). The finger joints read a steady offset of up to
+    ~0.2 rad/s while static, and the spatial tendon velocity buffer does not track the tendon length rate.
     """
 
     def post_finalize(self, container: ModuleContainer) -> None:
-        """Allocate read buffers, create read GPU commands and set up the joint/tendon finite differences."""
+        """Allocate read buffers and create read GPU commands."""
         robot = container.robot
         _allocate_read_buffers(robot, container.total_num_envs, container.device)
         _create_read_gpu_commands(robot, container.env_group, container.gym)
-        self._setup_joint_velocity(container)
-        if robot.use_tendon:
-            self._setup_tendon_dynamics(container)
-
-        robot.velocity_source = str(self.config.get("velocity_source", "sim"))
-        if robot.velocity_source not in ("fd", "sim"):
-            raise RuntimeError(f"update_robot config 'velocity_source' must be 'fd' or 'sim', got '{robot.velocity_source}'.")
-        fd = robot.velocity_source == "fd"
-        # Aliases of buffers updated in place, so they stay valid across steps.
-        robot.joint_velocity = robot.calculated_joint_velocity if fd else robot.get_joint_vel_buf
-        if robot.use_tendon:
-            robot.tendon_velocity = robot.calculated_tendon_length_rate if fd else robot.get_tendon_vel_buf
         container.robot_state = _get_state(container)
-
-    def _set_control_dt(self, container: ModuleContainer) -> None:
-        """Set the control step ``dt = timestep * frame_skip`` used by the finite differences."""
-        timestep = container.get("timestep")
-        frame_skip = container.get("frame_skip")
-        if timestep is None or frame_skip is None:
-            raise RuntimeError(
-                "update_robot requires 'timestep' and 'frame_skip' in the shared container. "
-                "Ensure the 'create_rigid_vsim_envs' module is listed before 'update_robot'."
-            )
-        self.dt = float(timestep) * float(frame_skip)
-
-    def _setup_joint_velocity(self, container: ModuleContainer) -> None:
-        """Allocate the joint position history for the joint velocity finite difference."""
-        self._set_control_dt(container)
-        # Previous joint position per env/joint (the reset state until the first refresh).
-        self.prev_joint_pos = torch.zeros(
-            (container.total_num_envs, container.robot.num_joints), device=container.device, dtype=torch.float32
-        )
-
-    def _compute_joint_velocity(self, robot: Robot) -> None:
-        """Finite-difference joint velocity from the refreshed joint positions."""
-        joint_pos = robot.get_joint_pos_buf
-        robot.calculated_joint_velocity[:] = (joint_pos - self.prev_joint_pos) / self.dt
-        self.prev_joint_pos[:] = joint_pos
-
-    def _setup_tendon_dynamics(self, container: ModuleContainer) -> None:
-        """Build the tendon filter tensors and allocate the length/velocity/acceleration history."""
-        robot = container.robot
-        device = container.device
-        num_tendons = robot.num_tendons
-
-        self._set_control_dt(container)
-
-        self.max_tendon_speed = build_tendon_scale_tensor(
-            self.config.get("max_tendon_speed", 0.22), num_tendons, device, "max_tendon_speed"
-        )
-        self.vel_filter_alpha = build_tendon_scale_tensor(self.config.get("vel_filter_alpha", 1.0), num_tendons, device, "vel_filter_alpha")
-        self.acc_filter_alpha = build_tendon_scale_tensor(self.config.get("acc_filter_alpha", 1.0), num_tendons, device, "acc_filter_alpha")
-        self.vel_deadband = build_tendon_scale_tensor(self.config.get("vel_deadband", 0.0), num_tendons, device, "vel_deadband")
-        self.acc_deadband = build_tendon_scale_tensor(self.config.get("acc_deadband", 0.0), num_tendons, device, "acc_deadband")
-
-        if torch.any(self.max_tendon_speed <= 0.0):
-            raise RuntimeError("update_robot config 'max_tendon_speed' entries must be positive.")
-        if torch.any(self.vel_filter_alpha < 0.0) or torch.any(self.vel_filter_alpha > 1.0):
-            raise RuntimeError("update_robot config 'vel_filter_alpha' entries must be in [0, 1].")
-        if torch.any(self.acc_filter_alpha < 0.0) or torch.any(self.acc_filter_alpha > 1.0):
-            raise RuntimeError("update_robot config 'acc_filter_alpha' entries must be in [0, 1].")
-        if torch.any(self.vel_deadband < 0.0):
-            raise RuntimeError("update_robot config 'vel_deadband' entries must be non-negative.")
-        if torch.any(self.acc_deadband < 0.0):
-            raise RuntimeError("update_robot config 'acc_deadband' entries must be non-negative.")
-
-        # Previous filtered tendon velocity per env/tendon (exponential filter state,
-        # also the previous sample for the acceleration finite difference).
-        self.prev_vel = torch.zeros((container.total_num_envs, num_tendons), device=device, dtype=torch.float32)
-        # Previous tendon length per env/tendon for the velocity finite difference.
-        # NaN = no history yet: the first step after (re)initialization uses zero velocity.
-        self.prev_length = torch.full((container.total_num_envs, num_tendons), float("nan"), device=device, dtype=torch.float32)
-        # Previous filtered acceleration per env/tendon (exponential filter state).
-        self.prev_acc = torch.zeros((container.total_num_envs, num_tendons), device=device, dtype=torch.float32)
-
-    def _compute_tendon_dynamics(self, robot: Robot) -> None:
-        """Compute the filtered tendon velocity/acceleration for every tendon column."""
-        tendon_lengths = robot.get_tendon_lengths_buf
-
-        # Finite-difference tendon velocity (the simulator's velocity buffer is unreliable).
-        # Entries without length history (first step after reset) use zero velocity.
-        has_history = torch.isfinite(self.prev_length)
-        vel_raw = -1.0 * (tendon_lengths - self.prev_length) / self.dt
-        vel_raw = torch.where(has_history, vel_raw, torch.zeros_like(vel_raw))
-
-        # Spike guard: a length read across a reset teleport (or any other discontinuity)
-        # would give a phantom velocity far beyond the physical joint speed limit (which
-        # launches the finger). Jumps beyond max_tendon_speed are not motion.
-        vel_raw = torch.where(vel_raw.abs() > self.max_tendon_speed, torch.zeros_like(vel_raw), vel_raw)
-
-        # Exponential smoothing of the noisy finite-difference velocity.
-        tendon_vels = self.vel_filter_alpha * vel_raw + (1.0 - self.vel_filter_alpha) * self.prev_vel
-
-        # Soft deadband (continuous, so no FD spikes at the threshold): attenuates the
-        # residual length-jitter noise floor so the acceleration finite difference does
-        # not amplify it into alternating accelerations (bang-bang force chatter at
-        # near-zero velocity).
-        tendon_vels = torch.sign(tendon_vels) * torch.clamp(tendon_vels.abs() - self.vel_deadband, min=0.0)
-
-        # Finite-difference acceleration from the filtered velocity (tendon units).
-        acc_raw = (tendon_vels - self.prev_vel) / self.dt
-
-        # Exponential smoothing of the noisy finite-difference acceleration.
-        acc = self.acc_filter_alpha * acc_raw + (1.0 - self.acc_filter_alpha) * self.prev_acc
-
-        # Soft deadband on the acceleration (same rationale as the velocity deadband).
-        acc = torch.sign(acc) * torch.clamp(acc.abs() - self.acc_deadband, min=0.0)
-
-        robot.calculated_tendon_velocity[:] = tendon_vels
-        robot.calculated_tendon_length_rate[:] = -tendon_vels
-        robot.calculated_tendon_acceleration[:] = acc
-        self.prev_length[:] = tendon_lengths
-        self.prev_vel[:] = tendon_vels
-        self.prev_acc[:] = acc
 
     def step(self, container: ModuleContainer) -> None:
         """Refresh robot state buffers and publish the robot state dict."""
@@ -326,26 +172,4 @@ class UpdateRobotModule(BaseModule):
         if robot is None:
             return
         _refresh_buffers(robot, container.gym)
-        self._compute_joint_velocity(robot)
-        if robot.use_tendon:
-            self._compute_tendon_dynamics(robot)
         container.robot_state = _get_state(container)
-
-    def reset(self, container: ModuleContainer) -> None:
-        """Reset the joint and tendon finite-difference history of the environments selected by the reset buffer.
-
-        The joint history is replaced by the reset state written by 'create_robot' (listed
-        before this module), which the following joint reads show.
-        """
-        robot = container.get("robot")
-        if robot is None:
-            return
-        reset_buf = container.reset_buf
-        self.prev_joint_pos[reset_buf] = container.reset_joint_pos_buf[reset_buf]
-        robot.calculated_joint_velocity[reset_buf] = container.reset_joint_vel_buf[reset_buf]
-        if not robot.use_tendon:
-            return
-        self.prev_length[container.reset_buf] = float("nan")
-        robot.calculated_tendon_length_rate[reset_buf] = 0.0
-        self.prev_vel[container.reset_buf] = 0.0
-        self.prev_acc[container.reset_buf] = 0.0
