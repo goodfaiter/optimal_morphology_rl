@@ -7,7 +7,7 @@ from typing import Any
 import torch
 import vlearn as v
 
-from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.base_module import BaseModule, curriculum_range
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
@@ -31,7 +31,8 @@ class RandomizeJointFrictionModule(BaseModule):
     Joint friction is sampled uniformly from ``joint_friction_range`` (``[min, max]``) and
     applied via ``gym.set_joint_properties`` on ``JointProperty.JOINT_FRICTION``. Only the
     revolute DOFs are randomized; the other DOFs (e.g. the prismatic tendon sliders) keep the
-    friction of their vsim joint definition.
+    friction of their vsim joint definition. The range follows the training curriculum from its min (at 0) to
+    ``[min, max]`` (at 1).
 
     Joint properties belong to the shared articulation definition, so there is one value per
     env set (see ``create_joint_property_command``), not per env. An env set is resampled when
@@ -103,7 +104,8 @@ class RandomizeJointFrictionModule(BaseModule):
     def _randomize(self, container: ModuleContainer, set_mask: torch.Tensor) -> None:
         """Sample the revolute DOF frictions of the env sets in ``set_mask`` uniformly from the range."""
         buf = container.set_joint_friction_buf
-        samples = torch.rand(buf.shape, device=buf.device) * (self.friction_max - self.friction_min) + self.friction_min
+        low, high = curriculum_range(self.friction_min, self.friction_max, self.curriculum_factor, nominal=self.friction_min)
+        samples = torch.rand(buf.shape, device=buf.device) * (high - low) + low
         buf[:] = torch.where(set_mask.unsqueeze(1) & self.revolute_dof_mask, samples, buf)
 
     def reset(self, container: ModuleContainer) -> None:

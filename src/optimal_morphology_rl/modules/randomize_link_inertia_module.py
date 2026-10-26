@@ -7,7 +7,7 @@ from typing import Any
 import torch
 import vlearn as v
 
-from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.base_module import BaseModule, curriculum_range
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
@@ -43,7 +43,8 @@ class RandomizeLinkInertiaModule(BaseModule):
     ``(num_envs, num_links)`` and tracks the sampled masses (gravity compensation reads it).
 
     ``links`` (optional) selects the links by name; by default every link except the
-    'create_spool' tendon sliders, whose mass is part of the spool inertia.
+    'create_spool' tendon sliders, whose mass is part of the spool inertia. Both ranges follow the training
+    curriculum from 1 (at 0) to the configured range (at 1).
 
     Config shape::
 
@@ -129,7 +130,7 @@ class RandomizeLinkInertiaModule(BaseModule):
         rows = set_mask.unsqueeze(1) & self.link_mask
 
         def draw(low_high):
-            low, high = low_high
+            low, high = curriculum_range(*low_high, self.curriculum_factor, nominal=1.0)
             return low + (high - low) * torch.rand(self.mass_scale.shape, device=self.mass_scale.device)
 
         self.mass_scale[:] = torch.where(rows, draw(self.mass_range), self.mass_scale)

@@ -7,7 +7,7 @@ from typing import Any
 import torch
 import vlearn as v
 
-from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.base_module import BaseModule, curriculum_range
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
@@ -40,7 +40,8 @@ class RandomizeSpoolModule(BaseModule):
 
     Afterwards the spool inertia J_eff = (armature + slider_mass) * r**2 (used by the force law's
     Karnopp stop torque) is recomputed, so it matches what the simulator integrates. At least one
-    range is required.
+    range is required. Both ranges follow the training curriculum from the spool's configured values (at 0) to
+    the full range (at 1).
 
     Config shape::
 
@@ -62,6 +63,8 @@ class RandomizeSpoolModule(BaseModule):
         self.spool = container.get("spool")
         if self.spool is None:
             raise RuntimeError("RandomizeSpoolModule requires the 'create_spool' module.")
+        self.nominal_radius = self.spool.pully_radius.clone()
+        self.nominal_armature = self.spool.slider_armature[0].clone()  # per tendon (the same in every env)
         if self.armature_range is None:
             return
 
@@ -94,7 +97,7 @@ class RandomizeSpoolModule(BaseModule):
         spool = self.spool
 
         if self.radius_range is not None:
-            low, high = self.radius_range
+            low, high = curriculum_range(*self.radius_range, self.curriculum_factor, nominal=self.nominal_radius)
             radius = low + (high - low) * torch.rand_like(spool.pully_radius)
             spool.pully_radius[reset_buf] = radius[reset_buf]
 
@@ -102,7 +105,7 @@ class RandomizeSpoolModule(BaseModule):
             buf = container.set_dof_armature_buf
             set_mask = torch.zeros(buf.shape[0], dtype=torch.bool, device=buf.device)
             set_mask[self.env_set_index[reset_buf]] = True
-            low, high = self.armature_range
+            low, high = curriculum_range(*self.armature_range, self.curriculum_factor, nominal=self.nominal_armature)
             samples = low + (high - low) * torch.rand((buf.shape[0], spool.dof_indices.numel()), device=buf.device)
             dofs = spool.dof_indices
             buf[:, dofs] = torch.where(set_mask.unsqueeze(1), samples, buf[:, dofs])

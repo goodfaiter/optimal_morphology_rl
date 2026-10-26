@@ -6,6 +6,14 @@ from typing import Any
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 
 
+def curriculum_range(low: Any, high: Any, factor: float, nominal: Any = None) -> tuple[Any, Any]:
+    """A randomization range ``[low, high]`` shrunk toward ``nominal`` (default: its midpoint) by the training
+    curriculum factor: just the nominal at 0, the full range at 1. Works on floats and tensors (per-element nominal)."""
+    if nominal is None:
+        nominal = (low + high) / 2
+    return nominal + factor * (low - nominal), nominal + factor * (high - nominal)
+
+
 class BaseModule(ABC):
     """Minimal lifecycle interface for a modular environment component.
 

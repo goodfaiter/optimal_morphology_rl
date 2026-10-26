@@ -17,7 +17,8 @@ class RandomizeM5Module(BaseModule):
 
     For the resetting envs the factor is drawn from ``U[1 - scale, 1 + scale]`` (``scale: 0.25`` = +-25 %) and
     multiplies tau_f_max (the M5 budget, the learned envelope, or the learned friction torque) until the env's
-    next reset.
+    next reset. The width follows the training curriculum (``scale * curriculum_factor``: 1 at 0, the full range
+    at 1).
 
     Config shape::
 
@@ -43,5 +44,5 @@ class RandomizeM5Module(BaseModule):
         if not reset_buf.any():
             return
         scale = self.m5.friction_scale
-        factor = 1.0 + self.scale * (2.0 * torch.rand_like(scale) - 1.0)
+        factor = 1.0 + self.scale * self.curriculum_factor * (2.0 * torch.rand_like(scale) - 1.0)
         scale[reset_buf] = factor[reset_buf]

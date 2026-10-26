@@ -6,6 +6,7 @@ from typing import Any
 
 import torch
 
+from optimal_morphology_rl.modules.base_module import curriculum_range
 from optimal_morphology_rl.modules.observations.observation_base_module import (
     ObservationBaseModule,
 )
@@ -40,6 +41,8 @@ class SpoolStateObservation(ObservationBaseModule):
       ``omega_m``, ``w_f += a * (w - w_f)`` with ``a = dt / (tau + dt)`` (``tau = 0``: no lag). The
       filter starts at the measured velocity on the first step after a reset.
     - ``velocity_offset_range`` (rad/s): bias added to the (filtered) ``omega_m``.
+
+    The training curriculum (``curriculum_factor``) shrinks every range toward 0 (no noise at factor 0).
 
     Config shape (under ``observation.modules``)::
 
@@ -92,8 +95,12 @@ class SpoolStateObservation(ObservationBaseModule):
             self.velocity_filtered = torch.zeros(shape, device=reset_buf.device)
             self.filter_restart = torch.ones(shape[0], dtype=torch.bool, device=reset_buf.device)
 
+        # The training curriculum shrinks every range toward no noise (0) at factor 0.
+        factor = env.module_manager.container.get("curriculum_factor")
+        factor = 1.0 if factor is None else float(factor)
+
         def draw(key):
-            low, high = self.ranges[key]
+            low, high = curriculum_range(*self.ranges[key], factor, nominal=0.0)
             return (low + (high - low) * torch.rand_like(self.angle_offset))[reset_buf]
 
         self.angle_offset[reset_buf] = draw("angle_offset_range")

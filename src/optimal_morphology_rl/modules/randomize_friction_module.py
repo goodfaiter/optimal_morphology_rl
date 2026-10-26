@@ -19,7 +19,8 @@ class RandomizeFrictionModule(BaseModule):
     On every reset the friction is randomized (multi-env runs without a
     configured coefficient) or taken from the ``friction_coefficient`` config
     (default ``None`` -> ``0.1``), then applied via
-    ``gym.set_rigid_material_properties``.
+    ``gym.set_rigid_material_properties``. The randomized range follows the training curriculum from 0.1 (at 0)
+    to [0.1, 1.0] (at 1).
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -65,7 +66,7 @@ class RandomizeFrictionModule(BaseModule):
 
         total_num_envs = reset_buf.shape[0]
         if total_num_envs != 1 and self.fric_coeff is None:
-            static_friction = torch.rand(1, device=device).item() * 0.9 + 0.1
+            static_friction = torch.rand(1, device=device).item() * 0.9 * self.curriculum_factor + 0.1
         else:
             static_friction = 0.1 if self.fric_coeff is None else self.fric_coeff
         dynamic_friction = static_friction * 0.75

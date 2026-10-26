@@ -6,7 +6,7 @@ from typing import Any
 
 import torch
 
-from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.base_module import BaseModule, curriculum_range
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
@@ -18,7 +18,8 @@ class RandomizeSliderVelocityModule(BaseModule):
     The real servo is voltage limited (PWM saturates at about 7.6 rad/s on the spool, lower under
     load), so its top speed varies. For the resetting envs ``max_slider_velocity`` (m/s at the
     spool rim) is resampled uniformly from ``max_slider_velocity_range``. Requires
-    'apply_m5_forces' with a configured ``max_slider_velocity``.
+    'apply_m5_forces' with a configured ``max_slider_velocity``. The range follows the training curriculum
+    from that configured value (at 0) to ``max_slider_velocity_range`` (at 1).
 
     Config shape::
 
@@ -43,6 +44,7 @@ class RandomizeSliderVelocityModule(BaseModule):
         self.m5 = manager.get("apply_m5_forces")
         if self.m5.max_slider_velocity is None:
             raise RuntimeError("RandomizeSliderVelocityModule requires 'apply_m5_forces' to set 'max_slider_velocity'.")
+        self.nominal = self.m5.max_slider_velocity.clone()
 
     def reset(self, container: ModuleContainer) -> None:
         """Resample the speed limit of the resetting envs."""
@@ -52,5 +54,6 @@ class RandomizeSliderVelocityModule(BaseModule):
         if not reset_buf.any():
             return
         values = self.m5.max_slider_velocity
-        samples = self.low + (self.high - self.low) * torch.rand_like(values)
+        low, high = curriculum_range(self.low, self.high, self.curriculum_factor, nominal=self.nominal)
+        samples = low + (high - low) * torch.rand_like(values)
         values[reset_buf] = samples[reset_buf]

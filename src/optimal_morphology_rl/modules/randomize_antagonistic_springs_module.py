@@ -17,7 +17,8 @@ class RandomizeAntagonisticSpringsModule(BaseModule):
 
     Each constant is resampled for the resetting envs as ``nominal * U[1 - scale, 1 + scale]``,
     independently per env and motor (``scale: 0.1`` = within 10 % of the configured
-    ``spring_constants``; motors without a spring stay at 0).
+    ``spring_constants``; motors without a spring stay at 0). The width follows the training curriculum
+    (``scale * curriculum_factor``: the nominal constants at 0, the full range at 1).
 
     Config shape::
 
@@ -46,5 +47,5 @@ class RandomizeAntagonisticSpringsModule(BaseModule):
         if not reset_buf.any():
             return
         values = self.spring.spring_constants_buf
-        factor = 1.0 + self.scale * (2.0 * torch.rand_like(values) - 1.0)
+        factor = 1.0 + self.scale * self.curriculum_factor * (2.0 * torch.rand_like(values) - 1.0)
         values[reset_buf] = (self.spring.spring_constants * factor)[reset_buf]
