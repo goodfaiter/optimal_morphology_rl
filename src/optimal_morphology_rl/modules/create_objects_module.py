@@ -108,6 +108,16 @@ class LoadedRigidObject(ObjectBase):
 
         object_def_handle = env_def.get_rigid_body_def_handle_by_name(self.name)
         self.handle = env_def.create_rigid_body(object_def_handle, object_root_trans_init, self.name)
+        body_def = env_def.get_rigid_body_def(object_def_handle)
+        # No velocity damping: vlearn gives an imported rigid body angular / linear damping 0.5 / 0.1 (1/s; the vsim
+        # cannot set them), which slows a free object (a spin decays as exp(-0.5 t)); a real one is only slowed by
+        # its contacts.
+        body_def.angular_damping = 0.0
+        body_def.linear_damping = 0.0
+        if body_def.inv_mass > 0.0:  # 0 = fixed / infinite mass
+            inertia = [1.0 / x if x > 0.0 else float("inf") for x in (body_def.diag_inv_inertia.x, body_def.diag_inv_inertia.y, body_def.diag_inv_inertia.z)]
+            print(f"Object '{self.name}': mass {1.0 / body_def.inv_mass * 1000:.2f} g, diag inertia {[f'{x:.3g}' for x in inertia]} kg m^2, "
+                  f"damping angular {body_def.angular_damping:g} / linear {body_def.linear_damping:g} 1/s")
 
         # The friction is average between two objects. Set this one to 0 and the
         # robot hand to desired * 2.
