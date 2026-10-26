@@ -29,11 +29,13 @@ class AntagonisticSpring(BaseModule):
     position for every motor on a revolute joint (motors on other joints,
     e.g. the prismatic tendon actuator sliders, get no spring force):
 
-    ``force = -spring_constants * joint_pos[motor_to_joint_dof_index]``
+    ``force = -(spring_constants * joint_pos[motor_to_joint_dof_index] + spring_preloads)``
 
-    ``spring_constants`` is a scalar, a list with one value per motor, or a list
+    ``spring_constants`` (Nm/rad) is a scalar, a list with one value per motor, or a list
     with one value per revolute motor in motor order (e.g. ``[0.1, 1.0, 1.0]``
-    for MCP, PIP, DIP; the other motors get 0).
+    for MCP, PIP, DIP; the other motors get 0). ``spring_preloads`` (Nm, optional, default 0, same
+    forms) is the torque of a pre-tensioned elastic: it holds the joint against its extension stop
+    (the lower limit, q = 0) until a larger torque flexes it, e.g. the thumb against gravity.
 
     The constants are kept per env in ``spring_constants_buf`` ``(num_envs,
     num_motors)``, all at ``spring_constants`` unless 'randomize_antagonistic_springs'
@@ -73,23 +75,30 @@ class AntagonisticSpring(BaseModule):
         self.revolute_motor_mask = robot.revolute_dof_mask[robot.motor_to_joint_dof_index]
         num_revolute = int(self.revolute_motor_mask.sum())
 
-        if isinstance(spring_constants, (list, tuple)) and len(spring_constants) == num_revolute != robot.num_motors:
-            # One value per revolute motor: scatter onto the revolute motor columns.
-            self.spring_constants = torch.zeros(robot.num_motors, device=device, dtype=torch.float32)
-            self.spring_constants[self.revolute_motor_mask] = torch.tensor(spring_constants, device=device, dtype=torch.float32)
-        else:
-            self.spring_constants = _build_motor_scale_tensor(spring_constants, robot.num_motors, device, "spring_constants")
+        def per_motor(value, name):
+            if isinstance(value, (list, tuple)) and len(value) == num_revolute != robot.num_motors:
+                # One value per revolute motor: scatter onto the revolute motor columns.
+                out = torch.zeros(robot.num_motors, device=device, dtype=torch.float32)
+                out[self.revolute_motor_mask] = torch.tensor(value, device=device, dtype=torch.float32)
+                return out
+            return _build_motor_scale_tensor(value, robot.num_motors, device, name)
+
+        self.spring_constants = per_motor(spring_constants, "spring_constants")
         self.spring_constants_buf = self.spring_constants.repeat(container.total_num_envs, 1)
+        self.spring_preloads = per_motor(self.config.get("spring_preloads", 0.0), "spring_preloads")
+        if torch.any(self.spring_preloads < 0.0):
+            raise RuntimeError("AntagonisticSpring config 'spring_preloads' entries must be non-negative.")
 
         container.antagonistic_spring_force_buf = torch.zeros(
             (container.total_num_envs, robot.num_motors), device=device, dtype=torch.float32
         )
         names = [robot.art_def.get_motor_def(i).name for i in range(robot.num_motors) if self.revolute_motor_mask[i]]
-        print(f"AntagonisticSpring: spring_constants = {self.spring_constants.cpu().numpy()}, revolute motors = {names}")
+        print(f"AntagonisticSpring: spring_constants = {self.spring_constants.cpu().numpy()}, "
+              f"spring_preloads = {self.spring_preloads.cpu().numpy()}, revolute motors = {names}")
 
     def step(self, container: ModuleContainer) -> None:
         """Compute the antagonistic spring force for each motor."""
         robot = container.robot
 
-        force = -self.spring_constants_buf * robot.get_joint_pos_buf[:, robot.motor_to_joint_dof_index]
+        force = -(self.spring_constants_buf * robot.get_joint_pos_buf[:, robot.motor_to_joint_dof_index] + self.spring_preloads)
         container.antagonistic_spring_force_buf[:] = force * self.revolute_motor_mask

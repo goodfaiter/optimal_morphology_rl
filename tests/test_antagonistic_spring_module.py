@@ -193,3 +193,21 @@ def test_post_finalize_fills_the_per_env_buffer_with_the_constants() -> None:
     assert torch.allclose(module.spring_constants_buf, torch.tensor([[0.1, 0.3]] * num_envs))
     assert torch.allclose(cont.antagonistic_spring_force_buf, torch.tensor([[-0.1, 0.6]] * num_envs))
 
+
+
+def test_preload_adds_a_constant_extending_torque(container: ModuleContainer) -> None:
+    module = AntagonisticSpring({"spring_constants": [0.1, 0.2], "spring_preloads": [0.01, 0.0]})
+    module.finalize(container)
+    module.post_finalize(container)
+    module.step(container)
+
+    # force = -(spring_constants * joint_pos + spring_preloads) = -([0.1, 0.2] * [1.0, -2.0] + [0.01, 0.0]).
+    assert container.antagonistic_spring_force_buf[0, 0].item() == pytest.approx(-0.11)
+    assert container.antagonistic_spring_force_buf[0, 1].item() == pytest.approx(0.4)
+
+
+def test_negative_preload_is_rejected(container: ModuleContainer) -> None:
+    module = AntagonisticSpring({"spring_constants": 0.1, "spring_preloads": -0.01})
+    module.finalize(container)
+    with pytest.raises(RuntimeError, match="spring_preloads"):
+        module.post_finalize(container)
