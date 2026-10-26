@@ -1,7 +1,11 @@
-"""Module that discovers object cameras and records frames."""
+"""Module that discovers object cameras and records frames (and videos)."""
 
 from __future__ import annotations
 
+import atexit
+import dataclasses
+import importlib.resources as resources
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -28,6 +32,9 @@ class CameraSpec:
     resolution_x: int
     resolution_y: int
     far_clip: float
+    # vlearn's RGB images are bottom-up (OpenGL rows): flip them when saving. The camera rig's cameras are posed
+    # upright and flipped; object cameras (e.g. table_with_camera) keep their own, compensated poses.
+    flip_vertical: bool = False
 
 
 @dataclass
@@ -64,7 +71,11 @@ class ObjectCameraRecorder:
         """Discover camera specs from the loaded objects mapping (container.objects)."""
         for obj in loaded_objects.values():
             if isinstance(obj, LoadedRigidObject):
-                self._build_spec(obj, env_def=env_def)
+                self._build_spec(obj.name, env_def=env_def)
+
+    def build_body_specs(self, body_name: str, env_def, flip_vertical: bool = False) -> None:
+        """Discover camera specs of a rigid body created by name (e.g. the camera rig)."""
+        self._build_spec(body_name, env_def=env_def, flip_vertical=flip_vertical)
 
     def build_cameras(
         self,
@@ -77,14 +88,15 @@ class ObjectCameraRecorder:
         for spec in self._specs:
             self._bindings.append(self._build_camera(spec, env_def, env_group, gym, device))
 
-    def _build_spec(self, loaded_object, env_def) -> None:
-        rigid_body_def = env_def.get_rigid_body_def_by_name(loaded_object.name)
+    def _build_spec(self, object_name: str, env_def, flip_vertical: bool = False) -> None:
+        rigid_body_def = env_def.get_rigid_body_def_by_name(object_name)
 
         num_camera_defs = rigid_body_def.get_num_rgb_camera_defs()
         num_camera_instances = rigid_body_def.get_num_rgb_cameras()
         for def_index in range(num_camera_defs):
             for instance_index in range(num_camera_instances):
-                self._specs.append(self._build_rgb_spec(rigid_body_def, loaded_object.name, def_index, instance_index))
+                spec = self._build_rgb_spec(rigid_body_def, object_name, def_index, instance_index)
+                self._specs.append(dataclasses.replace(spec, flip_vertical=flip_vertical))
 
     def _build_camera(
         self,
@@ -152,8 +164,9 @@ class ObjectCameraRecorder:
 
         filename = f"step_{frame_index:06d}.png"
         output_path = object_dir / filename
-        print(f"Saving camera image to {output_path}")
         image = binding.buffer[0].detach().cpu().numpy()
+        if spec.flip_vertical:
+            image = image[::-1]
         if image.shape[-1] == 4:
             pil_image = Image.fromarray(np.ascontiguousarray(image), mode="RGBA")
         else:
@@ -162,26 +175,65 @@ class ObjectCameraRecorder:
         return output_path
 
 
+def _camera_rig_path(name: str) -> str:
+    return str(resources.files("optimal_morphology_rl_assets.assets") / f"objects/{name}.vsim")
+
+
 @register_module("camera_recorder")
 class CameraRecorderModule(BaseModule):
-    """Wraps ObjectCameraRecorder and records frames for the configured number of steps."""
+    """Records PNG frames of the RGB cameras and turns each camera's frames into an MP4 (ffmpeg).
+
+    Cameras come from the loaded objects (e.g. ``table_with_camera``) and, with ``camera_rig``, from a fixed,
+    collision-free body this module loads at the env origin (``assets/objects/<camera_rig>.vsim``), so a task needs
+    no extra object. Frames of env 0 go to ``<output_dir>/<body>/<camera>/step_%06d.png`` every ``frame_stride``
+    control steps; after ``num_steps`` frames (or at exit) each camera's frames become ``<video_prefix><camera>.mp4``
+    in ``video_dir`` (default: next to the frames), at the real-time frame rate. In play mode the runner sets, when
+    not given, ``output_dir`` to ``<run>/videos/<checkpoint>_<time>`` and the videos to the run folder:
+    ``<run>/<checkpoint>_<time>_<camera>.mp4``.
+
+    Config::
+
+        camera_recorder:
+          enabled: ${eval:'mode == "play"'}   # e.g. only when playing a policy
+          camera_rig: camera_rig              # optional
+          frame_stride: 7                     # optional, default 1 (every control step); 7 = ~30 fps at 200 Hz
+          num_steps: 600                      # optional: frames to record, then write the videos
+          output_dir: ...                     # optional in play mode (frames)
+          video_dir: ...                      # optional, where the .mp4 files go
+          video_prefix: ...                   # optional, prepended to <camera>.mp4
+    """
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
+        self.enabled = bool(self.config.get("enabled", True))
         output_dir = self.config.get("output_dir")
         self.recorder: ObjectCameraRecorder | None = None
         self._num_steps: int | None = self.config.get("num_steps")
         self._frames_recorded = 0
-        if output_dir is not None:
+        self._step_count = 0
+        self._videos_written = False
+        self.rig_name: str | None = self.config.get("camera_rig")
+        self.video_dir: str | None = self.config.get("video_dir")
+        self.video_prefix = str(self.config.get("video_prefix", ""))
+        self.frame_stride = int(self.config.get("frame_stride", 1))
+        self.fps = 30.0  # set from the control step in post_finalize
+        if self.enabled and output_dir is not None:
             self.recorder = ObjectCameraRecorder(output_dir)
 
     def finalize(self, container: ModuleContainer) -> None:
-        """Build camera specs from the loaded objects."""
+        """Load the camera rig and build camera specs from the loaded objects."""
         if self.recorder is None:
             return
-        if container.get("objects") is None or container.get("env_def") is None:
-            raise RuntimeError("CameraRecorderModule requires 'objects' and 'env_def' in the shared container.")
-        self.recorder.build_specs(container.objects, container.env_def)
+        if container.get("env_def") is None:
+            raise RuntimeError("CameraRecorderModule requires 'env_def' in the shared container.")
+        if self.rig_name is not None:
+            env_def = container.env_def
+            env_def.import_definitions(_camera_rig_path(self.rig_name), fixed=True, use_visual_mesh=True)
+            handle = env_def.get_rigid_body_def_handle_by_name(self.rig_name)
+            env_def.create_rigid_body(handle, v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, 0)), self.rig_name)
+            self.recorder.build_body_specs(self.rig_name, env_def, flip_vertical=True)
+        if container.get("objects") is not None:
+            self.recorder.build_specs(container.objects, container.env_def)
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Create camera instances on the environment group."""
@@ -194,13 +246,39 @@ class CameraRecorderModule(BaseModule):
             container.device,
         )
         container.camera_recorder = self.recorder
+        dt = float(container.timestep) * float(container.frame_skip)
+        self.fps = 1.0 / (dt * self.frame_stride)
+        names = [f"{b.spec.object_name}/{b.spec.instance_name}" for b in self.recorder._bindings]
+        print(f"CameraRecorder: {names} -> {self.recorder.output_dir} every {self.frame_stride} steps ({self.fps:.1f} fps)")
+        atexit.register(self.write_videos)
 
     def step(self, container: ModuleContainer) -> None:
-        """Record a frame from each camera until the configured number of steps is reached."""
-        if self.recorder is None:
+        """Record a frame from each camera every frame_stride steps until num_steps frames are recorded."""
+        if self.recorder is None or self._videos_written:
             return
-        if self._num_steps is not None and self._frames_recorded >= self._num_steps:
+        self._step_count += 1
+        if (self._step_count - 1) % self.frame_stride:
             return
         self.recorder.update(container.gym)
         self.recorder.save(self._frames_recorded)
         self._frames_recorded += 1
+        if self._num_steps is not None and self._frames_recorded >= self._num_steps:
+            self.write_videos()
+
+    def write_videos(self) -> None:
+        """Encode each camera's PNG frames into <camera>.mp4 next to them (as rl_pipeline.create_videos)."""
+        if self.recorder is None or self._videos_written or self._frames_recorded == 0:
+            return
+        self._videos_written = True
+        for binding in self.recorder._bindings:
+            img_dir = self.recorder.output_dir / binding.spec.object_name / binding.spec.instance_name
+            mp4_dir = Path(self.video_dir) if self.video_dir else img_dir
+            mp4_dir.mkdir(parents=True, exist_ok=True)
+            mp4_path = mp4_dir / f"{self.video_prefix}{binding.spec.instance_name}.mp4"
+            cmd = ["ffmpeg", "-y", "-framerate", f"{self.fps:.4f}", "-i", str(img_dir / "step_%06d.png"),
+                   "-c:v", "libx264", "-pix_fmt", "yuv420p", str(mp4_path)]
+            result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0:
+                print(f"CameraRecorder: wrote {mp4_path} ({self._frames_recorded} frames)")
+            else:
+                print(f"CameraRecorder: ffmpeg failed for {mp4_path}: {result.stderr[-500:]}")

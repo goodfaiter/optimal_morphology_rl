@@ -4,6 +4,7 @@ os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
 import argparse
 import copy
+import time
 from pathlib import Path
 from typing import Any
 
@@ -341,6 +342,20 @@ def run_rl_games(
         "VLEARN",
         lambda config_name, num_actors, **kwargs: VlearnEnv(env_configurations.configurations, config_name, num_actors, **kwargs),
     )
+
+    recorder = env_config.get("camera_recorder")
+    if mode == "play" and recorder and recorder.get("enabled", True) and not recorder.get("output_dir"):
+        # Frames of a played checkpoint go to <run>/videos/<checkpoint>_<time>, the videos to the run folder.
+        stamp = time.strftime("%Y_%m_%d_%H_%M_%S")
+        if checkpoint:
+            ckpt = Path(checkpoint).resolve()
+            run_dir = ckpt.parent.parent if ckpt.parent.name == "nn" else ckpt.parent
+            recorder["output_dir"] = str(run_dir / "videos" / f"{ckpt.stem}_{stamp}")
+            # The videos themselves go to the run folder: <run>/<checkpoint>_<time>_<camera>.mp4.
+            recorder.setdefault("video_dir", str(run_dir))
+            recorder.setdefault("video_prefix", f"{ckpt.stem}_{stamp}_")
+        else:
+            recorder["output_dir"] = str(Path("runs/videos").resolve() / stamp)
 
     if mode == "train":
         run_args = {"train": True, "play": False, "profile": False}
