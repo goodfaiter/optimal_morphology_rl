@@ -183,10 +183,17 @@ def test_goal_visualization_module_defaults() -> None:
     assert module.axis_length == 0.025
 
 
-def test_color_articulation_links_module_defaults() -> None:
+def test_color_articulation_links_groups_links_by_digit() -> None:
+    from optimal_morphology_rl.modules.color_articulation_links_module import link_group
+
     module = ColorArticulationLinksModule({})
-    assert "palm" in module.colorer.color_map
-    assert "finger_0" in module.colorer.color_map
+    assert module.colorer.color_map is None  # colors are generated per link group
+    assert link_group("Index_MCP_jointbody") == link_group("Index_DP") == "index"
+    assert link_group("finger_0_link_1") == "finger_0" != link_group("finger_1_link_1")
+    colorer = module.colorer
+    assert colorer._color_for_link("Index_PP") == colorer._color_for_link("Index_DP") != colorer._color_for_link("Middle_PP")
+    assert colorer._color_for_link("Index_Abd") is None  # excluded (_abd)
+    assert colorer.next_color() not in (colorer._color_for_link("Index_PP"), colorer._color_for_link("Middle_PP"))
 
 
 def test_camera_recorder_module_stops_after_num_steps(tmp_path, monkeypatch) -> None:
