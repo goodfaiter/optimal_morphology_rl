@@ -50,7 +50,7 @@ class CreateRigidVsimEnvs(BaseModule):
             raise ValueError("num_envs must be a positive integer")
         self.total_num_envs = self.num_envs
 
-        self.num_envs_per_set = int(self.config.get("num_envs_per_set", self.num_envs))
+        self.num_envs_per_set = int(self.config.get("num_envs_per_set", 1))
         if self.num_envs_per_set <= 0:
             raise ValueError("num_envs_per_set must be a positive integer")
         num_full_sets, remainder = divmod(self.num_envs, self.num_envs_per_set)
@@ -83,11 +83,11 @@ class CreateRigidVsimEnvs(BaseModule):
         self.with_window = bool(self.config.get("with_window", False))
 
         # Misc.
-        self.spacing = float(self.config.get("spacing", 0.5))
+        self.spacing = float(self.config.get("spacing", 0.75))
         # vlearn's enhanced determinism mode. Note: it does not make the GPU solver bitwise
         # reproducible across runs for tendon-driven scenes; the seed is what makes every random
         # draw (randomization modules, goals, simulator seed) identical.
-        self.enhanced_determinism = bool(self.config.get("enhanced_determinism", False))
+        self.enhanced_determinism = bool(self.config.get("enhanced_determinism", True))
         self.print_hash = bool(self.config.get("print_hash", False))
 
         # Gravity / up axis.
@@ -103,9 +103,8 @@ class CreateRigidVsimEnvs(BaseModule):
         self.up_axis_rotation = v.shortest_rotation(self.up_axis, v.Vec3(0, 1, 0))
 
         # Contact limits.
-        self.max_contact_pairs_per_env = int(self.config.get("max_contact_pairs_per_env", 128))
-        max_contact_patches = self.config.get("max_contact_patches_per_env", -1)
-        self.max_contact_patches_per_env = self.max_contact_pairs_per_env if max_contact_patches == -1 else int(max_contact_patches)
+        self.max_contact_pairs_per_env = int(self.config.get("max_contact_pairs_per_env", 512))
+        self.max_contact_patches_per_env = int(self.config.get("max_contact_patches_per_env", 512))
         self.max_contact_points_per_patch = int(self.config.get("max_contact_points_per_patch", 4))
 
         self.gym = v.create_gym(
