@@ -426,3 +426,5 @@ imgui.ini
 build/
 .pytest_cache/
 .ruff_cache/
+# Local helper scripts (experiments, calibration, robot trials): not tracked
+scripts/
