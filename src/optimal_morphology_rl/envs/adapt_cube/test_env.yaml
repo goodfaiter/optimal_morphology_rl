@@ -26,16 +26,8 @@ modules:
 create_rigid_vsim_envs:
   num_envs: 1
   device: cuda:0
-  rendering: true
-  with_window: true
-  enable_scene_query: true
   timestep: ${1/200}
-  frame_skip: 1
-  spacing: 0.75
-  gravity: [0.0, 0.0, -9.81]
-  up_axis: [0.0, 0.0, 1.0]
-  max_contact_pairs_per_env: 64
-  max_contact_points_per_patch: 4
+  frame_skip: 1 # 200 Hz control, as the robot loop and the friction model
 
 # Full hand (urdf_to_vsim.py full): 12 servo tendons as on the robot, mcp + pip per finger and one per thumb joint
 # (CMC1, CMC2, MCP, IP); the finger dip tendons are fixed (PIP -> DIP coupling).
