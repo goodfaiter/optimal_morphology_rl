@@ -54,18 +54,17 @@ params:
     kl_threshold: 0.016
     score_to_win: 20000000
     max_epochs: 5000
-    early_stopping:
-      patience: 50
-      min_delta: 0.01 # if less than 1% improvement in the last 50 epochs, stop training
-      min_epochs: 30 # warm-up
+    # Each level advances when the mean reward plateaus; the last level's plateau stops training (early stopping:
+    # levels [1.0] is plain early stopping). Every level runs at least min_epochs + patience epochs.
     curriculum:
+      # Randomization width (every randomize_* module and the spool observation noise): none at 0, full at 1.
       levels: ${eval:'[0.0, 0.25, 0.5, 0.75, 1.0] if mode == "train" else [1.0]'}
-      patience: 20
+      patience: 25 # epochs without a 1 % improvement
       min_delta: 0.01
-      min_epochs: 20 # warm-up
+      min_epochs: 25 # warm-up of each level
     save_best_after: 50
     # Mean episode reward over the last 1000 episodes (~9 epochs at 1024 envs) instead of 100 (~1 epoch): ~3x less
-    # noise for the best checkpoint, early stopping and the curriculum, which react a few epochs later.
+    # noise for the best checkpoint and the curriculum (and its early stopping), which react a few epochs later.
     games_to_track: 1000 # at 4096 envs ~3 epochs of episodes
     save_frequency: 100
     print_stats: True

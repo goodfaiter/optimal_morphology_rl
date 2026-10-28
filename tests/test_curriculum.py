@@ -19,11 +19,22 @@ def _curriculum(**overrides):
 def test_curriculum_advances_on_each_plateau_and_stops_at_the_last_level() -> None:
     curriculum = _curriculum()
     assert curriculum.factor == 0.0 and not curriculum.finished
-    advanced = [epoch for epoch in range(1, 30) if curriculum.update(epoch, 10.0)]  # flat reward: plateaus
-    # Per level: 2 warm-up epochs not counted, best at the next one, + patience 3.
-    assert advanced == [5, 10]
+    events = []
+    for epoch in range(1, 30):
+        step = curriculum.update(epoch, 10.0)  # flat reward: plateaus
+        if step:
+            events.append((epoch, step))
+        if step == curriculum.STOP:
+            break
+    # Per level: 2 warm-up epochs not counted, best at the next one, + patience 3; the last level's plateau stops.
+    assert events == [(5, curriculum.NEXT_LEVEL), (10, curriculum.NEXT_LEVEL), (15, curriculum.STOP)]
     assert curriculum.factor == 1.0 and curriculum.finished
-    assert not curriculum.update(40, 10.0)  # the last level never advances (early stopping takes over)
+
+
+def test_single_level_curriculum_is_early_stopping() -> None:
+    curriculum = _curriculum(levels=[1.0])
+    steps = {epoch: curriculum.update(epoch, 10.0) for epoch in range(1, 10)}
+    assert steps[5] == curriculum.STOP and not any(steps[epoch] for epoch in range(1, 5))
 
 
 def test_curriculum_holds_while_the_reward_improves() -> None:
