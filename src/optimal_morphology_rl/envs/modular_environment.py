@@ -48,6 +48,13 @@ class ModularEnvironment:
         # Post-finalize allocates buffers (obs/rew/act) and builds GPU commands.
         self.module_manager.post_finalize()
 
+        # The training curriculum's first level (set by the runner from the ppo config), so the first episodes use
+        # it: rl_games hands the factor over only from its first epoch on, after the initial resets, and the modules'
+        # default 1.0 would fully randomize every env's first episode.
+        initial_factor = self.raw_config.get("_initial_curriculum_factor")
+        if initial_factor is not None:
+            self.module_manager.set_curriculum_factor(float(initial_factor))
+
         # Initial reset to populate observations.
         self.reset()
 

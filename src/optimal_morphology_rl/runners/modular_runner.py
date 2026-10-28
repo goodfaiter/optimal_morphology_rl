@@ -197,6 +197,16 @@ def sync_seed(env_config: dict[str, Any], ppo_config: dict[str, Any]) -> dict[st
     return env_config
 
 
+def sync_curriculum_start(env_config: dict[str, Any], ppo_config: dict[str, Any]) -> dict[str, Any]:
+    """Hand the curriculum's first level to the env (``_initial_curriculum_factor``), so its first episodes use it
+    rather than the modules' default 1.0 (rl_games sets the factor only from its first epoch on)."""
+    env_config = copy.deepcopy(env_config)
+    levels = (ppo_config.get("params", {}).get("config", {}).get("curriculum") or {}).get("levels")
+    if levels:
+        env_config["_initial_curriculum_factor"] = float(levels[0])
+    return env_config
+
+
 def adjust_minibatch_size(config_dict: dict, num_envs: int, horizon_len: int) -> None:
     mb_size = config_dict["minibatch_size"]
     batch_size = horizon_len * num_envs
@@ -451,6 +461,7 @@ def main() -> None:
     ppo_config = apply_ppo_overrides(ppo_config, args, args.task)
     env_config = sync_num_envs(env_config, ppo_config)
     env_config = sync_seed(env_config, ppo_config)
+    env_config = sync_curriculum_start(env_config, ppo_config)
 
     if args.mode == "step":
         run_step(env_config, args.steps)
