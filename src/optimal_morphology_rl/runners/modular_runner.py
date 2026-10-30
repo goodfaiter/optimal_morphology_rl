@@ -23,6 +23,9 @@ from optimal_morphology_rl.algos.colored_noise_agent import ColoredNoiseA2CAgent
 from optimal_morphology_rl.envs.modular_environment import ModularEnvironment
 from optimal_morphology_rl.utils.config import load_yaml_with_context
 
+# Built-in task folders (the --task-root default).
+DEFAULT_TASK_ROOT = Path(__file__).resolve().parent.parent / "envs"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a modular hand-object task from per-task env/ppo configs.")
@@ -30,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--task-root",
         type=Path,
-        default=Path(__file__).resolve().parent.parent / "envs",
+        default=DEFAULT_TASK_ROOT,
         help="Directory containing task folders",
     )
     parser.add_argument(
@@ -72,6 +75,11 @@ def parse_args() -> argparse.Namespace:
         "--wandb",
         action="store_true",
         help="Enable Weights & Biases logging",
+    )
+    parser.add_argument(
+        "--wandb-name",
+        default=None,
+        help="Weights & Biases run name (default: the --task-root experiment folder name)",
     )
     return parser.parse_args()
 
@@ -341,6 +349,7 @@ def run_rl_games(
     checkpoint: str | None,
     experiment_name: str | None = None,
     wandb: bool = False,
+    wandb_name: str | None = None,
 ) -> None:
     cfg = ppo_config["params"]["config"]
     env_name = cfg["env_name"]
@@ -398,6 +407,7 @@ def run_rl_games(
             raise RuntimeError("wandb is requested but not installed.") from exc
         wandb.init(
             project="optimal_morphology_rl",
+            name=wandb_name,
             sync_tensorboard=True,
             config={"env_config": env_config, "ppo_config": ppo_config, "mode": mode},
             monitor_gym=True,
@@ -484,6 +494,8 @@ def main() -> None:
             args.cp,
             experiment_name=args.experiment_name,
             wandb=args.wandb,
+            # The wandb run name: --wandb-name, else the experiment folder of a --task-root variant.
+            wandb_name=args.wandb_name or (args.task_root.resolve().name if args.task_root.resolve() != DEFAULT_TASK_ROOT else None),
         )
 
 
