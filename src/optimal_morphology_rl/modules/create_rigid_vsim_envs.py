@@ -30,6 +30,10 @@ class CreateRigidVsimEnvs(BaseModule):
     ``num_envs_per_set`` (default: ``num_envs``, i.e. one env set) splits the envs into env
     sets. Per-articulation-def properties such as joint friction are shared within an env set,
     so ``num_envs_per_set: 1`` lets them be randomized per env. The last set holds the remainder.
+
+    Solver: ``timestep`` (s, one physics step) and ``frame_skip`` (physics steps per control step; vlearn has no
+    separate substeps, so finer physics = smaller ``timestep`` with a larger ``frame_skip``), and ``solver_iterations``
+    (optional; vlearn's default, 8, when not set).
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -75,6 +79,7 @@ class CreateRigidVsimEnvs(BaseModule):
         # Simulation frequency / control frequency.
         self.timestep = float(self.config.get("timestep", 1.0 / 120.0))
         self.frame_skip = int(self.config.get("frame_skip", 2))
+        self.solver_iterations = int(self.config.get("solver_iterations", 8))
 
         # Rendering / window.
         self.rendering = bool(self.config.get("rendering", False))
@@ -107,6 +112,14 @@ class CreateRigidVsimEnvs(BaseModule):
         self.max_contact_patches_per_env = int(self.config.get("max_contact_patches_per_env", 512))
         self.max_contact_points_per_patch = int(self.config.get("max_contact_points_per_patch", 4))
 
+        # Optional vlearn checks (GymConfig), passed only when configured: check_overflow (contact / buffer
+        # overflow), check_memory, validate_kernels, validate_rigid_collisions, enable_all_validation.
+        self.validation = {
+            key: bool(self.config[key])
+            for key in ("check_overflow", "check_memory", "validate_kernels", "validate_rigid_collisions", "enable_all_validation")
+            if key in self.config
+        }
+
         self.gym = v.create_gym(
             self.rendering,
             self.enable_scene_query,
@@ -122,10 +135,12 @@ class CreateRigidVsimEnvs(BaseModule):
             seed=self.config.get("seed", None),
             enable_enhanced_determinism=self.enhanced_determinism,
             verbose=True,
+            **self.validation,
         )
 
         self.gym.set_timestep(self.timestep)
         self.gym.set_gravity(self.gravity)
+        self.gym.set_num_solver_iterations(self.solver_iterations)
 
     def finalize(self, container: ModuleContainer) -> None:
         """Create the environment definition and share state in the container."""
