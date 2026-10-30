@@ -168,6 +168,7 @@ class ApplyM5ForcesModule(BaseModule):
         self.debug = bool(self.config.get("debug", False))
         self.debug_env = int(self.config.get("debug_env", 0))
         self.debug_tendon = int(self.config.get("debug_tendon", 0))
+        self.last_signals: dict[str, torch.Tensor] | None = None  # the signals of the last step (see step)
 
     def _motor_torque(self, error):
         """Motor torque of a spool angle error (target - theta): current command, then torque past the deadband."""
@@ -187,10 +188,16 @@ class ApplyM5ForcesModule(BaseModule):
         return self.k_v * w_abs + coulomb + static
 
     def reset(self, container: ModuleContainer) -> None:
-        """Restart the friction model's input history of the resetting envs (rows env * num_tendons + tendon)."""
+        """The reset envs' torques in ``last_signals`` (read by observations) are the reset state's: no command and no
+        tension, so 0; the friction model's input history of the resetting envs restarts."""
+        reset_buf = container.reset_buf
+        if self.last_signals is not None and bool(reset_buf.any()):
+            # New tensors: 'tau_e' is the spool's own (create_spool makes new tensors every step).
+            for name in ("tau_m", "tau_f", "tau_f_max", "tau_e"):
+                self.last_signals[name] = torch.where(reset_buf.unsqueeze(-1), 0.0, self.last_signals[name])
         if self.friction_model is None:
             return
-        rows = container.reset_buf.unsqueeze(-1).expand(-1, self.num_tendons).reshape(-1)
+        rows = reset_buf.unsqueeze(-1).expand(-1, self.num_tendons).reshape(-1)
         # Before its first call the model has no per-row state yet (it allocates it fresh then).
         if self.friction_model.force_buffer.shape[0] == rows.numel() and bool(rows.any()):
             with torch.no_grad():
