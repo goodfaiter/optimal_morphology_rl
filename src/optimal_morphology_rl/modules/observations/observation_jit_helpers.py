@@ -29,27 +29,6 @@ def _quaternion_to_6d_jit(q: torch.Tensor) -> torch.Tensor:
 
 
 @torch.jit.script
-def _object_state_obs_jit(
-    object_pos_in_robot: torch.Tensor,
-    object_quat_in_robot: torch.Tensor,
-    object_lin_vel_in_robot: torch.Tensor,
-    object_ang_vel_in_robot: torch.Tensor,
-) -> torch.Tensor:
-    """Compute object-state observation in the robot frame."""
-    _6d_object_to_robot = _quaternion_to_6d_jit(object_quat_in_robot)
-
-    return torch.cat(
-        [
-            object_pos_in_robot,
-            _6d_object_to_robot,
-            object_lin_vel_in_robot,
-            object_ang_vel_in_robot,
-        ],
-        dim=-1,
-    )
-
-
-@torch.jit.script
 def _goal_state_obs_jit(
     quat_robot_to_world: torch.Tensor,
     robot_pos_in_world: torch.Tensor,
