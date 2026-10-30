@@ -9,3 +9,6 @@ from optimal_morphology_rl.envs.adapt_cube.rewards.cube_linear_velocity_penalty_
 from optimal_morphology_rl.envs.hand_cube.rewards.cube_orientation_reward import (
     CubeOrientationReward,
 )
+from optimal_morphology_rl.envs.adapt_cube.rewards.cube_rotation_reward import (
+    CubeRotationReward,
+)
