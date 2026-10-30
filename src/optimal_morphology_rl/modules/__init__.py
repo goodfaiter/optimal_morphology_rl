@@ -57,7 +57,7 @@ from optimal_morphology_rl.modules.randomize_link_inertia_module import Randomiz
 from optimal_morphology_rl.modules.randomize_antagonistic_springs_module import RandomizeAntagonisticSpringsModule
 from optimal_morphology_rl.modules.randomize_m5_module import RandomizeM5Module
 from optimal_morphology_rl.modules.randomize_object_module import RandomizeObjectModule
-from optimal_morphology_rl.modules.randomize_slider_velocity_module import RandomizeSliderVelocityModule
+from optimal_morphology_rl.modules.randomize_spool_velocity_module import RandomizeSpoolVelocityModule
 from optimal_morphology_rl.modules.randomize_spool_module import RandomizeSpoolModule
 from optimal_morphology_rl.modules.rewards import (
     REWARD_REGISTRY,
@@ -130,7 +130,7 @@ __all__ = [
     "RandomizeAntagonisticSpringsModule",
     "RandomizeM5Module",
     "RandomizeObjectModule",
-    "RandomizeSliderVelocityModule",
+    "RandomizeSpoolVelocityModule",
     "RandomizeSpoolModule",
     "RenderModule",
     "SpoolPlotModule",

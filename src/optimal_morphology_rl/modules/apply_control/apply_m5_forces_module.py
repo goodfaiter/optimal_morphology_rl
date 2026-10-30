@@ -58,11 +58,12 @@ class ApplyM5ForcesModule(BaseModule):
     The tendon pulls the slider with -T and the servo inertia is the slider's armature, so the
     simulator closes the loop  J_eff * domega_m = tau_m + tau_f + tau_e  with the spool's J_eff.
 
-    With 'max_slider_velocity' (m/s) the servo speed is limited (vlearn does not enforce the slider
+    With 'max_spool_velocity' (rad/s at the spool, the same for every spool radius; a scalar or one value per
+    model tendon) the servo speed is limited (vlearn does not enforce the slider
     joint's velocity limit): tau_m + tau_f is capped so that this loop keeps |omega_m| within
-    max_slider_velocity / r on the next step. The limit is per env and tendon
-    ``(num_envs, num_model_tendons)`` so it can be randomized ('randomize_slider_velocity'); the
-    configured value is kept in ``nominal_max_slider_velocity``.
+    max_spool_velocity on the next step. The limit is per env and tendon
+    ``(num_envs, num_model_tendons)`` so it can be randomized ('randomize_spool_velocity'); the
+    configured value is kept in ``nominal_max_spool_velocity``.
 
     With 'friction_model_path' set, a learned TorchScript model replaces the M5 constants:
     ``model(omega, theta_delta)`` with the spool speed (rad/s) and theta_delta = target - theta_m (rad), at
@@ -152,15 +153,14 @@ class ApplyM5ForcesModule(BaseModule):
             (container.total_num_envs, container.robot.num_motors), device=device, dtype=torch.float32
         )
 
-        max_v = self.config.get("max_slider_velocity")
-        self.nominal_max_slider_velocity = None if max_v is None else float(max_v)
-        self.max_slider_velocity = None
-        if self.nominal_max_slider_velocity is not None:
-            if self.nominal_max_slider_velocity <= 0.0:
-                raise RuntimeError("ApplyM5Forces config 'max_slider_velocity' must be positive (m/s).")
-            self.max_slider_velocity = torch.full(
-                (num_envs, num_tendons), self.nominal_max_slider_velocity, device=device, dtype=torch.float32
-            )
+        max_w = self.config.get("max_spool_velocity")
+        self.nominal_max_spool_velocity = None
+        self.max_spool_velocity = None
+        if max_w is not None:
+            self.nominal_max_spool_velocity = build_tendon_scale_tensor(max_w, num_tendons, device, "max_spool_velocity")
+            if torch.any(self.nominal_max_spool_velocity <= 0.0):
+                raise RuntimeError("ApplyM5Forces config 'max_spool_velocity' must be positive (rad/s).")
+            self.max_spool_velocity = self.nominal_max_spool_velocity.expand(num_envs, num_tendons).clone()
 
         self.friction = bool(self.config.get("friction", True))
 
@@ -228,9 +228,9 @@ class ApplyM5ForcesModule(BaseModule):
 
         tau = tau_m + tau_f
         # tau = tau_m
-        if self.max_slider_velocity is not None:
+        if self.max_spool_velocity is not None:
             # Keep J_eff * (omega_next - omega_m) / dt = tau + tau_e within |omega_next| <= w_max.
-            w_max = self.max_slider_velocity / spool.pully_radius
+            w_max = self.max_spool_velocity
             inertia_dt = spool.j_eff / self.dt
             tau = torch.minimum(torch.maximum(tau, inertia_dt * (-w_max - omega_m) - tau_e), inertia_dt * (w_max - omega_m) - tau_e)
         force = tau / spool.pully_radius
