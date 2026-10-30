@@ -212,9 +212,13 @@ class LoadedArticulatedObject(ObjectBase):
 
 class Cube(LoadedRigidObject):
     def __init__(self, config: dict[str, Any] | None = None):
-        super().__init__(name="cube", asset_path=_object_asset_path("cube_mid"), config=config)
+        # 'asset': the cube's vsim in assets/objects (cube_mid: 5 cm; cube_40 / cube_60: 4 / 6 cm, same density).
+        asset = (config or {}).get("asset", "cube_mid")
+        super().__init__(name="cube", asset_path=_object_asset_path(asset), config=config)
         self.init_position = self.config.get("init_position", [-0.05, -0.15, 0.15])
         self.init_orientation = self.config.get("init_orientation", [0.7071068, -0.7071068, 0.0, 0.0])
+        # Angular velocity (rad/s, env frame) on every reset, e.g. [0, 0, 0.1] to check a rotation reward.
+        self.init_angular_velocity = self.config.get("init_angular_velocity", [0.0, 0.0, 0.0])
 
     def _sample_random_positions(self, n: int, device: torch.device) -> torch.Tensor:
         """Sample n random positions in the workspace above the table."""
@@ -257,6 +261,7 @@ class Cube(LoadedRigidObject):
         self._apply_orientation(self.set_trans_object_to_world_buf[:, :4], reset_buf, self.init_orientation)
         self._apply_position(self.set_trans_object_to_world_buf[:, 4:], reset_buf, self.init_position)
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
+        self.set_vel_in_world_buf[reset_buf, :3] = torch.tensor(self.init_angular_velocity, device=reset_buf.device, dtype=torch.float32)
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
 
 
