@@ -225,6 +225,10 @@ class ModularEnvironment:
         self.module_manager.post_physics_step()
         container = self.module_manager.container
         term, trunc = container.episode_end_term, container.episode_end_trunc
+        # The training curriculum factor, logged with the reward components (status line, reward_components/ in
+        # TensorBoard / wandb).
+        factor = container.get("curriculum_factor")
+        self.info.setdefault("rewards", {})["curriculum_factor"] = 1.0 if factor is None else float(factor)
 
         return (
             self._observations(),
