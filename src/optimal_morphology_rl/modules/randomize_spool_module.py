@@ -43,19 +43,29 @@ class RandomizeSpoolModule(BaseModule):
     range is required. Both ranges follow the training curriculum from the spool's configured values (at 0) to
     the full range (at 1).
 
+    ``pully_radius_scale_range`` / ``armature_scale_range`` instead give factors on each tendon's configured radius /
+    the vsim armature (for spools of different radii).
+
     Config shape::
 
         randomize_spool:
           pully_radius_range: [0.0045, 0.0055]
           armature_range: [38.4, 57.6]
+          # or: pully_radius_scale_range: [0.8, 1.2], armature_scale_range: [0.8, 1.2]
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
         self.radius_range = _optional_range(self.config, "pully_radius_range")
         self.armature_range = _optional_range(self.config, "armature_range")
-        if self.radius_range is None and self.armature_range is None:
-            raise RuntimeError("RandomizeSpoolModule needs 'pully_radius_range' and/or 'armature_range'.")
+        self.radius_scale = _optional_range(self.config, "pully_radius_scale_range")
+        self.armature_scale = _optional_range(self.config, "armature_scale_range")
+        if self.radius_range is not None and self.radius_scale is not None:
+            raise RuntimeError("RandomizeSpoolModule: give 'pully_radius_range' or 'pully_radius_scale_range', not both.")
+        if self.armature_range is not None and self.armature_scale is not None:
+            raise RuntimeError("RandomizeSpoolModule: give 'armature_range' or 'armature_scale_range', not both.")
+        if all(r is None for r in (self.radius_range, self.armature_range, self.radius_scale, self.armature_scale)):
+            raise RuntimeError("RandomizeSpoolModule needs 'pully_radius_range' and/or 'armature_range' (or their _scale_range).")
         self.spool = None
 
     def _setup(self, container: ModuleContainer) -> None:
@@ -65,7 +75,7 @@ class RandomizeSpoolModule(BaseModule):
             raise RuntimeError("RandomizeSpoolModule requires the 'create_spool' module.")
         self.nominal_radius = self.spool.pully_radius.clone()
         self.nominal_armature = self.spool.slider_armature[0].clone()  # per tendon (the same in every env)
-        if self.armature_range is None:
+        if self.armature_range is None and self.armature_scale is None:
             return
 
         robot = container.robot
@@ -87,6 +97,13 @@ class RandomizeSpoolModule(BaseModule):
         )
         container.gpu_set_dof_armature_cmd = container.gym.create_gpu_array([command])
 
+    def _bounds(self, absolute, scale, nominal):
+        """Sampling bounds: an absolute range, or factors on the per-tendon nominal; shrunk toward it by the curriculum."""
+        if absolute is not None:
+            return curriculum_range(*absolute, self.curriculum_factor, nominal=nominal)
+        low, high = curriculum_range(*scale, self.curriculum_factor, nominal=1.0)
+        return low * nominal, high * nominal
+
     def reset(self, container: ModuleContainer) -> None:
         """Resample the spool parameters of the resetting envs and update the servo inertia."""
         if self.spool is None:
@@ -96,16 +113,16 @@ class RandomizeSpoolModule(BaseModule):
             return
         spool = self.spool
 
-        if self.radius_range is not None:
-            low, high = curriculum_range(*self.radius_range, self.curriculum_factor, nominal=self.nominal_radius)
+        if self.radius_range is not None or self.radius_scale is not None:
+            low, high = self._bounds(self.radius_range, self.radius_scale, self.nominal_radius)
             radius = low + (high - low) * torch.rand_like(spool.pully_radius)
             spool.pully_radius[reset_buf] = radius[reset_buf]
 
-        if self.armature_range is not None:
+        if self.armature_range is not None or self.armature_scale is not None:
             buf = container.set_dof_armature_buf
             set_mask = torch.zeros(buf.shape[0], dtype=torch.bool, device=buf.device)
             set_mask[self.env_set_index[reset_buf]] = True
-            low, high = curriculum_range(*self.armature_range, self.curriculum_factor, nominal=self.nominal_armature)
+            low, high = self._bounds(self.armature_range, self.armature_scale, self.nominal_armature)
             samples = low + (high - low) * torch.rand((buf.shape[0], spool.dof_indices.numel()), device=buf.device)
             dofs = spool.dof_indices
             buf[:, dofs] = torch.where(set_mask.unsqueeze(1), samples, buf[:, dofs])

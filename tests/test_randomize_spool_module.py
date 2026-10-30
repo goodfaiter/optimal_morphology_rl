@@ -158,3 +158,12 @@ def test_missing_spool_raises(make) -> None:
     container.spool = None
     with pytest.raises(RuntimeError, match="create_spool"):
         module.reset(container)
+
+
+def test_scale_ranges_are_relative_to_each_tendons_nominal(make) -> None:
+    module, container, spool = make({"pully_radius_scale_range": [0.8, 1.2], "armature_scale_range": [0.9, 1.1]})
+    spool.pully_radius[:, 1] = 0.0025  # a smaller spool on tendon 1
+    module.reset(container)
+    assert torch.all((spool.pully_radius[:, 0] >= 0.004) & (spool.pully_radius[:, 0] <= 0.006))
+    assert torch.all((spool.pully_radius[:, 1] >= 0.002) & (spool.pully_radius[:, 1] <= 0.003))
+    assert torch.all((spool.slider_armature >= 0.9 * 43.6) & (spool.slider_armature <= 1.1 * 43.6))
