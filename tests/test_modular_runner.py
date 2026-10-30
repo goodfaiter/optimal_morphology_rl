@@ -202,7 +202,7 @@ def test_camera_recorder_module_stops_after_num_steps(tmp_path, monkeypatch) -> 
 
     calls = []
     monkeypatch.setattr(module.recorder, "update", lambda gym: calls.append("update"))
-    monkeypatch.setattr(module.recorder, "save", lambda frame_index: calls.append(frame_index))
+    monkeypatch.setattr(module.recorder, "save", lambda frame_index, axes=None: calls.append(frame_index))
 
     container = ModuleContainer()
     container.gym = object()  # recorder.update is mocked, but step() reads container.gym
