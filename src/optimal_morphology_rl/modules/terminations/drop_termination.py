@@ -17,7 +17,13 @@ from optimal_morphology_rl.modules.terminations.termination_base_module import (
 
 @register_termination("drop_termination")
 class DropTermination(TerminationBaseModule):
-    """Terminates episodes when the object falls below a z threshold."""
+    """Terminates episodes when the object falls below a z threshold.
+
+    Logs ``drop_rate``: the share of the last games_to_track ended episodes that ended with a drop (see
+    TerminationBaseModule.rate_name).
+    """
+
+    rate_name = "drop_rate"
 
     def compute(self, env: Any) -> None:
         container = env.module_manager.container
@@ -36,4 +42,4 @@ class DropTermination(TerminationBaseModule):
 
         if reward_scale != 0.0:
             env.rew_buf[:] += reward_scale * drop.float()
-            env.info["rewards"]["drop_penalty"] = -drop.float().sum().item() / env.total_num_envs
+        self.triggered = drop

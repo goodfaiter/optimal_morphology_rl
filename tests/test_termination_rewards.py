@@ -63,6 +63,7 @@ def drop_setup() -> tuple[_FakeEnv, DropTermination]:
 
     env = _FakeEnv(container)
     module = DropTermination({"threshold": -0.1, "reward_scale": -20.0})
+    module.post_finalize(container)
     return env, module
 
 
@@ -73,13 +74,33 @@ def test_drop_termination_sets_term_buf(drop_setup) -> None:
     assert env.term_buf.tolist() == [False, True, False, True]
 
 
+def _compute_and_log_rate(env, module) -> None:
+    """compute(), then log the end rate as the termination manager does after every termination ran."""
+    module.compute(env)
+    module.log_end_rate(env, torch.logical_or(env.term_buf, env.trunc_buf))
+
+
 def test_drop_termination_adds_negative_reward(drop_setup) -> None:
     env, module = drop_setup
-    module.compute(env)
+    _compute_and_log_rate(env, module)
 
     expected = torch.tensor([0.0, -20.0, 0.0, -20.0], dtype=torch.float32)
     assert torch.allclose(env.rew_buf, expected)
-    assert env.info["rewards"]["drop_penalty"] == pytest.approx(-0.5)
+    assert env.info["rewards"]["drop_rate"] == pytest.approx(1.0)  # both episodes that ended were drops
+
+
+def test_drop_rate_counts_other_episode_ends(drop_setup) -> None:
+    env, module = drop_setup
+    env.trunc_buf[0] = True  # e.g. a timeout flagged by another termination module
+    env.trunc_buf[2] = True
+    _compute_and_log_rate(env, module)
+    assert env.info["rewards"]["drop_rate"] == pytest.approx(0.5)  # 2 drops of 4 episode ends
+    env.term_buf[:] = False
+    env.trunc_buf[:] = False
+    env.trunc_buf[1] = True
+    env.module_manager.container.kinematic_sensors["cube"].pos_in_world[:, 2] = 0.0  # no drops this step
+    _compute_and_log_rate(env, module)
+    assert env.info["rewards"]["drop_rate"] == pytest.approx(0.4)  # window: 2 drops of 5 ends
 
 
 def test_drop_termination_zero_scale_disables_reward() -> None:
@@ -98,6 +119,7 @@ def test_drop_termination_zero_scale_disables_reward() -> None:
     }
     env = _FakeEnv(container)
     module = DropTermination({"threshold": -0.1, "reward_scale": 0.0})
+    module.post_finalize(container)
 
     module.compute(env)
 
@@ -283,3 +305,13 @@ def test_cube_success_reports_goal_success_rate() -> None:
     assert "goal_success_rate" in env.info["rewards"]
     # Both envs succeeded and ended, so rate is 1.0.
     assert env.info["rewards"]["goal_success_rate"] == pytest.approx(1.0)
+
+
+def test_end_rate_averages_the_last_games_to_track_episodes(drop_setup) -> None:
+    env, module = drop_setup
+    module.compute(env)  # envs 1 and 3 drop
+    module.log_end_rate(env, torch.logical_or(env.term_buf, env.trunc_buf), num_episodes=3)
+    assert env.info["rewards"]["drop_rate"] == pytest.approx(1.0)  # 2 drops of 2 ends
+    module.triggered = torch.zeros(4, dtype=torch.bool)
+    module.log_end_rate(env, torch.tensor([True, True, False, False]), num_episodes=3)
+    assert env.info["rewards"]["drop_rate"] == pytest.approx(1.0 / 3.0)  # last 3 episodes: drop, ok, ok

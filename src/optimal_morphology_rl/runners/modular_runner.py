@@ -207,6 +207,16 @@ def sync_curriculum_start(env_config: dict[str, Any], ppo_config: dict[str, Any]
     return env_config
 
 
+def sync_games_to_track(env_config: dict[str, Any], ppo_config: dict[str, Any]) -> dict[str, Any]:
+    """Hand the agent's ``games_to_track`` to the termination manager (``termination._games_to_track``), so the
+    termination end rates (drop_rate, away_rate) average over as many ended episodes as the mean reward."""
+    env_config = copy.deepcopy(env_config)
+    games = ppo_config.get("params", {}).get("config", {}).get("games_to_track")
+    if games is not None and "termination" in env_config:
+        env_config["termination"]["_games_to_track"] = int(games)
+    return env_config
+
+
 def adjust_minibatch_size(config_dict: dict, num_envs: int, horizon_len: int) -> None:
     mb_size = config_dict["minibatch_size"]
     batch_size = horizon_len * num_envs
@@ -461,6 +471,7 @@ def main() -> None:
     ppo_config = apply_ppo_overrides(ppo_config, args, args.task)
     env_config = sync_num_envs(env_config, ppo_config)
     env_config = sync_seed(env_config, ppo_config)
+    env_config = sync_games_to_track(env_config, ppo_config)
     env_config = sync_curriculum_start(env_config, ppo_config)
 
     if args.mode == "step":

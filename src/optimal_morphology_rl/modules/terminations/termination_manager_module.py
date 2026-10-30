@@ -35,11 +35,13 @@ class TerminationManagerModule(BaseModule):
           bounds_termination: {}
 
     Termination sub-module names are discovered from the top-level keys of the
-    ``termination`` block (order is preserved from the YAML).
+    ``termination`` block (order is preserved from the YAML). ``_games_to_track`` (set by the runner from the
+    ppo config) is the number of ended episodes the end rates (e.g. ``drop_rate``) are averaged over.
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
+        self.end_rate_episodes = int(self.config.get("_games_to_track", 100))
         self.sub_manager = self._build_sub_manager()
         self._termination_modules: list[TerminationBaseModule] = [m for m in self.sub_manager if isinstance(m, TerminationBaseModule)]
 
@@ -83,7 +85,8 @@ class TerminationManagerModule(BaseModule):
 
         for module in self._termination_modules:
             module.compute(env)
-        if container.get("render_reset_trigger"):
+        forced = bool(container.get("render_reset_trigger"))
+        if forced:
             # The render menu's "Reset": end every episode now (as a truncation, restarted by reset_envs in this
             # step); 'progress' staggers the restarted episodes' lengths.
             env.trunc_buf[:] = True
@@ -91,6 +94,9 @@ class TerminationManagerModule(BaseModule):
 
         container.reset_buf[:] = torch.logical_or(env.term_buf, env.trunc_buf)
         container.inverse_reset_buf[:] = ~container.reset_buf
+        if not forced:  # a manual reset is not an episode outcome (drop_rate, away_rate, ...)
+            for module in self._termination_modules:
+                module.log_end_rate(env, container.reset_buf, self.end_rate_episodes)
         # Time-limit truncations, read by rl_games to bootstrap the value of cut-off episodes (value_bootstrap).
         # Cloned: trunc_buf is cleared in place by the reset in the same ModularEnvironment.step.
         env.info["time_outs"] = env.trunc_buf.clone()
