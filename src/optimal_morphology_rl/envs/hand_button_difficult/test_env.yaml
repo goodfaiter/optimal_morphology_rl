@@ -34,9 +34,10 @@ modules:
     - update_force_sensors
     - update_contacts
     - goal_pose
-    - observation
     - reward
     - termination
+    - reset_envs
+    - observation
     - goal_visualization
 
 create_rigid_vsim_envs:

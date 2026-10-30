@@ -91,5 +91,5 @@ class RenderModule(BaseModule):
         if self.reset_checkbox is not None and self.reset_checkbox.get_value():
             self.reset_checkbox.set_value(False)
             # The termination manager truncates every env on this step, so the reset follows the
-            # normal episode-end path (and rl_games sees the episodes end).
-            container.force_reset = True
+            # normal episode-end path (reset_envs, and rl_games sees the episodes end).
+            container.render_reset_trigger = True

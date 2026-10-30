@@ -173,3 +173,9 @@ class UpdateRobotModule(BaseModule):
             return
         _refresh_buffers(robot, container.gym)
         container.robot_state = _get_state(container)
+
+    def reset(self, container: ModuleContainer) -> None:
+        """Read the reset state (written by the modules listed before, e.g. create_robot): link transforms and tendons
+        follow the joint state only after forward kinematics."""
+        container.gym.compute_kinematics()
+        self.step(container)

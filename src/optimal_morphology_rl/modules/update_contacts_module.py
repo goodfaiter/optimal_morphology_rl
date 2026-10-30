@@ -101,6 +101,10 @@ def _update_contacts_jit(
 class UpdateContactsModule(BaseModule):
     """Queries rigid contacts and computes object-hand contact metrics."""
 
+    def reset(self, container: ModuleContainer) -> None:
+        """Query the contacts again for the reset envs' first observation (no physics step since the reset)."""
+        self.step(container)
+
     def step(self, container: ModuleContainer) -> None:
         """Refresh contact metrics using buffers owned by ``create_contacts``."""
         contacts = container.get("contacts")

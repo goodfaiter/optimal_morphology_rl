@@ -19,9 +19,10 @@ modules:
   post_gym_step_modules: []
   post_physics_step_modules:
     - update_robot
-    - observation
     - reward
     - termination
+    - reset_envs
+    - observation
 
 create_rigid_vsim_envs:
   num_envs: 1

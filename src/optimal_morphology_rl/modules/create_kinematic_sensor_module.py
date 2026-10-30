@@ -23,6 +23,7 @@ class KinematicSensor:
     def __init__(self):
         self.kinematic_sensor_handle: Any = None
         self.name: str = ""
+        self.rigid_object: Any = None  # the loaded object of a rigid-body sensor (its angular velocity, see update)
         self.pose_in_world_buf: torch.Tensor | None = None
         self.velocity_in_world_buf: torch.Tensor | None = None
         self.pose_in_object_buf: torch.Tensor | None = None
@@ -84,9 +85,27 @@ class KinematicSensor:
         )
         self.get_kinematic_sensor_cmd_arr = gym.create_gpu_array([in_world_cmd, in_object_cmd])
 
-    def update(self, gym: v.Gym) -> None:
-        """Read the latest kinematic sensor data into the dense buffers."""
+    def update(self, gym: v.Gym, reset_rows: torch.Tensor | None = None) -> None:
+        """Read the latest kinematic sensor data into the dense buffers.
+
+        ``reset_rows``: envs reset since the last physics step. vlearn's forward kinematics after a reset updates the
+        sensor transforms but not the velocities (they keep the previous episode's), so their velocity is the reset
+        state's: the object's (reset) velocity, zero for articulation links (the reset joint velocities are zero).
+        """
         gym.get_kinematic_sensor_states(self.get_kinematic_sensor_cmd_arr)
+        obj = self.rigid_object
+        if obj is not None and obj.get_vel_in_world_buf is not None:
+            # vlearn reports the angular velocity of a rigid-body kinematic sensor scaled by sqrt(inertia) (sqrt(I) * w,
+            # also in its demo 307 setup; the linear velocity is right but stale after a reset): take the velocity from
+            # the object's own kinematic state, read by 'update_objects' (listed before 'update_kinematic_sensor').
+            quat = self.pose_in_world_buf[:, :4]
+            self.velocity_in_world_buf[:, :3] = obj.angular_velocity_world
+            self.velocity_in_world_buf[:, 3:6] = obj.linear_velocity_world
+            self.velocity_in_object_buf[:, :3] = quat_rotate_inverse(quat, obj.angular_velocity_world)
+            self.velocity_in_object_buf[:, 3:6] = quat_rotate_inverse(quat, obj.linear_velocity_world)
+        elif reset_rows is not None:
+            self.velocity_in_world_buf[reset_rows] = 0.0
+            self.velocity_in_object_buf[reset_rows] = 0.0
 
     def update_robot_frame(self, robot_state: dict[str, torch.Tensor]) -> None:
         """Express object pose and velocity in the robot base frame.
@@ -194,6 +213,7 @@ class CreateKinematicSensorModule(BaseModule):
                 device,
             )
             sensor.name = reward_object.name
+            sensor.rigid_object = reward_object
             self.sensors[reward_object.name] = sensor
 
         # 2) Every articulation kinematic sensor definition (from the .vsim).

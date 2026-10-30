@@ -1,4 +1,4 @@
-"""Tests for the render menu's "Reset" checkbox and the forced reset in the termination manager."""
+"""Tests for the render menu's "Reset" checkbox and its trigger (render_reset_trigger) in the termination manager."""
 
 from types import SimpleNamespace
 
@@ -54,11 +54,11 @@ def test_reset_checkbox_requests_a_reset_once(monkeypatch) -> None:
     assert [item.name for item in gym_render.items] == ["Reset"]
 
     module.step(container)
-    assert not container.get("force_reset")
+    assert not container.get("render_reset_trigger")
 
     module.reset_checkbox.value = True
     module.step(container)
-    assert container.force_reset is True
+    assert container.render_reset_trigger is True
     assert module.reset_checkbox.value is False  # acts as a push button
 
 
@@ -67,7 +67,7 @@ def test_reset_button_can_be_disabled(monkeypatch) -> None:
     assert gym_render.items == [] and module.reset_checkbox is None
 
 
-def test_termination_manager_truncates_every_env_on_a_forced_reset() -> None:
+def test_termination_manager_truncates_every_env_on_a_render_reset() -> None:
     container = ModuleContainer()
     container.total_num_envs, container.device = 3, torch.device("cpu")
     module = TerminationManagerModule({})
@@ -78,16 +78,16 @@ def test_termination_manager_truncates_every_env_on_a_forced_reset() -> None:
     module.step(container)
     assert not container.reset_buf.any()
 
-    container.force_reset = True
+    container.render_reset_trigger = True
     module.step(container)
     assert container.reset_buf.all() and env.trunc_buf.all()
-    assert container.force_reset is False
+    assert container.render_reset_trigger is False
 
     module.step(container)  # the request is consumed
     assert not container.reset_buf.any()
 
 
-def test_forced_reset_restarts_the_episode_timer_of_a_single_env() -> None:
+def test_render_reset_restarts_the_episode_timer_of_a_single_env() -> None:
     # Play and interactive mode run one env: its timer restarts from 0 on the Reset button.
     container = ModuleContainer()
     container.total_num_envs, container.device = 1, torch.device("cpu")
@@ -99,7 +99,7 @@ def test_forced_reset_restarts_the_episode_timer_of_a_single_env() -> None:
 
     for _ in range(4):
         module.step(container)
-    container.force_reset = True
+    container.render_reset_trigger = True
     module.step(container)  # the step on which Reset was pressed
     assert container.reset_buf.all()
     module.reset(container)  # the reset that follows

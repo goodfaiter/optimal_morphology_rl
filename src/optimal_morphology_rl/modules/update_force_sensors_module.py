@@ -17,3 +17,7 @@ class UpdateForceSensorsModule(BaseModule):
         if force_sensors is None:
             return
         force_sensors.update(container.gym)
+
+    def reset(self, container: ModuleContainer) -> None:
+        """Read the sensors again for the reset envs' first observation (no physics step since the reset)."""
+        self.step(container)

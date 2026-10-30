@@ -81,3 +81,8 @@ class UpdateObjectsModule(BaseModule):
             return
         for obj in objects.values():
             obj.refresh_buffers(container.gym)
+
+    def reset(self, container: ModuleContainer) -> None:
+        """Read the reset object states (written by create_objects)."""
+        container.gym.compute_kinematics()
+        self.step(container)

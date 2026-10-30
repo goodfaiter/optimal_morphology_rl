@@ -41,6 +41,7 @@ class ModularEnvironment:
         self._info: dict[str, Any] = {"extras": {}, "rewards": {}}
 
         # Build modules and run lifecycle hooks.
+        self._check_post_physics_order(self.raw_config)
         self.module_manager = ModuleManager.from_config(self.raw_config, registry=registry)
         self.module_manager.container.env = self
         self.module_manager.finalize()
@@ -194,7 +195,13 @@ class ModularEnvironment:
     # RL interface
     # ------------------------------------------------------------------
     def step(self, actions: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, Any]]:
-        """Step the physics and return obs, reward, term, trunc, info."""
+        """Step the physics and return obs, reward, term, trunc, info.
+
+        Episodes that end in this step restart in it (gym's autoreset, as IsaacLab): the reward and the term / trunc
+        flags are those of the state the physics reached, the observation is the new episode's first one. rl_games
+        does not bootstrap from the observation returned with done (its GAE masks V(obs[t+1]) with dones[t+1]), so
+        the terminal transition carries the termination reward and nothing crosses into the next episode.
+        """
         self.module_manager.container.actions[:] = actions
 
         self.module_manager.pre_physics_step()
@@ -203,6 +210,9 @@ class ModularEnvironment:
             self.module_manager.pre_gym_step()
             self.gym.step()
             self.module_manager.post_gym_step()
+        # Kinematic sensor states are only up to date after forward kinematics (vlearn: call compute_kinematics()
+        # after Gym.step()); without it the cube sensor's linear velocity read ~0.76x the object's. Costs ~nothing.
+        self.gym.compute_kinematics()
 
         # Block the renderer from advancing once the frame-skip block is done;
         # this mirrors EnvironmentGpu.step and keeps rendering on the control
@@ -210,32 +220,45 @@ class ModularEnvironment:
         if self.rendering and self.gym_render is not None:
             self.gym_render.set_step(False)
 
-        # Reset loop: envs that terminated/truncated in the previous step are reset.
-        if self.reset_buf.any():
-            self.module_manager.reset()
-            # Joint states read fresh after the reset, but link transforms (kinematic sensors,
-            # e.g. the fingertip) only update with forward kinematics, as in reset().
-            self.gym.compute_kinematics()
-
-        # Refresh state and compute observations/rewards/terminations.
+        # Rewards and terminations of the state the physics reached, the restart of the ended episodes (reset_envs)
+        # and the observations (the new episodes' first for the restarted envs).
         self.module_manager.post_physics_step()
+        container = self.module_manager.container
+        term, trunc = container.episode_end_term, container.episode_end_trunc
 
         return (
             self._observations(),
             self.rew_buf.clone(),
-            self.term_buf.clone(),
-            self.trunc_buf.clone(),
+            term,
+            trunc,
             self.info,
         )
 
     def reset(self) -> tuple[torch.Tensor, dict[str, Any]]:
-        """Reset all environments and return initial observations."""
+        """Reset all environments and return initial observations: every module's reset fills its part (the readers,
+        e.g. update_robot, read the reset state), then the first observation."""
+        container = self.module_manager.container
         self.reset_buf[:] = True
         self.module_manager.reset()
-        self.gym.step()
-        self.gym.compute_kinematics()
-        self.module_manager.post_physics_step()
+        self.module_manager.get("observation").step(container)
         return self._observations(), {}
+
+    @staticmethod
+    def _check_post_physics_order(config: dict[str, Any]) -> None:
+        """Episodes restart in reset_envs: it must follow termination and precede observation (see ResetEnvsModule)."""
+        names = list((config.get("modules") or {}).get("post_physics_step_modules") or [])
+        names = [ModuleManager._extract_module_name(entry) for entry in names]
+        if "termination" not in names and "observation" not in names:
+            return
+        if "reset_envs" not in names:
+            raise ValueError("post_physics_step_modules has no 'reset_envs': ended episodes would never restart. List it "
+                             "after 'termination' and before 'observation' (see ResetEnvsModule).")
+        reset = names.index("reset_envs")
+        if "termination" in names and names.index("termination") > reset:
+            raise ValueError("post_physics_step_modules: 'reset_envs' must come after 'termination'.")
+        if "observation" in names and (names.index("observation") < reset or names.count("observation") > 1):
+            raise ValueError("post_physics_step_modules: 'observation' must come once, after 'reset_envs' (its history "
+                             "takes one frame per call).")
 
     def _observations(self) -> torch.Tensor | dict[str, torch.Tensor]:
         """The policy observations, or {"obs", "priv_obs"} with privileged (critic only) observations."""

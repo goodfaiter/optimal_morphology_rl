@@ -65,6 +65,7 @@ from optimal_morphology_rl.modules.rewards import (
     RewardManagerModule,
     register_reward,
 )
+from optimal_morphology_rl.modules.reset_envs_module import ResetEnvsModule
 from optimal_morphology_rl.modules.rigid_tendons_module import RigidTendons
 from optimal_morphology_rl.modules.robot_control import (
     RobotControlFloatingHandModule,
@@ -133,6 +134,7 @@ __all__ = [
     "RandomizeSpoolVelocityModule",
     "RandomizeSpoolModule",
     "RenderModule",
+    "ResetEnvsModule",
     "SpoolPlotModule",
     "RewardBaseModule",
     "RewardManagerModule",

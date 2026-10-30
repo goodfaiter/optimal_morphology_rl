@@ -83,16 +83,16 @@ class TerminationManagerModule(BaseModule):
 
         for module in self._termination_modules:
             module.compute(env)
-        if container.get("force_reset"):
-            # Requested by the render menu's "Reset": end every episode now (as a truncation). The
-            # following reset restarts every episode from 0 ('progress' does not stagger it).
+        if container.get("render_reset_trigger"):
+            # The render menu's "Reset": end every episode now (as a truncation, restarted by reset_envs in this
+            # step); 'progress' staggers the restarted episodes' lengths.
             env.trunc_buf[:] = True
-            container.force_reset = False
+            container.render_reset_trigger = False
 
         container.reset_buf[:] = torch.logical_or(env.term_buf, env.trunc_buf)
         container.inverse_reset_buf[:] = ~container.reset_buf
-        # Time-limit truncations, read by rl_games to bootstrap the value of cut-off episodes
-        # (value_bootstrap). Cloned: trunc_buf is cleared in place on the next reset.
+        # Time-limit truncations, read by rl_games to bootstrap the value of cut-off episodes (value_bootstrap).
+        # Cloned: trunc_buf is cleared in place by the reset in the same ModularEnvironment.step.
         env.info["time_outs"] = env.trunc_buf.clone()
 
     def reset(self, container: ModuleContainer) -> None:
