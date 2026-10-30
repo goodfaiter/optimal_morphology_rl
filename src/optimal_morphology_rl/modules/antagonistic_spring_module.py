@@ -35,7 +35,11 @@ class AntagonisticSpring(BaseModule):
     with one value per revolute motor in motor order (e.g. ``[0.1, 1.0, 1.0]``
     for MCP, PIP, DIP; the other motors get 0). ``spring_preloads`` (Nm, optional, default 0, same
     forms) is the torque of a pre-tensioned elastic: it holds the joint against its extension stop
-    (the lower limit, q = 0) until a larger torque flexes it, e.g. the thumb against gravity.
+    (the lower limit, q = 0) until a larger torque flexes it, e.g. the thumb against gravity. Both are
+    non-negative: the elastic only ever resists flexion, it never helps the motor.
+
+    Both also take a dict per joint, keyed by the revolute motor (= joint) name, with an optional ``default`` for the
+    joints not listed (else 0), e.g. ``{default: 0.005, Thumb_MCP: 0.01}``; unknown names raise.
 
     The constants are kept per env in ``spring_constants_buf`` ``(num_envs,
     num_motors)``, all at ``spring_constants`` unless 'randomize_antagonistic_springs'
@@ -69,13 +73,23 @@ class AntagonisticSpring(BaseModule):
         spring_constants = self.config.get("spring_constants")
         if spring_constants is None:
             raise RuntimeError(
-                "AntagonisticSpring config missing 'spring_constants': a scalar, a per-motor list or a per-revolute-motor "
-                "list of spring constants."
+                "AntagonisticSpring config missing 'spring_constants': a scalar, a per-motor list, a per-revolute-motor "
+                "list or a per-joint dict of spring constants."
             )
         self.revolute_motor_mask = robot.revolute_dof_mask[robot.motor_to_joint_dof_index]
         num_revolute = int(self.revolute_motor_mask.sum())
 
+        motor_names = [robot.art_def.get_motor_def(i).name for i in range(robot.num_motors)]
+
         def per_motor(value, name):
+            if isinstance(value, dict):
+                revolute = {n for n, rev in zip(motor_names, self.revolute_motor_mask.tolist()) if rev}
+                unknown = set(value) - revolute - {"default"}
+                if unknown:
+                    raise RuntimeError(f"AntagonisticSpring '{name}': {sorted(unknown)} are not revolute motors {sorted(revolute)}.")
+                default = float(value.get("default", 0.0))
+                values = [float(value.get(n, default)) if n in revolute else 0.0 for n in motor_names]
+                return torch.tensor(values, device=device, dtype=torch.float32)
             if isinstance(value, (list, tuple)) and len(value) == num_revolute != robot.num_motors:
                 # One value per revolute motor: scatter onto the revolute motor columns.
                 out = torch.zeros(robot.num_motors, device=device, dtype=torch.float32)
@@ -86,13 +100,13 @@ class AntagonisticSpring(BaseModule):
         self.spring_constants = per_motor(spring_constants, "spring_constants")
         self.spring_constants_buf = self.spring_constants.repeat(container.total_num_envs, 1)
         self.spring_preloads = per_motor(self.config.get("spring_preloads", 0.0), "spring_preloads")
-        if torch.any(self.spring_preloads < 0.0):
-            raise RuntimeError("AntagonisticSpring config 'spring_preloads' entries must be non-negative.")
+        if torch.any(self.spring_constants < 0.0) or torch.any(self.spring_preloads < 0.0):
+            raise RuntimeError("AntagonisticSpring 'spring_constants' and 'spring_preloads' must be non-negative (the elastic only resists flexion).")
 
         container.antagonistic_spring_force_buf = torch.zeros(
             (container.total_num_envs, robot.num_motors), device=device, dtype=torch.float32
         )
-        names = [robot.art_def.get_motor_def(i).name for i in range(robot.num_motors) if self.revolute_motor_mask[i]]
+        names = [n for n, rev in zip(motor_names, self.revolute_motor_mask.tolist()) if rev]
         print(f"AntagonisticSpring: spring_constants = {self.spring_constants.cpu().numpy()}, "
               f"spring_preloads = {self.spring_preloads.cpu().numpy()}, revolute motors = {names}")
 

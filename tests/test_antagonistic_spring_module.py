@@ -206,8 +206,24 @@ def test_preload_adds_a_constant_extending_torque(container: ModuleContainer) ->
     assert container.antagonistic_spring_force_buf[0, 1].item() == pytest.approx(0.4)
 
 
-def test_negative_preload_is_rejected(container: ModuleContainer) -> None:
-    module = AntagonisticSpring({"spring_constants": 0.1, "spring_preloads": -0.01})
+@pytest.mark.parametrize("config", [{"spring_constants": 0.1, "spring_preloads": -0.01}, {"spring_constants": [-0.1, 0.1]}])
+def test_negative_spring_or_preload_is_rejected(container: ModuleContainer, config) -> None:
+    module = AntagonisticSpring(config)
     module.finalize(container)
-    with pytest.raises(RuntimeError, match="spring_preloads"):
+    with pytest.raises(RuntimeError, match="non-negative"):
+        module.post_finalize(container)
+
+
+def test_per_joint_dict_with_default(container: ModuleContainer) -> None:
+    module = AntagonisticSpring({"spring_constants": {"default": 0.1, "motor_1": 0.2}, "spring_preloads": {"motor_0": 0.15}})
+    module.finalize(container)
+    module.post_finalize(container)
+    assert module.spring_constants.tolist() == pytest.approx([0.1, 0.2])
+    assert module.spring_preloads.tolist() == pytest.approx([0.15, 0.0])
+
+
+def test_per_joint_dict_rejects_unknown_joints(container: ModuleContainer) -> None:
+    module = AntagonisticSpring({"spring_constants": {"Thumb_CMC9": 0.1}})
+    module.finalize(container)
+    with pytest.raises(RuntimeError, match="Thumb_CMC9"):
         module.post_finalize(container)
