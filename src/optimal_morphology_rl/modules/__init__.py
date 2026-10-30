@@ -51,12 +51,12 @@ from optimal_morphology_rl.modules.process_fixed_actions_module import (
 from optimal_morphology_rl.modules.process_variable_actions_module import (
     ProcessVariableActionsModule,
 )
-from optimal_morphology_rl.modules.randomize_friction_module import RandomizeFrictionModule
 from optimal_morphology_rl.modules.randomize_joint_friction_module import RandomizeJointFrictionModule
 from optimal_morphology_rl.modules.randomize_link_inertia_module import RandomizeLinkInertiaModule
 from optimal_morphology_rl.modules.randomize_antagonistic_springs_module import RandomizeAntagonisticSpringsModule
 from optimal_morphology_rl.modules.randomize_m5_module import RandomizeM5Module
 from optimal_morphology_rl.modules.randomize_object_module import RandomizeObjectModule
+from optimal_morphology_rl.modules.randomize_robot_friction_module import RandomizeRobotFrictionModule
 from optimal_morphology_rl.modules.randomize_spool_velocity_module import RandomizeSpoolVelocityModule
 from optimal_morphology_rl.modules.randomize_spool_module import RandomizeSpoolModule
 from optimal_morphology_rl.modules.rewards import (
@@ -124,12 +124,12 @@ __all__ = [
     "ObservationManagerModule",
     "ProcessFixedActionsModule",
     "ProcessVariableActionsModule",
-    "RandomizeFrictionModule",
     "RandomizeJointFrictionModule",
     "RandomizeLinkInertiaModule",
     "RandomizeAntagonisticSpringsModule",
     "RandomizeM5Module",
     "RandomizeObjectModule",
+    "RandomizeRobotFrictionModule",
     "RandomizeSpoolVelocityModule",
     "RandomizeSpoolModule",
     "RenderModule",

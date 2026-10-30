@@ -53,6 +53,7 @@ class Robot:
         self.num_tendons: int | None = None
         self.link_masses: torch.Tensor | None = None
         self.rigid_mat_handle: int | None = None
+        self.link_friction: float | None = None  # static and dynamic friction of the hand's material (create_envs)
 
         # Distal link indices for fingertip-position tracking.
         self.distal_link_indices: list[int] = []
@@ -89,8 +90,8 @@ class Robot:
         self.gpu_get_distal_link_transforms_cmd_arr: Any = None
         self.gpu_get_tendon_command_array: Any = None
 
-    def create_envs(self, env_def, vsim_path: str, device: torch.device) -> None:
-        """Load the hand model into the environment definition."""
+    def create_envs(self, env_def, vsim_path: str, device: torch.device, link_friction: float = 0.5) -> None:
+        """Load the hand model into the environment definition (``link_friction``: static and dynamic, every link)."""
         print(f"Loading hand model from {vsim_path}")
 
         env_def.import_definitions(
@@ -171,14 +172,15 @@ class Robot:
             print(i, self.art_def.get_spatial_tendon_def(i))
 
         rigid_mat = v.RigidMaterial()
-        rigid_mat.dynamic_friction = 0.5
-        rigid_mat.static_friction = 0.5
+        rigid_mat.dynamic_friction = link_friction
+        rigid_mat.static_friction = link_friction
         rigid_mat.restitution = 0.0
         rigid_mat.damping = 0.0
         rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
         for i in range(self.art_def.get_num_link_defs()):
             env_def.assign_rigid_material_to_articulation_link(self.def_handle, rigid_mat_handle, i)
         self.rigid_mat_handle = rigid_mat_handle
+        self.link_friction = link_friction
 
 
 @register_module("create_robot")
@@ -206,7 +208,7 @@ class RobotModule(BaseModule):
         self.use_tendon = bool(self.config.get("use_tendon", True))
 
         self.robot = Robot(fixed_hand=self.fixed_hand, use_tendon=self.use_tendon)
-        self.robot.create_envs(container.env_def, vsim_path, container.device)
+        self.robot.create_envs(container.env_def, vsim_path, container.device, float(self.config.get("link_friction", 1.0)))
 
         self.randomize_pose = bool(self.config.get("randomize_pose", False))
 

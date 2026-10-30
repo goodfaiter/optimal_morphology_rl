@@ -4,7 +4,7 @@ modules:
     - create_robot
     - randomize_antagonistic_springs
     - randomize_joint_friction
-    - randomize_friction
+    - randomize_robot_friction
     - color_articulation_links
     - create_objects
     - create_kinematic_sensor
@@ -81,8 +81,9 @@ apply_root_velocity: {}
 gravity_compensation: {}
 apply_root_forces: {}
 
-randomize_friction:
-  friction_coefficient: 0.1
+randomize_robot_friction:
+  friction_range: [0.1, 0.1] # contact friction (hand material: 2x)
+  dynamic_ratio: 0.75
 
 interactive_slider_control:
   slider_min: -1.0

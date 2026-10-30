@@ -12,7 +12,7 @@ from optimal_morphology_rl.modules.apply_control import (
 )
 from optimal_morphology_rl.modules.gravity_compensation_module import GravityCompensationModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
-from optimal_morphology_rl.modules.randomize_friction_module import RandomizeFrictionModule
+from optimal_morphology_rl.modules.randomize_robot_friction_module import RandomizeRobotFrictionModule
 from optimal_morphology_rl.modules.robot_control import (
     RobotControlFloatingHandModule,
     RobotControlMotorsModule,
@@ -386,7 +386,7 @@ def test_apply_root_forces_creates_and_applies(container: ModuleContainer) -> No
 
 
 # ---------------------------------------------------------------------------
-# gravity_compensation / randomize_friction
+# gravity_compensation / randomize_robot_friction
 # ---------------------------------------------------------------------------
 def test_gravity_compensation_accepts_any_hand(container: ModuleContainer) -> None:
     # No fixed-hand gate: if the module is wired it is active.
@@ -412,28 +412,33 @@ def test_gravity_compensation_step_writes_forces(container: ModuleContainer) -> 
     assert torch.allclose(container.set_force_torque_buf[:, :, 2], torch.tensor([[9.81]]))
 
 
-def test_randomize_friction_applies_coefficient(container: ModuleContainer) -> None:
-    module = RandomizeFrictionModule({"friction_coefficient": 0.8})
+def _friction_module(container: ModuleContainer, config: dict) -> RandomizeRobotFrictionModule:
+    container.num_envs = [1, 1, 1, 1]  # 4 env sets of 1 env
+    container.reset_buf = torch.zeros(4, dtype=torch.bool)
+    container.robot.link_friction = 1.0  # nominal contact friction 0.5
+    module = RandomizeRobotFrictionModule(config)
     module.finalize(container)
     module.post_finalize(container)
+    return module
 
+
+def test_randomize_robot_friction_resamples_the_reset_env_sets(container: ModuleContainer) -> None:
+    module = _friction_module(container, {"friction_range": [0.2, 0.8], "dynamic_ratio": 0.75})
+    container.reset_buf[[1, 3]] = True
     module.reset(container)
 
-    assert container.set_static_friction_buf.shape == (1,)
-    assert container.set_dynamic_friction_buf.shape == (1,)
-    assert torch.allclose(container.set_static_friction_buf, torch.tensor([1.6]))
-    assert torch.allclose(container.set_dynamic_friction_buf, torch.tensor([1.2]))
+    assert module.set_mask.tolist() == [False, True, False, True]
+    assert torch.all((module.friction[[1, 3]] >= 0.2) & (module.friction[[1, 3]] <= 0.8))
+    assert torch.allclose(module.friction[[0, 2]], torch.tensor([0.5, 0.5]))  # not reset: nominal
+    # The hand material gets twice the contact friction (objects' material: 0), dynamic = ratio * static.
+    assert torch.allclose(module.set_static_buf, 2.0 * module.friction)
+    assert torch.allclose(module.set_dynamic_buf, 1.5 * module.friction)
     assert container.gym.calls[-1][0] == "set_rigid_material_properties"
 
 
-def test_randomize_friction_randomizes_multi_env_without_coefficient(container: ModuleContainer) -> None:
-    module = RandomizeFrictionModule({})
-    module.finalize(container)
-    module.post_finalize(container)
-
-    container.reset_buf = torch.zeros(4, dtype=torch.bool)
+def test_randomize_robot_friction_follows_the_curriculum(container: ModuleContainer) -> None:
+    module = _friction_module(container, {"friction_range": [0.2, 0.8]})
+    module.set_curriculum_factor(0.0, container)
+    container.reset_buf[:] = True
     module.reset(container)
-
-    # Friction was randomized in [0.1, 1.0] then doubled.
-    value = container.set_static_friction_buf[0].item()
-    assert 0.2 <= value <= 2.0
+    assert torch.allclose(module.friction, torch.full((4,), 0.5))  # factor 0: the nominal link_friction / 2
