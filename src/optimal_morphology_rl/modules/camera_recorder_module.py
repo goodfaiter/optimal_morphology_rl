@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 import torch
 import vlearn as v
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.create_objects_module import LoadedRigidObject
@@ -35,6 +35,21 @@ class CameraSpec:
     # vlearn's RGB images are bottom-up (OpenGL rows): flip them when saving. The camera rig's cameras are posed
     # upright and flipped; object cameras (e.g. table_with_camera) keep their own, compensated poses.
     flip_vertical: bool = False
+    # Camera pose in its body's frame (position, quaternion xyzw; OpenGL: looks along -z, +y up) and full fields of
+    # view (rad), for projecting points into the (flipped, upright) image of a camera on the rig at the env origin.
+    position: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    quat_xyzw: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
+    fov: tuple[float, float] = (0.0, 0.0)
+
+
+def _rotation_matrix(q: np.ndarray) -> np.ndarray:
+    """Rotation matrix of a unit quaternion (x, y, z, w)."""
+    x, y, z, w = q
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ])
 
 
 @dataclass
@@ -62,10 +77,11 @@ class ObjectCameraRecorder:
         for binding in rgb_bindings:
             gym.get_rgb_camera_images(binding.command_array)
 
-    def save(self, frame_index: int) -> None:
-        """Save PNGs for all bound cameras."""
+    def save(self, frame_index: int, axes: tuple[np.ndarray, np.ndarray, float] | None = None) -> None:
+        """Save PNGs for all bound cameras; ``axes`` = (position, quaternion xyzw, length) of a frame to draw (env
+        frame, rig cameras only)."""
         for binding in self._bindings:
-            self._save_binding(binding, frame_index)
+            self._save_binding(binding, frame_index, axes)
 
     def build_specs(self, loaded_objects: dict, env_def) -> None:
         """Discover camera specs from the loaded objects mapping (container.objects)."""
@@ -125,6 +141,7 @@ class ObjectCameraRecorder:
         camera.render_width = 1
         camera.render_height = 1
         camera.base_color = v.Vec3(1.0, 1.0, 1.0)
+        pose = camera.relative_transform
         return CameraSpec(
             object_name=object_name,
             kind="rgb",
@@ -133,6 +150,9 @@ class ObjectCameraRecorder:
             resolution_x=camera_def.resolution_x,
             resolution_y=camera_def.resolution_y,
             far_clip=camera_def.far_clip,
+            position=(pose.p.x, pose.p.y, pose.p.z),
+            quat_xyzw=(pose.q.x, pose.q.y, pose.q.z, pose.q.w),
+            fov=(camera_def.field_of_view_x, camera_def.field_of_view_y),
         )
 
     def _bind_rgb_camera(
@@ -157,7 +177,9 @@ class ObjectCameraRecorder:
         command_array = gym.create_gpu_array([command])
         return CameraBinding(spec=spec, buffer=buffer, command=command, command_array=command_array)
 
-    def _save_binding(self, binding: CameraBinding, frame_index: int) -> Path:
+    def _save_binding(
+        self, binding: CameraBinding, frame_index: int, axes: tuple[np.ndarray, np.ndarray, float] | None = None
+    ) -> Path:
         spec = binding.spec
         object_dir = self.output_dir / spec.object_name / spec.instance_name
         object_dir.mkdir(parents=True, exist_ok=True)
@@ -171,8 +193,32 @@ class ObjectCameraRecorder:
             pil_image = Image.fromarray(np.ascontiguousarray(image), mode="RGBA")
         else:
             pil_image = Image.fromarray(np.ascontiguousarray(image[:, :, :3]), mode="RGB")
+        if axes is not None and spec.flip_vertical:
+            self._draw_axes(pil_image, spec, *axes)
         pil_image.save(output_path)
         return output_path
+
+    @staticmethod
+    def _draw_axes(image: Image.Image, spec: CameraSpec, position: np.ndarray, quat_xyzw: np.ndarray, length: float) -> None:
+        """Draw a frame's x / y / z axes (red / green / blue) into a rig camera's upright image."""
+        rot_cam = _rotation_matrix(np.asarray(spec.quat_xyzw))
+        cam_pos = np.asarray(spec.position)
+        w, h = image.size
+        fx, fy = (w / 2) / np.tan(spec.fov[0] / 2), (h / 2) / np.tan(spec.fov[1] / 2)
+
+        def project(point: np.ndarray) -> tuple[float, float] | None:
+            pc = rot_cam.T @ (point - cam_pos)
+            if pc[2] >= -1e-6:  # behind the camera
+                return None
+            return w / 2 + fx * pc[0] / -pc[2], h / 2 - fy * pc[1] / -pc[2]
+
+        rot = _rotation_matrix(quat_xyzw)
+        centre = project(position)
+        draw = ImageDraw.Draw(image)
+        for axis, color in zip(range(3), ((230, 30, 30), (30, 190, 30), (30, 60, 230))):
+            tip = project(position + length * rot[:, axis])
+            if centre is not None and tip is not None:
+                draw.line([centre, tip], fill=color, width=4)
 
 
 def _camera_rig_path(name: str) -> str:
@@ -201,6 +247,8 @@ class CameraRecorderModule(BaseModule):
           output_dir: ...                     # optional in play mode (frames)
           video_dir: ...                      # optional, where the .mp4 files go
           video_prefix: ...                   # optional, prepended to <camera>.mp4
+          object_axes: 0.04                   # optional: draw the reward object's axes (this long, m) into the rig
+                                              # cameras' frames, e.g. to see a ball spin
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -216,6 +264,8 @@ class CameraRecorderModule(BaseModule):
         self.video_dir: str | None = self.config.get("video_dir")
         self.video_prefix = str(self.config.get("video_prefix", ""))
         self.frame_stride = int(self.config.get("frame_stride", 1))
+        object_axes = self.config.get("object_axes")
+        self.object_axes = None if object_axes is None else float(object_axes)
         self.fps = 30.0  # set from the control step in post_finalize
         if self.enabled and output_dir is not None:
             self.recorder = ObjectCameraRecorder(output_dir)
@@ -260,7 +310,11 @@ class CameraRecorderModule(BaseModule):
         if (self._step_count - 1) % self.frame_stride:
             return
         self.recorder.update(container.gym)
-        self.recorder.save(self._frames_recorded)
+        axes = None
+        if self.object_axes is not None:
+            sensor = container.kinematic_sensors[container.reward_object_name]
+            axes = (sensor.pos_in_world[0].cpu().numpy(), sensor.quat_sensor_to_world[0].cpu().numpy(), self.object_axes)
+        self.recorder.save(self._frames_recorded, axes)
         self._frames_recorded += 1
         if self._num_steps is not None and self._frames_recorded >= self._num_steps:
             self.write_videos()
