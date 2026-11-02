@@ -18,7 +18,7 @@ TORQUES = [("tau_m", r"$\tau_m$"), ("tau_e", r"$\tau_e$"), ("tau_f", r"$\tau_f$"
 
 @register_module("spool_plot")
 class SpoolPlotModule(BaseModule):
-    """Scrolling plots of every 'create_spool' spool of env ``env`` (debug / interactive use).
+    """Scrolling plots of the 'create_spool' spools of env ``env`` (debug / interactive use).
 
     One row per spool: the commanded spool angle and theta_m (rad), omega_m (rad/s) and, with 'apply_m5_forces',
     its torques tau_m, tau_e, tau_f and tau_f_max (Nm). The plot
@@ -36,6 +36,7 @@ class SpoolPlotModule(BaseModule):
           window_s: 5.0    # seconds of history shown
           fps: 20          # redraw rate of the plot window
           env: 0           # which env to plot
+          spools: [0, 1]   # optional: which spools (indices in create_spool's model_tendon_indices order), default all
           enabled: true
           backend: TkAgg   # optional, "Agg" with save_path to run without a display
           save_path: null  # optional PNG of the last frame, written when the plot ends
@@ -48,6 +49,8 @@ class SpoolPlotModule(BaseModule):
         self.window_s = float(self.config.get("window_s", 5.0))
         self.fps = float(self.config.get("fps", 20.0))
         self.env_index = int(self.config.get("env", 0))
+        spools = self.config.get("spools")
+        self.spool_indices: list[int] | None = None if spools is None else [int(i) for i in spools]
         self.backend = str(self.config.get("backend", "TkAgg"))
         self.save_path = self.config.get("save_path")
         self.plot: LivePlot | None = None
@@ -62,6 +65,11 @@ class SpoolPlotModule(BaseModule):
             return
         spool, robot = container.spool, container.robot
         rows = [robot.art_def.get_spatial_tendon_def(i).name.removesuffix("_tendon") for i in spool.model_tendon_indices]
+        indices = list(range(len(rows))) if self.spool_indices is None else self.spool_indices
+        if not indices or any(i < 0 or i >= len(rows) for i in indices):
+            raise RuntimeError(f"SpoolPlotModule 'spools' must be a non-empty list of spool indices in 0..{len(rows) - 1} ({rows}), got {indices}.")
+        rows = [rows[i] for i in indices]
+        self.selected = torch.tensor(indices, dtype=torch.long, device=container.device)
         self.dt = spool.dt
         manager = container.env.module_manager
         self.m5 = manager.get("apply_m5_forces") if "apply_m5_forces" in manager else None
@@ -96,12 +104,13 @@ class SpoolPlotModule(BaseModule):
         if self.steps % self.every:
             return
         spool, e = container.spool, self.env_index
-        signals = {"cmd": spool.commanded_angle(container)[e], "theta": spool.theta_m[e], "omega": spool.omega_m[e]}
+        sel = self.selected
+        signals = {"cmd": spool.commanded_angle(container)[e, sel], "theta": spool.theta_m[e, sel], "omega": spool.omega_m[e, sel]}
         if self.m5 is not None:
             # Every sample carries every signal (the plotter keeps one history per signal): NaN (a gap) until
             # apply_m5_forces has run, e.g. when it is listed after this module.
             last = getattr(self.m5, "last_signals", None)
             nan = torch.full_like(signals["theta"], float("nan"))
-            signals.update({key: last[key][e] if last is not None else nan for key, _ in TORQUES})
+            signals.update({key: last[key][e, sel] if last is not None else nan for key, _ in TORQUES})
         values = torch.stack(list(signals.values())).cpu().tolist()  # one GPU -> CPU copy
         self.plot.send(self.steps * self.dt, dict(zip(signals, values)))
