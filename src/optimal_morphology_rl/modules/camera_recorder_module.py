@@ -247,6 +247,7 @@ class CameraRecorderModule(BaseModule):
           output_dir: ...                     # optional in play mode (frames)
           video_dir: ...                      # optional, where the .mp4 files go
           video_prefix: ...                   # optional, prepended to <camera>.mp4
+          keep_frames: false                  # optional: keep the PNG frames after their video is written
           object_axes: 0.04                   # optional: draw the reward object's axes (this long, m) into the rig
                                               # cameras' frames, e.g. to see a ball spin
     """
@@ -264,6 +265,7 @@ class CameraRecorderModule(BaseModule):
         self.video_dir: str | None = self.config.get("video_dir")
         self.video_prefix = str(self.config.get("video_prefix", ""))
         self.frame_stride = int(self.config.get("frame_stride", 1))
+        self.keep_frames = bool(self.config.get("keep_frames", False))
         object_axes = self.config.get("object_axes")
         self.object_axes = None if object_axes is None else float(object_axes)
         self.fps = 30.0  # set from the control step in post_finalize
@@ -334,5 +336,16 @@ class CameraRecorderModule(BaseModule):
             result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
             if result.returncode == 0:
                 print(f"CameraRecorder: wrote {mp4_path} ({self._frames_recorded} frames)")
-            else:
+                if not self.keep_frames:
+                    self._remove_frames(img_dir)
+            else:  # the frames stay, to encode them by hand
                 print(f"CameraRecorder: ffmpeg failed for {mp4_path}: {result.stderr[-500:]}")
+
+    def _remove_frames(self, img_dir: Path) -> None:
+        """Delete a camera's PNG frames, then the frame folders (up to output_dir) left empty."""
+        for frame in img_dir.glob("step_*.png"):
+            frame.unlink()
+        folder = img_dir
+        while folder != self.recorder.output_dir.parent and folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
+            folder = folder.parent

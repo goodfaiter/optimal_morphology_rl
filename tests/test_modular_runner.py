@@ -2,9 +2,11 @@
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -210,6 +212,27 @@ def test_camera_recorder_module_stops_after_num_steps(tmp_path, monkeypatch) -> 
         module.step(container)
 
     assert calls == ["update", 0, "update", 1]
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not available")
+@pytest.mark.parametrize("keep_frames", [False, True])
+def test_camera_recorder_removes_frames_after_the_video(tmp_path, keep_frames) -> None:
+    from PIL import Image
+
+    frames_dir, video_dir = tmp_path / "frames", tmp_path / "run"
+    module = CameraRecorderModule({"output_dir": str(frames_dir), "video_dir": str(video_dir), "keep_frames": keep_frames})
+    camera_dir = frames_dir / "camera_rig" / "camera_top"
+    camera_dir.mkdir(parents=True)
+    for i in range(3):
+        Image.new("RGB", (16, 16), (40 * i, 0, 0)).save(camera_dir / f"step_{i:06d}.png")
+    module.recorder._bindings = [SimpleNamespace(spec=SimpleNamespace(object_name="camera_rig", instance_name="camera_top"))]
+    module._frames_recorded = 3
+
+    module.write_videos()
+
+    assert (video_dir / "camera_top.mp4").is_file()
+    assert sorted(p.name for p in camera_dir.glob("*.png")) == ([f"step_{i:06d}.png" for i in range(3)] if keep_frames else [])
+    assert frames_dir.exists() == keep_frames  # the emptied frame folders are removed too
 
 
 def test_camera_recorder_module_recording_disabled_without_output_dir() -> None:
