@@ -79,7 +79,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--wandb-name",
         default=None,
-        help="Weights & Biases run name (default: the --task-root experiment folder name)",
+        help="Weights & Biases run name; turns on --wandb (default name: the --task-root experiment folder name)",
+    )
+    parser.add_argument(
+        "--wandb-project",
+        default=None,
+        help="Weights & Biases project (default: optimal_morphology_rl); turns on --wandb",
     )
     return parser.parse_args()
 
@@ -350,6 +355,7 @@ def run_rl_games(
     experiment_name: str | None = None,
     wandb: bool = False,
     wandb_name: str | None = None,
+    wandb_project: str | None = None,
 ) -> None:
     cfg = ppo_config["params"]["config"]
     env_name = cfg["env_name"]
@@ -406,7 +412,7 @@ def run_rl_games(
         except ImportError as exc:
             raise RuntimeError("wandb is requested but not installed.") from exc
         wandb.init(
-            project="optimal_morphology_rl",
+            project=wandb_project or "optimal_morphology_rl",
             name=wandb_name,
             sync_tensorboard=True,
             config={"env_config": env_config, "ppo_config": ppo_config, "mode": mode},
@@ -493,9 +499,10 @@ def main() -> None:
             args.mode,
             args.cp,
             experiment_name=args.experiment_name,
-            wandb=args.wandb,
+            wandb=args.wandb or args.wandb_name is not None or args.wandb_project is not None,  # a name / project implies logging
             # The wandb run name: --wandb-name, else the experiment folder of a --task-root variant.
             wandb_name=args.wandb_name or (args.task_root.resolve().name if args.task_root.resolve() != DEFAULT_TASK_ROOT else None),
+            wandb_project=args.wandb_project,
         )
 
 
