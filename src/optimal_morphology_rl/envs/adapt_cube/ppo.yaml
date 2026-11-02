@@ -47,9 +47,9 @@ params:
     reward_shaper:
       scale_value: 1.0
     normalize_advantage: True
-    gamma: 0.96
+    gamma: 0.995 # ~1 s horizon at 200 Hz: a drop / losing the cube must outweigh a quick spin (0.96 = 0.13 s made throwing it pay)
     tau: 0.95
-    learning_rate: 3e-4
+    learning_rate: 3e-4 # 3e-4 (and more aggressive updates) collapse into flinging the cube; 1e-4: ~2x the spin (runs/adapt_cube/experiments/results_hp_summary.md)
     lr_schedule: fixed
     kl_threshold: 0.016
     score_to_win: 20000000
@@ -58,10 +58,13 @@ params:
     # levels [1.0] is plain early stopping). Every level runs at least min_epochs + patience epochs.
     curriculum:
       # Randomization width (every randomize_* module and the spool observation noise): none at 0, full at 1.
-      levels: ${eval:'[0.0, 0.25, 0.5, 0.75, 1.0] if mode == "train" else [1.0]'}
-      patience: 25 # epochs without a 1 % improvement
+      # As runs/adapt_cube/2026_10_26_20_23_27 (seed 4, 1.74 rad/s at full randomization).
+      levels: ${eval:'[0.2, 0.4, 0.6, 0.8, 1.0] if mode == "train" else [1.0]'}
+      # levels: ${eval:'[0.6, 0.8, 1.0] if mode == "train" else [1.0]'}
+      # levels: ${eval:'[1.0] if mode == "train" else [1.0]'}
+      patience: 50 # epochs without a 1 % improvement
       min_delta: 0.01
-      min_epochs: 25 # warm-up of each level
+      min_epochs: 50 # warm-up of each level
     save_best_after: 50
     # Mean episode reward over the last 1000 episodes (~9 epochs at 1024 envs) instead of 100 (~1 epoch): ~3x less
     # noise for the best checkpoint and the curriculum (and its early stopping), which react a few epochs later.
@@ -70,31 +73,35 @@ params:
     print_stats: True
     grad_norm: 1.0
     entropy_coef: 0.0
-    truncate_grads: False
+    # Clipping the gradient norm (grad_norm) removed the KL spikes / policy collapses: rare samples (episode ends, mu in
+    # the saturated action range) gave gradients up to ~200 (runs/adapt_cube/experiments trunc_s1, combo_s*, rand_s*).
+    truncate_grads: True
     ppo: True
     e_clip: 0.2
-    horizon_length: 128
-    minibatch_size: ${num_envs}
+    horizon_length: 256
+    minibatch_size: 4096 # 64 minibatches per epoch (the minibatches are shuffled across envs and steps)
     mini_epochs: 1
     critic_coef: 0.0 # Should not matter with central_value_config (the actor's own critic is unused, the central critic's values give the advantages).
     clip_actions: False
     clip_value: False
     seq_length: 4
-    bounds_loss_coef: 0.0
+    # Pulls the policy mean back inside +-1.1. Outside the servo's working range (below the -1 rad unwind floor, above
+    # the 50 N slider force limit) the action has no effect and nothing else holds mu: 1e-4 let |mu| drift to 10-30.
+    bounds_loss_coef: 0.01
     # With central_value_config the actor model's own critic tower is unused (the central critic's values give the
     # advantages); False skips its value loss, so the actor model trains the policy only.
     use_experimental_cv: False
     # Asymmetric actor-critic: a separate critic on obs + the privileged observations (observation.privileged_modules
     # in env.yaml). Only the actor is exported for the robot.
     central_value_config:
-      minibatch_size: ${num_envs}
+      minibatch_size: 4096 # as the actor
       mini_epochs: 1
-      learning_rate: 3e-4
+      learning_rate: 3e-4 # as the actor
       lr_schedule: fixed
       kl_threshold: 0.016
       clip_value: False
       normalize_input: True
-      truncate_grads: False
+      truncate_grads: True # as the actor
       grad_norm: 1.0
       network:
         name: actor_critic
