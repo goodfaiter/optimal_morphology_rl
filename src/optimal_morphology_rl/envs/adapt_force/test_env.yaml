@@ -1,0 +1,143 @@
+modules:
+  init_modules:
+    - create_rigid_vsim_envs
+    - create_robot
+    - create_spool
+    - create_objects
+    - create_kinematic_sensor
+    - create_force_sensor
+    - termination
+    - render
+  pre_physics_step_modules:
+    - render
+    - interactive_slider_control
+    - process_variable_actions
+    - create_spool
+    - apply_m5_forces
+    - spool_plot
+    - antagonistic_spring
+    - apply_motor_forces
+    - apply_root_forces
+  pre_gym_step_modules: []
+  post_gym_step_modules: []
+  post_physics_step_modules:
+    - update_robot
+    - update_kinematic_sensor
+    - update_force_sensors
+    - force_goal
+    - force_plot
+    - reward
+    - termination
+    - reset_envs
+    - observation
+
+create_rigid_vsim_envs:
+  num_envs: 1
+  device: cuda:0
+  timestep: ${1/200}
+  frame_skip: 1 # 200 Hz control, as the robot loop and the friction model
+
+create_robot:
+  vsim_path: /workspace/optimal_morphology_rl_assets/optimal_morphology_rl_assets/assets/hands/Adapt_Hand_v4/adapt_hand_v4_one_middle.vsim
+  fixed_hand: true
+  fixed_hand_root_pos: [-0.15, -0.15, 0.1]
+  fixed_hand_root_quat: [-0.5, 0.5, -0.5, 0.5]
+  use_tendon: true
+  randomize_pose: false
+  # The DIP tendon is fixed (FixedTendonMaterial, driven by rigid_tendons) and
+  # gets no policy action.
+  fixed_tendon_substrings: ["dip"]
+  # Make every motor controllable from the UI (no passive motors).
+  passive_motor_substrings: []
+
+# The fixed cylinder under the fully curled middle fingertip and the fingertip force sensor, as in env.yaml: the
+# same place relative to the hand (env.yaml's position + this hand root - env.yaml's root, same root orientation).
+create_objects:
+  objects:
+    cylinder:
+      position: [-0.109, -0.172, 0.1475] # m, env frame (center)
+  reward_object: cylinder
+
+create_force_sensor:
+  link_names: ["Middle_DP"]
+
+# Live plot of env 0's target and measured fingertip force in its own window
+# (it can be minimized or closed without affecting the simulation).
+force_plot:
+  every: 2
+  window_s: 5.0
+
+force_goal:
+  sensor_link: Middle_DP
+
+apply_motor_forces: {}
+apply_root_forces: {}
+
+interactive_slider_control:
+  slider_min: 0.0
+  slider_max: 6.6
+  spool_positions: true
+
+process_variable_actions:
+  min_dof_scale: [-1, -1] # change of the spool angle [rad] (MCP, PIP), as in env.yaml
+  max_dof_scale: [1, 1]
+
+# Servo spools on the tendon actuator sliders: the prismatic joint is the spool rim
+# (theta = q / r) and the slider armature is the servo inertia. Builds the tendon action
+# space (replaces 'robot_control_tendons' + 'apply_tendon_forces'); the DIP tendon is
+# fixed and has no slider.
+create_spool:
+  pully_radius: 0.005 # [m]
+  model_tendon_indices: [0, 1]
+
+# M5-friction servo law on the spools: slider motor force (tau_motor + tau_friction) / r,
+# applied by 'apply_motor_forces'.
+# Live plot of every spool's command, angle and velocity (env 0) in its own window; it can be
+# minimized or closed without affecting the simulation.
+spool_plot:
+  every: 2
+  window_s: 5.0
+
+apply_m5_forces:
+  # friction: False
+  friction_model_path: mlp_dynamic_envelope.pt # learned tau_f_max(omega, target - theta)
+  friction_model_output: envelope # the budget tau_f_max of the stick logic (torque: a signed tau_f applied as is)
+  motor_position_gain: 0.1 # A/rad, current = gain * (target - position), as on the robot
+  torque_constant: 0.500 # Nm/A, torque = K_t * sign(i) * max(|i| - i_0, 0)
+  current_deadband: 0.0496 # A, i_0
+  max_spool_velocity: 7.6 # rad/s, servo speed limit (measured: PWM saturates)
+  K_v: 0.0045
+  K_c: 0.0024
+  K_m: 0.007
+  K_e_wind: 0.243
+  K_e_unwind: 0.385
+  v_s: 0.2
+  alpha: 1.6
+  K_cs: 0.0028
+  K_ms: 0.153
+  K_es: 0.260
+
+# Per revolute motor (Abd, MCP, PIP, DIP; the free Abd joint has no tendon, only this spring), Nm/rad, as in env.yaml.
+antagonistic_spring:
+  spring_constants: {default: 0.005}
+
+observation:
+  num_hist: 1
+  hist_stride: 1
+  modules:
+    robot_state: {}
+    fingertip_force: {}
+
+reward: {}
+
+termination:
+  progress:
+    max_episode_length: 1000000
+
+render:
+  capped_step: false
+  paused: false
+  raise_exception: true
+  camera:
+    eye: [-0.093470, 0.033373, 0.221541]
+    target: [0.328324, -0.887109, -0.324408]
