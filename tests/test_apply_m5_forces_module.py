@@ -24,7 +24,7 @@ def _module(omega, command, max_spool_velocity=8.5, tension=0.0, **overrides):
         tau_e=torch.full((num_envs, 1), -R * tension),
         motor_indices=torch.tensor([0]),
         reset_rows=torch.zeros(num_envs, dtype=torch.bool),
-        commanded_angle=lambda container: torch.full((num_envs, 1), command),
+        commanded_delta_angle=lambda container: torch.full((num_envs, 1), command),
     )
     container = ModuleContainer()
     container.spool, container.device, container.total_num_envs = spool, torch.device("cpu"), num_envs

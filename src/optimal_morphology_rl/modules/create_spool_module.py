@@ -148,8 +148,9 @@ class CreateSpoolModule(BaseModule):
         """Recompute the rotary inertia J_eff = (armature + slider_mass) * r**2 the simulator integrates."""
         self.j_eff[:] = (self.slider_armature + self.slider_mass) * self.pully_radius**2
 
-    def commanded_angle(self, container: ModuleContainer) -> torch.Tensor:
-        """Scaled policy actions per spool (rad): the change of the spool angle, ``(num_envs, num_model_tendons)``."""
+    def commanded_delta_angle(self, container: ModuleContainer) -> torch.Tensor:
+        """The policy's scaled action per spool (rad): the commanded change of the spool angle (desired spool angle =
+        theta_m + this), ``(num_envs, num_model_tendons)``."""
         return container.scaled_act_buf[:, container.active_dof_slice][:, self.action_slots]
 
     def reset(self, container: ModuleContainer) -> None:

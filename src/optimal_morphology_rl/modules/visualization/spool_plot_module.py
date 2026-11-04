@@ -20,7 +20,8 @@ TORQUES = [("tau_m", r"$\tau_m$"), ("tau_e", r"$\tau_e$"), ("tau_f", r"$\tau_f$"
 class SpoolPlotModule(BaseModule):
     """Scrolling plots of the 'create_spool' spools of env ``env`` (debug / interactive use).
 
-    One row per spool: the commanded spool angle and theta_m (rad), omega_m (rad/s) and, with 'apply_m5_forces',
+    One row per spool: the desired spool angle (theta_m + the policy's commanded delta, as the robot's
+    /hand/rl_action_rad) and theta_m (rad), omega_m (rad/s) and, with 'apply_m5_forces',
     its torques tau_m, tau_e, tau_f and tau_f_max (Nm). The plot
     runs in its own subprocess (``utils/live_plot.py``), so drawing never stalls the simulation and the
     window can be minimized or closed (closing it just stops the plot). The time axis is the sim time
@@ -74,7 +75,7 @@ class SpoolPlotModule(BaseModule):
         manager = container.env.module_manager
         self.m5 = manager.get("apply_m5_forces") if "apply_m5_forces" in manager else None
         columns = [
-            {"ylabel": "spool angle (rad)", "signals": [("cmd", "command"), ("theta", r"$\theta_m$")]},
+            {"ylabel": "spool angle (rad)", "signals": [("desired", "desired"), ("theta", r"$\theta_m$")]},
             {"ylabel": "spool velocity (rad/s)", "signals": [("omega", r"$\omega_m$")]},
         ]
         if self.m5 is not None:
@@ -105,7 +106,12 @@ class SpoolPlotModule(BaseModule):
             return
         spool, e = container.spool, self.env_index
         sel = self.selected
-        signals = {"cmd": spool.commanded_angle(container)[e, sel], "theta": spool.theta_m[e, sel], "omega": spool.omega_m[e, sel]}
+        theta = spool.theta_m[e, sel]
+        signals = {
+            "desired": theta + spool.commanded_delta_angle(container)[e, sel],
+            "theta": theta,
+            "omega": spool.omega_m[e, sel],
+        }
         if self.m5 is not None:
             # Every sample carries every signal (the plotter keeps one history per signal): NaN (a gap) until
             # apply_m5_forces has run, e.g. when it is listed after this module.

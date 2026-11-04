@@ -215,7 +215,7 @@ class ApplyM5ForcesModule(BaseModule):
 
         # The action is the change of the spool angle: desired = theta_m + action, capped at -1 rad, so it asks to unwind
         # at most 1 rad below the tared taut angle (the hand controller applies the same law and cap on the robot).
-        actions = (theta_m + spool.commanded_angle(container)).clamp(min=-1.0)  # desired spool angle
+        actions = (theta_m + spool.commanded_delta_angle(container)).clamp(min=-1.0)  # desired spool angle
         tau_m = self._motor_torque(actions - theta_m)
 
         if not self.friction:
