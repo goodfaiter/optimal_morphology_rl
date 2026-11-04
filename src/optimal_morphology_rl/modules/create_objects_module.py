@@ -93,6 +93,7 @@ class LoadedRigidObject(ObjectBase):
         super().__init__(name, config=config)
         self.asset_path = asset_path
         self.fixed = fixed
+        self.load_position = (0.0, 0.0, 0.0)  # env frame, where the body is created (a fixed body stays there)
 
     def load(self, env_def) -> None:
         """Load object from file into environment definition."""
@@ -104,7 +105,7 @@ class LoadedRigidObject(ObjectBase):
             force_inertia_computation=False,
         )
 
-        object_root_trans_init = v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(0, 0, 0))
+        object_root_trans_init = v.Transform(v.Quat(0, 0, 0, 1), v.Vec3(*self.load_position))
 
         object_def_handle = env_def.get_rigid_body_def_handle_by_name(self.name)
         self.handle = env_def.create_rigid_body(object_def_handle, object_root_trans_init, self.name)
@@ -263,6 +264,19 @@ class Cube(LoadedRigidObject):
         self.set_vel_in_world_buf[reset_buf, :] = 0.0
         self.set_vel_in_world_buf[reset_buf, :3] = torch.tensor(self.init_angular_velocity, device=reset_buf.device, dtype=torch.float32)
         gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)
+
+
+class Cylinder(LoadedRigidObject):
+    """A fixed cylinder (axis along env z) at ``position`` (m, env frame): ``asset`` in assets/objects (default
+    cylinder_r125_h15: radius 12.5 mm, height 15 mm)."""
+
+    def __init__(self, config: dict[str, Any] | None = None):
+        asset = (config or {}).get("asset", "cylinder_r125_h15")
+        super().__init__(name="cylinder", asset_path=_object_asset_path(asset), fixed=True, config=config)
+        self.load_position = tuple(float(x) for x in self.config.get("position", [0.0, 0.0, 0.0]))
+
+    def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
+        """Fixed: it stays where it was created."""
 
 
 class CubeSmall(LoadedRigidObject):
@@ -521,6 +535,7 @@ class ButtonDifficult(Button):
 #: Mapping from object name to object class.
 OBJECT_REGISTRY: Dict[str, type] = {
     "cube": Cube,
+    "cylinder": Cylinder,
     "tomato": Tomato,
     "tomato_extreme": TomatoExtreme,
     "knife": Knife,
