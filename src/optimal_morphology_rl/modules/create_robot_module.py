@@ -15,21 +15,26 @@ from optimal_morphology_rl.modules.module_manager import register_module
 
 
 def set_kinematic_sensor_offsets(art_def, vsim_path: str) -> None:
-    """Set the vsim's kinematic sensor offsets on ``art_def`` (call after import, before finalize).
+    """Set the vsim's kinematic and force sensor offsets on ``art_def`` (call after import, before finalize).
 
-    vlearn's importer drops the offset of articulation kinematic sensors (it loads as 0, at the link
+    vlearn's importer drops the offset of articulation kinematic and force sensors (it loads as 0, at the link
     origin), so it is read from the vsim file. The offset is in the link frame (e.g. the fingertip on
-    the distal link).
+    the distal link); for a force sensor it is the point its torques refer to (the force does not depend on it).
     """
-    offsets = {
-        s.get("name"): [float(c) for c in s.get("offset", "0 0 0").split()]
-        for block in ET.parse(vsim_path).getroot().iter("kinematicSensor")
-        for s in block.iter("sensor")
-    }
-    for i in range(art_def.get_num_kinematic_sensor_defs()):
-        sensor_def = art_def.get_kinematic_sensor_def(i)
-        if sensor_def.name in offsets:
-            sensor_def.offset = v.Vec3(*offsets[sensor_def.name])
+    root = ET.parse(vsim_path).getroot()
+    for block_tag, count, get in (
+        ("kinematicSensor", art_def.get_num_kinematic_sensor_defs, art_def.get_kinematic_sensor_def),
+        ("forceSensor", art_def.get_num_force_sensor_defs, art_def.get_force_sensor_def),
+    ):
+        offsets = {
+            s.get("name"): [float(c) for c in s.get("offset", "0 0 0").split()]
+            for block in root.iter(block_tag)
+            for s in block.iter("sensor")
+        }
+        for i in range(count()):
+            sensor_def = get(i)
+            if sensor_def.name in offsets:
+                sensor_def.offset = v.Vec3(*offsets[sensor_def.name])
 
 
 class Robot:
@@ -90,8 +95,13 @@ class Robot:
         self.gpu_get_distal_link_transforms_cmd_arr: Any = None
         self.gpu_get_tendon_command_array: Any = None
 
-    def create_envs(self, env_def, vsim_path: str, device: torch.device, link_friction: float = 0.5) -> None:
-        """Load the hand model into the environment definition (``link_friction``: static and dynamic, every link)."""
+    def create_envs(
+        self, env_def, vsim_path: str, device: torch.device, link_friction: float = 0.5, self_collisions: bool = False
+    ) -> None:
+        """Load the hand model into the environment definition (``link_friction``: static and dynamic, every link).
+
+        ``self_collisions`` lets the hand's links collide with each other, except the pairs in the vsim's <filter>
+        (urdf_to_vsim.py COLLISION_FILTER: only links of different digits collide)."""
         print(f"Loading hand model from {vsim_path}")
 
         env_def.import_definitions(
@@ -106,7 +116,7 @@ class Robot:
 
         self.def_handle = env_def.get_articulation_def_handle(0)
         self.art_def = env_def.get_articulation_def(self.def_handle)
-        self.art_def.has_self_collisions = False
+        self.art_def.has_self_collisions = self_collisions
         self.art_def.enable_control_type(v.ArticulationControlType.MOTOR, True)
 
         self.arti_handle = env_def.create_articulation(
@@ -189,6 +199,16 @@ class RobotModule(BaseModule):
 
     Expects the shared container to already contain ``env_def`` and ``device``
     (populated by ``create_rigid_vsim_envs``).
+
+    By default every reset starts the hand open (all joint DOFs at 0). With ``reset_pose`` an env starts, with
+    probability ``prob`` per reset, at a uniform blend between the joint poses ``from`` and ``to`` (joint DOF name ->
+    position; unlisted DOFs at 0; ``to`` defaults to ``from``), e.g. the finger curled near an object. List the tendon
+    sliders with the finger joints (a pose the sim reached), so the tendons stay taut and the spool angles match::
+
+        reset_pose:
+          prob: 0.5
+          from: {Middle_MCP: 1.16, Middle_PIP: 1.03, Middle_mcp_tendon_slider_joint: 0.011}
+          to: {Middle_MCP: 1.38, Middle_PIP: 1.20, Middle_mcp_tendon_slider_joint: 0.013}
     """
 
     def finalize(self, container: ModuleContainer) -> None:
@@ -208,7 +228,13 @@ class RobotModule(BaseModule):
         self.use_tendon = bool(self.config.get("use_tendon", True))
 
         self.robot = Robot(fixed_hand=self.fixed_hand, use_tendon=self.use_tendon)
-        self.robot.create_envs(container.env_def, vsim_path, container.device, float(self.config.get("link_friction", 1.0)))
+        self.robot.create_envs(
+            container.env_def,
+            vsim_path,
+            container.device,
+            float(self.config.get("link_friction", 1.0)),
+            bool(self.config.get("self_collisions", False)),
+        )
 
         self.randomize_pose = bool(self.config.get("randomize_pose", False))
 
@@ -223,10 +249,33 @@ class RobotModule(BaseModule):
         if not (isinstance(pos, (list, tuple)) and len(pos) == 3):
             raise ValueError("fixed_hand_root_pos must be a list/tuple of 3 floats")
         self.fixed_hand_root_pos = torch.tensor(pos, dtype=torch.float32, device=container.device)
+        # Fixed hand: +- this offset (m, per axis, env frame) on the root position, drawn per env on every reset and
+        # following the training curriculum (e.g. the hand vs a fixed object a few mm off, as on the robot).
+        noise = self.config.get("fixed_hand_root_pos_noise", [0.0, 0.0, 0.0])
+        self.fixed_hand_root_pos_noise = torch.tensor(noise, dtype=torch.float32, device=container.device)
+        self.reset_pose = self._reset_pose(self.config.get("reset_pose"), container.device)
 
         container.robot = self.robot
         container.robot_vsim_path = vsim_path
         container.create_robot_config = self.config
+
+    def _reset_pose(self, cfg: dict[str, Any] | None, device: torch.device) -> tuple[float, torch.Tensor, torch.Tensor] | None:
+        """``reset_pose`` as (prob, from, to): the probability and the two poses over all joint DOFs."""
+        if not cfg:
+            return None
+        names = list(self.robot.art_def.get_joint_dof_def_names())
+
+        def pose(values: dict[str, float]) -> torch.Tensor:
+            unknown = sorted(set(values) - set(names))
+            if unknown:
+                raise ValueError(f"reset_pose: unknown joint DOFs {unknown}, the hand has {names}")
+            return torch.tensor([float(values.get(name, 0.0)) for name in names], dtype=torch.float32, device=device)
+
+        prob = float(cfg.get("prob", 1.0))
+        if not 0.0 <= prob <= 1.0:
+            raise ValueError(f"reset_pose: prob must be in [0, 1], got {prob}")
+        start = pose(cfg["from"])
+        return prob, start, pose(cfg["to"]) if "to" in cfg else start
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate the reset buffers and create the reset kinematic command."""
@@ -264,9 +313,20 @@ class RobotModule(BaseModule):
 
         container.reset_joint_pos_buf[reset_buf, :] = 0.0
         container.reset_joint_vel_buf[reset_buf, :] = 0.0
+        if self.reset_pose is not None:
+            prob, start, end = self.reset_pose
+            n_reset = int(reset_buf.sum())
+            blend = torch.rand((n_reset, 1), device=device)
+            posed = (torch.rand((n_reset, 1), device=device) < prob).float()
+            container.reset_joint_pos_buf[reset_buf, :] = posed * (start + blend * (end - start))
         if self.fixed_hand:
             container.reset_root_transform_buf[reset_buf, 4:] = self.fixed_hand_root_pos
             container.reset_root_transform_buf[reset_buf, :4] = self.fixed_hand_root_quat
+            if bool((self.fixed_hand_root_pos_noise > 0).any()):
+                n_reset = int(reset_buf.sum())
+                draw = 2.0 * torch.rand((n_reset, 3), device=device) - 1.0
+                offset = draw * self.fixed_hand_root_pos_noise * self.curriculum_factor
+                container.reset_root_transform_buf[reset_buf, 4:] = self.fixed_hand_root_pos + offset
         else:
             if randomize_pose:
                 n_reset = reset_buf.sum().item()
