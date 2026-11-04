@@ -90,6 +90,7 @@ from optimal_morphology_rl.modules.visualization.interactive_slider_control_modu
     InteractiveSliderControlModule,
 )
 from optimal_morphology_rl.modules.visualization.render_module import RenderModule
+from optimal_morphology_rl.modules.visualization.force_plot_module import ForcePlotModule
 from optimal_morphology_rl.modules.visualization.spool_plot_module import SpoolPlotModule
 
 __all__ = [
@@ -135,6 +136,7 @@ __all__ = [
     "RandomizeSpoolModule",
     "RenderModule",
     "ResetEnvsModule",
+    "ForcePlotModule",
     "SpoolPlotModule",
     "RewardBaseModule",
     "RewardManagerModule",
