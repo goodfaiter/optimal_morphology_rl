@@ -89,8 +89,9 @@ apply_m5_forces:
   K_ms: 0.153
   K_es: 0.260
 
+# Per revolute motor (Abd, MCP, PIP, DIP; the free Abd joint has no tendon, only this spring), Nm/rad, as in env.yaml.
 antagonistic_spring:
-  spring_constants: [0.005, 0.005, 0.005]
+  spring_constants: {default: 0.005}
 
 observation:
   num_hist: 1
@@ -109,5 +110,5 @@ render:
   paused: false
   raise_exception: true
   camera:
-    eye: [0.049792, 0.161890, 0.291726]
-    target: [0.586387, -0.742233, -0.324408]
+    eye: [-0.173195, 0.040107, 0.419494]
+    target: [0.789957, -0.177882, -0.586792]
