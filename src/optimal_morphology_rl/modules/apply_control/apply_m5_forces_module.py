@@ -86,7 +86,7 @@ class ApplyM5ForcesModule(BaseModule):
     configured values are kept in ``nominal``.
 
     The forces go to ``container.spool_motor_force_buf`` and are applied by 'apply_motor_forces'.
-    List it in ``pre_physics_step_modules`` after 'create_spool'.
+    List it in ``pre_physics_step_modules`` after 'update_spool'.
     """
 
     def finalize(self, container: ModuleContainer) -> None:

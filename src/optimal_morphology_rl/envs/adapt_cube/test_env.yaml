@@ -9,7 +9,7 @@ modules:
     - render
     - interactive_slider_control
     - process_variable_actions
-    - create_spool
+    - update_spool
     - apply_m5_forces
     # - spool_plot
     - antagonistic_spring

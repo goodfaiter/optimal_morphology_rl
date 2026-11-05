@@ -1,4 +1,4 @@
-"""Servo spools on the tendon actuator sliders: mapping, parameters and per-step state."""
+"""Servo spools on the tendon actuator sliders: mapping, parameters and the state buffers ('update_spool' fills them)."""
 
 from __future__ import annotations
 
@@ -13,11 +13,12 @@ from optimal_morphology_rl.modules.tendon_scale_utils import build_tendon_scale_
 
 @register_module("create_spool")
 class CreateSpoolModule(BaseModule):
-    """Owns the servo spools that wind the tendons, one per model tendon (``container.spool``).
+    """Owns the servo spools that wind the tendons, one per model tendon (``container.spool``): the tendon -> slider
+    mapping, the spool parameters and the state buffers. 'update_spool' reads the state every step.
 
     The vsim generator (urdf_to_vsim.py) prepends a motorized prismatic slider to every actuated
     tendon, with +q pulling the tendon. The slider is the rim of the spool, so the spool state is
-    read straight from the simulator:
+    read straight from the simulator ('update_spool'):
 
         theta_m = q / r,  omega_m = qdot / r            (winding positive; qdot the finite difference of q,
                                                           see slider_velocity)
@@ -30,9 +31,8 @@ class CreateSpoolModule(BaseModule):
     changing the radius or armature call :meth:`update_inertia`.
 
     Lifecycle: list it in ``init_modules`` (it builds the tendon action space, replacing
-    'robot_control_tendons') and in ``pre_physics_step_modules`` before the force law that reads
-    its state (e.g. 'apply_m5_forces'). On the step after a reset the state uses the commanded
-    reset joint state and zero tension.
+    'robot_control_tendons'), and 'update_spool' in ``pre_physics_step_modules`` before the force law that reads
+    the state (e.g. 'apply_m5_forces').
 
     Config shape::
 
@@ -133,7 +133,7 @@ class CreateSpoolModule(BaseModule):
             raise RuntimeError("CreateSpool: the slider joints need a positive armature or mass.")
         print(f"CreateSpool: sliders {self.dof_indices_list} (motors {self.motor_indices_list}), armature+mass {self.slider_inertias} kg")
 
-        # Spool state, updated in step (num_envs, num_model_tendons).
+        # Spool state, read every step by 'update_spool' (num_envs, num_model_tendons).
         shape = (num_envs, num_tendons)
         self.theta_m = torch.zeros(shape, device=device, dtype=torch.float32)
         self.omega_m = torch.zeros(shape, device=device, dtype=torch.float32)
@@ -153,10 +153,6 @@ class CreateSpoolModule(BaseModule):
         theta_m + this), ``(num_envs, num_model_tendons)``."""
         return container.scaled_act_buf[:, container.active_dof_slice][:, self.action_slots]
 
-    def reset(self, container: ModuleContainer) -> None:
-        """On the next step use the commanded reset state (and zero tension) for the reset envs."""
-        self.just_reset |= container.reset_buf
-
     def slider_velocity(self, container: ModuleContainer) -> torch.Tensor:
         """Slider velocity (m/s) since the last step's read: the finite difference of the slider positions.
 
@@ -171,24 +167,5 @@ class CreateSpoolModule(BaseModule):
         return torch.where(just_reset, container.reset_joint_vel_buf[:, self.dof_indices], velocity)
 
     def step(self, container: ModuleContainer) -> None:
-        """Read the spool state of every model tendon from the simulator."""
-        robot = container.robot
-        r = self.pully_radius
-
-        slider_pos = robot.get_joint_pos_buf[:, self.dof_indices]
-        slider_vel = self.slider_velocity(container)
-        tension = robot.get_tendon_force_buf[:, self.model_tendon_indices].clamp(min=0.0)
-
-        self.reset_rows[:] = self.just_reset
-        if bool(torch.any(self.just_reset)):
-            just_reset = self.just_reset.unsqueeze(-1)
-            slider_pos = torch.where(just_reset, container.reset_joint_pos_buf[:, self.dof_indices], slider_pos)
-            tension = torch.where(just_reset, torch.zeros_like(tension), tension)
-            self.just_reset[:] = False
-
-        self.last_slider_pos[:] = slider_pos
-        # New tensors every step, so references kept by readers (e.g. last_signals) stay valid.
-        self.theta_m = slider_pos / r
-        self.omega_m = slider_vel / r
-        self.tension = tension
-        self.tau_e = -r * tension
+        raise RuntimeError("create_spool no longer reads the spool state every step: list 'update_spool' (not "
+                           "'create_spool') in pre_physics_step_modules.")
