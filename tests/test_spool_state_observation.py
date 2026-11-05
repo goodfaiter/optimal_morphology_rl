@@ -115,6 +115,32 @@ def test_no_noise_by_default() -> None:
     assert torch.allclose(out, RAW)
 
 
+def test_white_noise_is_redrawn_every_step_with_the_given_std() -> None:
+    env = _spool_env()
+    module = SpoolStateObservation({"noise": {"angle_std": 1.0, "velocity_std": 0.5}})
+    module.reset(env)  # no per-episode noise configured: only the white noise
+    torch.manual_seed(0)
+    samples = []
+    for _ in range(4000):
+        out = torch.zeros((2, 4))
+        module.compute_observation(env, out)
+        samples.append(out - RAW)
+    noise = torch.stack(samples)
+    assert not torch.allclose(noise[0], noise[1])  # a new draw every step
+    assert torch.allclose(noise.mean(0), torch.zeros(2, 4), atol=0.05)
+    std = noise.std(0)
+    assert torch.allclose(std[:, :2], torch.ones(2, 2), atol=0.05)
+    assert torch.allclose(std[:, 2:], torch.full((2, 2), 0.5), atol=0.03)
+
+
+def test_white_noise_without_velocity_only_on_the_angle() -> None:
+    env = _spool_env()
+    module = SpoolStateObservation({"velocity": False, "noise": {"angle_std": 1.0, "velocity_std": 1.0}})
+    out = torch.zeros((2, 2))
+    module.compute_observation(env, out)
+    assert out.shape == (2, 2) and not torch.allclose(out, RAW[:, :2])
+
+
 def test_invalid_noise_config_raises() -> None:
     import pytest
 
@@ -124,6 +150,8 @@ def test_invalid_noise_config_raises() -> None:
         SpoolStateObservation({"noise": {"velocity_lag_range": [-0.01, 0.01]}})
     with pytest.raises(ValueError, match="unknown keys"):
         SpoolStateObservation({"noise": {"offset_range": [-0.1, 0.1]}})
+    with pytest.raises(ValueError, match="angle_std"):
+        SpoolStateObservation({"noise": {"angle_std": -1.0}})
 
 
 def test_observation_manager_forwards_resets_to_its_sub_modules() -> None:

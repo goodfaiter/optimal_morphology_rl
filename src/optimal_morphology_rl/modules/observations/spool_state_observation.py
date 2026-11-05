@@ -30,7 +30,8 @@ class SpoolStateObservation(ObservationBaseModule):
     ``omega_m = qdot / r`` (rad/s), with ``r`` the spool's (per env) ``pully_radius`` and ``qdot`` the finite-difference
     slider velocity of 'create_spool' (``slider_velocity``; the simulator's reads an offset while the spool stands still).
 
-    Layout: ``[theta_m (num_model_tendons), omega_m (num_model_tendons)]``.
+    Layout: ``[theta_m (num_model_tendons), omega_m (num_model_tendons)]``; with ``velocity: false`` only
+    ``[theta_m (num_model_tendons)]`` (the velocity then only shows in the angle history).
 
     Optional observation noise (``noise``), drawn per env and tendon on every reset and constant over
     the episode; the spool itself (its command and dynamics) is unchanged:
@@ -44,24 +45,38 @@ class SpoolStateObservation(ObservationBaseModule):
 
     The training curriculum (``curriculum_factor``) shrinks every range toward 0 (no noise at factor 0).
 
+    Optional white noise, drawn anew every step (not shrunk by the curriculum):
+
+    - ``angle_std`` (rad): standard deviation of a Gaussian added to ``theta_m``.
+    - ``velocity_std`` (rad/s): standard deviation of a Gaussian added to ``omega_m`` (after the lag and bias).
+
     Config shape (under ``observation.modules``)::
 
         spool_state:
+          velocity: true # optional (default true): observe omega_m
           noise:
             angle_offset_range: [-0.1, 0.1]
             velocity_lag_range: [0.0, 0.02]
             velocity_offset_range: [-0.2, 0.2]
+            angle_std: 0.0
+            velocity_std: 0.0
     """
 
     NOISE_KEYS = ("angle_offset_range", "velocity_lag_range", "velocity_offset_range")
+    STD_KEYS = ("angle_std", "velocity_std")
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
+        self.velocity = bool(self.config.get("velocity", True))
         noise = dict(self.config.get("noise") or {})
-        unknown = sorted(set(noise) - set(self.NOISE_KEYS))
+        unknown = sorted(set(noise) - set(self.NOISE_KEYS) - set(self.STD_KEYS))
         if unknown:
-            raise ValueError(f"spool_state 'noise' has unknown keys {unknown}; expected any of {list(self.NOISE_KEYS)}.")
+            raise ValueError(f"spool_state 'noise' has unknown keys {unknown}; expected any of {list(self.NOISE_KEYS + self.STD_KEYS)}.")
         self.ranges = {key: self._range(noise, key) for key in self.NOISE_KEYS}
+        self.angle_std = float(noise.get("angle_std", 0.0))
+        self.velocity_std = float(noise.get("velocity_std", 0.0))
+        if self.angle_std < 0.0 or self.velocity_std < 0.0:
+            raise ValueError("spool_state 'noise.angle_std' / 'noise.velocity_std' must be >= 0.")
         if self.ranges["velocity_lag_range"][0] < 0.0:
             raise ValueError("spool_state 'noise.velocity_lag_range' must be >= 0 (seconds).")
         self.noisy = any(low != 0.0 or high != 0.0 for low, high in self.ranges.values())
@@ -116,15 +131,32 @@ class SpoolStateObservation(ObservationBaseModule):
         return spool
 
     def get_obs_dim(self, env: Any) -> int:
-        return 2 * len(self._spool(env).model_tendon_indices)
+        return (2 if self.velocity else 1) * len(self._spool(env).model_tendon_indices)
 
     def compute_observation(self, env: Any, out: torch.Tensor) -> None:
+        if not self.velocity:
+            full = torch.empty((out.shape[0], 2 * out.shape[1]), device=out.device, dtype=out.dtype)
+            self._compute(env, full)
+            out[:] = full[:, : out.shape[1]]
+            return
+        self._compute(env, out)
+
+    def _compute(self, env: Any, out: torch.Tensor) -> None:
+        """``[theta_m, omega_m]`` with the observation noise."""
         spool = self._spool(env)
         robot = env.module_manager.container.robot
         dofs = spool.dof_indices
         out[:] = _spool_state_obs_jit(robot.get_joint_pos_buf[:, dofs], spool.slider_velocity(env.module_manager.container), spool.pully_radius)
-        if self.angle_offset is None:
-            return
+        if self.angle_offset is not None:
+            self._apply_episode_noise(out)
+        n = out.shape[1] // 2
+        if self.angle_std > 0.0:
+            out[:, :n] += self.angle_std * torch.randn_like(out[:, :n])
+        if self.velocity_std > 0.0:
+            out[:, n:] += self.velocity_std * torch.randn_like(out[:, n:])
+
+    def _apply_episode_noise(self, out: torch.Tensor) -> None:
+        """The per-episode encoder offset, velocity lag and velocity bias."""
         n = self.angle_offset.shape[1]
         omega = out[:, n:]
         lagged = self.velocity_filtered + self.velocity_alpha * (omega - self.velocity_filtered)
