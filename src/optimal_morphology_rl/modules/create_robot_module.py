@@ -200,13 +200,12 @@ class RobotModule(BaseModule):
     Expects the shared container to already contain ``env_def`` and ``device``
     (populated by ``create_rigid_vsim_envs``).
 
-    By default every reset starts the hand open (all joint DOFs at 0). With ``reset_pose`` an env starts, with
-    probability ``prob`` per reset, at a uniform blend between the joint poses ``from`` and ``to`` (joint DOF name ->
-    position; unlisted DOFs at 0; ``to`` defaults to ``from``), e.g. the finger curled near an object. List the tendon
-    sliders with the finger joints (a pose the sim reached), so the tendons stay taut and the spool angles match::
+    By default every reset starts the hand open (all joint DOFs at 0). With ``reset_pose`` every reset starts at a
+    uniform blend between the joint poses ``from`` and ``to`` (joint DOF name -> position; unlisted DOFs at 0; ``to``
+    defaults to ``from``), e.g. the finger curled near an object. List the tendon sliders with the finger joints (a pose
+    the sim reached), so the tendons stay taut and the spool angles match::
 
         reset_pose:
-          prob: 0.5
           from: {Middle_MCP: 1.16, Middle_PIP: 1.03, Middle_mcp_tendon_slider_joint: 0.011}
           to: {Middle_MCP: 1.38, Middle_PIP: 1.20, Middle_mcp_tendon_slider_joint: 0.013}
     """
@@ -259,8 +258,8 @@ class RobotModule(BaseModule):
         container.robot_vsim_path = vsim_path
         container.create_robot_config = self.config
 
-    def _reset_pose(self, cfg: dict[str, Any] | None, device: torch.device) -> tuple[float, torch.Tensor, torch.Tensor] | None:
-        """``reset_pose`` as (prob, from, to): the probability and the two poses over all joint DOFs."""
+    def _reset_pose(self, cfg: dict[str, Any] | None, device: torch.device) -> tuple[torch.Tensor, torch.Tensor] | None:
+        """``reset_pose`` as (from, to): the two poses over all joint DOFs."""
         if not cfg:
             return None
         names = list(self.robot.art_def.get_joint_dof_def_names())
@@ -271,11 +270,11 @@ class RobotModule(BaseModule):
                 raise ValueError(f"reset_pose: unknown joint DOFs {unknown}, the hand has {names}")
             return torch.tensor([float(values.get(name, 0.0)) for name in names], dtype=torch.float32, device=device)
 
-        prob = float(cfg.get("prob", 1.0))
-        if not 0.0 <= prob <= 1.0:
-            raise ValueError(f"reset_pose: prob must be in [0, 1], got {prob}")
+        if "prob" in cfg:
+            raise ValueError("reset_pose: 'prob' was removed (every reset samples between 'from' and 'to'); "
+                             "drop it, or drop reset_pose for an open start")
         start = pose(cfg["from"])
-        return prob, start, pose(cfg["to"]) if "to" in cfg else start
+        return start, pose(cfg["to"]) if "to" in cfg else start
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate the reset buffers and create the reset kinematic command."""
@@ -314,11 +313,9 @@ class RobotModule(BaseModule):
         container.reset_joint_pos_buf[reset_buf, :] = 0.0
         container.reset_joint_vel_buf[reset_buf, :] = 0.0
         if self.reset_pose is not None:
-            prob, start, end = self.reset_pose
-            n_reset = int(reset_buf.sum())
-            blend = torch.rand((n_reset, 1), device=device)
-            posed = (torch.rand((n_reset, 1), device=device) < prob).float()
-            container.reset_joint_pos_buf[reset_buf, :] = posed * (start + blend * (end - start))
+            start, end = self.reset_pose
+            blend = torch.rand((int(reset_buf.sum()), 1), device=device)
+            container.reset_joint_pos_buf[reset_buf, :] = start + blend * (end - start)
         if self.fixed_hand:
             container.reset_root_transform_buf[reset_buf, 4:] = self.fixed_hand_root_pos
             container.reset_root_transform_buf[reset_buf, :4] = self.fixed_hand_root_quat
