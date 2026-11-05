@@ -86,8 +86,10 @@ class ApplyM5ForcesModule(BaseModule):
     configured values are kept in ``nominal``.
 
     The forces go to ``container.spool_motor_force_buf`` and are applied by 'apply_motor_forces'.
-    List it in ``pre_physics_step_modules`` after 'update_spool'.
+    List it after 'update_spool' (every physics step: ``pre_gym_step_modules``).
     """
+
+    physics_rate = True  # the stop torque and the speed limit integrate over one physics step
 
     def finalize(self, container: ModuleContainer) -> None:
         if container.get("spool") is None:
@@ -210,9 +212,6 @@ class ApplyM5ForcesModule(BaseModule):
         return output
 
     def step(self, container: ModuleContainer) -> None:
-        if container.get("substep") is None and int(container.get("frame_skip", 1)) > 1:
-            raise RuntimeError("apply_m5_forces runs every physics step: with frame_skip > 1 list it in "
-                               "pre_gym_step_modules.")
         spool = container.spool
         theta_m, omega_m, tau_e = spool.theta_m, spool.omega_m, spool.tau_e
 

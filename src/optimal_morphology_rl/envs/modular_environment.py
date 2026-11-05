@@ -46,6 +46,7 @@ class ModularEnvironment:
         self.module_manager = ModuleManager.from_config(self.raw_config, registry=registry)
         self.module_manager.container.env = self
         self.module_manager.finalize()
+        self._check_physics_rate()
 
         # Post-finalize allocates buffers (obs/rew/act) and builds GPU commands.
         self.module_manager.post_finalize()
@@ -207,15 +208,10 @@ class ModularEnvironment:
 
         self.module_manager.pre_physics_step()
 
-        # The physics substeps: container.substep is their index (0 = the first after the policy's action), None
-        # outside them, so substep modules can tell a new action from a held one.
-        container = self.module_manager.container
-        for substep in range(self.frame_skip):
-            container.substep = substep
+        for _ in range(self.frame_skip):
             self.module_manager.pre_gym_step()
             self.gym.step()
             self.module_manager.post_gym_step()  # forward kinematics: the 'update_kinematics' module
-        container.substep = None
 
         # Block the renderer from advancing once the frame-skip block is done;
         # this mirrors EnvironmentGpu.step and keeps rendering on the control
@@ -262,6 +258,18 @@ class ModularEnvironment:
         if "observation" in names and (names.index("observation") < reset or names.count("observation") > 1):
             raise ValueError("post_physics_step_modules: 'observation' must come once, after 'reset_envs' (its history "
                              "takes one frame per call).")
+
+    def _check_physics_rate(self) -> None:
+        """Modules that must run every physics step (``physics_rate``) cannot be in the once-per-control-step phases
+        when a control step has several physics steps."""
+        if int(self.module_manager.container.frame_skip) <= 1:
+            return
+        for phase in ("pre_physics_step_modules", "post_physics_step_modules"):
+            for module in self.module_manager._phase_modules.get(phase, []):
+                if module.physics_rate:
+                    name = module.config.get("_name", type(module).__name__)
+                    raise ValueError(f"'{name}' runs every physics step: with frame_skip > 1 list it in "
+                                     f"pre_gym_step_modules or post_gym_step_modules, not {phase}.")
 
     @staticmethod
     def _check_kinematics_order(config: dict[str, Any]) -> None:

@@ -39,8 +39,8 @@ class CreateSpoolModule(BaseModule):
 
     - ``offset`` (default): every substep the desired spool angle is the current angle plus the action (a constant
       offset, i.e. a constant servo current).
-    - ``target``: the desired spool angle is fixed on the first substep (the angle then plus the action) and the
-      servo moves to it.
+    - ``target`` (with the 'update_spool_target' module): the desired spool angle is fixed once per control step (the
+      angle then plus the action) and the servo moves to it.
 
     ``dt`` is the physics step (the spool state is read and the servo law runs every physics substep).
 
@@ -48,7 +48,6 @@ class CreateSpoolModule(BaseModule):
 
         create_spool:
           pully_radius: 0.005             # m, scalar or per model tendon
-          hold: target                    # offset | target
           model_tendon_indices: [0, 1]    # default: every policy-controlled tendon
           slider_joint_suffix: _slider_joint
     """
@@ -124,9 +123,11 @@ class CreateSpoolModule(BaseModule):
                 "Ensure the 'create_rigid_vsim_envs' module is listed before 'create_spool'."
             )
         self.dt = float(physics_dt)  # the spool state and the servo law advance every physics step
-        self.hold = str(self.config.get("hold", "offset"))
-        if self.hold not in ("offset", "target"):
-            raise RuntimeError(f"CreateSpool config 'hold' must be 'offset' or 'target', got {self.hold!r}.")
+        if "hold" in self.config:
+            raise RuntimeError("CreateSpool: 'hold' is no config key; list 'update_spool_target' in "
+                               "pre_physics_step_modules for a held target (the default is offset).")
+        if not hasattr(self, "hold"):
+            self.hold = "offset"  # 'update_spool_target' sets "target" in its finalize
 
         radius = build_tendon_scale_tensor(self.config.get("pully_radius", 0.011), num_tendons, device, "pully_radius")
         if torch.any(radius <= 0.0):
@@ -156,7 +157,7 @@ class CreateSpoolModule(BaseModule):
         # Slider positions read by the last step, for the finite-difference velocity (see slider_velocity).
         self.last_slider_pos = torch.zeros(shape, device=device, dtype=torch.float32)
         self.reset_rows = torch.zeros(num_envs, device=device, dtype=torch.bool)  # envs reset before this step
-        # hold: target: the desired spool angle fixed at the control step's first substep ('update_spool').
+        # hold: target: the desired spool angle fixed once per control step ('update_spool_target').
         self.target = torch.zeros(shape, device=device, dtype=torch.float32)
 
     def update_inertia(self) -> None:

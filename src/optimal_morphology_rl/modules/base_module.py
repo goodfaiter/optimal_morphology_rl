@@ -24,6 +24,9 @@ class BaseModule(ABC):
 
     # Training curriculum progress (rl_games 'curriculum' levels, e.g. 0 -> 1); 1.0 = the full task (play, export).
     curriculum_factor: float = 1.0
+    # True: the module must run every physics step (pre_gym / post_gym phases) when a control step has several
+    # (frame_skip > 1), e.g. a servo law that integrates at the physics step; checked by ModularEnvironment.
+    physics_rate: bool = False
 
     def __init__(self, config: dict[str, Any] | None = None):
         """Initialize the module with its own config slice.
