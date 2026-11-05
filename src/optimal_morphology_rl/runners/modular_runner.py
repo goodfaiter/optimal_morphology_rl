@@ -323,6 +323,11 @@ def export_info(env: ModularEnvironment) -> dict[str, Any]:
         info["hist_stride"] = obs_module.hist_stride
         info["observation_modules"] = list(obs_module.config.get("modules", []))
 
+    spool = getattr(container, "spool", None)
+    if spool is not None:
+        # How a held action is applied between policy steps ('create_spool' hold), for the robot's controller.
+        info["hold"] = spool.hold
+
     if "process_variable_actions" in manager:
         actions = manager.get("process_variable_actions")
         num_actions = env.action_space.shape[0]

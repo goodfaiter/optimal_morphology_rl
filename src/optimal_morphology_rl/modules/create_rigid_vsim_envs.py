@@ -156,6 +156,9 @@ class CreateRigidVsimEnvs(BaseModule):
         container.total_num_envs = self.total_num_envs
         container.timestep = self.timestep
         container.frame_skip = self.frame_skip
+        # The two clocks: one physics step, and one control (policy) step of frame_skip physics steps.
+        container.physics_dt = self.timestep
+        container.control_dt = self.timestep * self.frame_skip
         container.rendering = self.rendering
         container.with_window = self.with_window
         container.gravity = self.gravity

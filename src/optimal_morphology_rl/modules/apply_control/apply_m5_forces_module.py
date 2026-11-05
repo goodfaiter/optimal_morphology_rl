@@ -210,6 +210,9 @@ class ApplyM5ForcesModule(BaseModule):
         return output
 
     def step(self, container: ModuleContainer) -> None:
+        if container.get("substep") is None and int(container.get("frame_skip", 1)) > 1:
+            raise RuntimeError("apply_m5_forces runs every physics step: with frame_skip > 1 list it in "
+                               "pre_gym_step_modules.")
         spool = container.spool
         theta_m, omega_m, tau_e = spool.theta_m, spool.omega_m, spool.tau_e
 

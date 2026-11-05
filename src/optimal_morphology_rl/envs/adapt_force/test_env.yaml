@@ -21,6 +21,7 @@ modules:
   pre_gym_step_modules: []
   post_gym_step_modules: []
   post_physics_step_modules:
+    - update_kinematics # forward kinematics after the physics
     - update_robot
     - update_kinematic_sensor
     - update_force_sensors

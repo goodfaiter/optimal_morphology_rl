@@ -34,10 +34,21 @@ class CreateSpoolModule(BaseModule):
     'robot_control_tendons'), and 'update_spool' in ``pre_physics_step_modules`` before the force law that reads
     the state (e.g. 'apply_m5_forces').
 
+    ``hold`` says what the policy's action (the change of the spool angle) means while it is held over the physics
+    substeps of a control step (``frame_skip`` > 1; with one substep both are the same):
+
+    - ``offset`` (default): every substep the desired spool angle is the current angle plus the action (a constant
+      offset, i.e. a constant servo current).
+    - ``target``: the desired spool angle is fixed on the first substep (the angle then plus the action) and the
+      servo moves to it.
+
+    ``dt`` is the physics step (the spool state is read and the servo law runs every physics substep).
+
     Config shape::
 
         create_spool:
           pully_radius: 0.005             # m, scalar or per model tendon
+          hold: target                    # offset | target
           model_tendon_indices: [0, 1]    # default: every policy-controlled tendon
           slider_joint_suffix: _slider_joint
     """
@@ -106,14 +117,16 @@ class CreateSpoolModule(BaseModule):
         num_envs = container.total_num_envs
         num_tendons = len(self.model_tendon_indices)
 
-        timestep = container.get("timestep")
-        frame_skip = container.get("frame_skip")
-        if timestep is None or frame_skip is None:
+        physics_dt = container.get("physics_dt")
+        if physics_dt is None:
             raise RuntimeError(
-                "CreateSpool requires 'timestep' and 'frame_skip' in the shared container. "
+                "CreateSpool requires 'physics_dt' in the shared container. "
                 "Ensure the 'create_rigid_vsim_envs' module is listed before 'create_spool'."
             )
-        self.dt = float(timestep) * float(frame_skip)
+        self.dt = float(physics_dt)  # the spool state and the servo law advance every physics step
+        self.hold = str(self.config.get("hold", "offset"))
+        if self.hold not in ("offset", "target"):
+            raise RuntimeError(f"CreateSpool config 'hold' must be 'offset' or 'target', got {self.hold!r}.")
 
         radius = build_tendon_scale_tensor(self.config.get("pully_radius", 0.011), num_tendons, device, "pully_radius")
         if torch.any(radius <= 0.0):
@@ -143,15 +156,25 @@ class CreateSpoolModule(BaseModule):
         # Slider positions read by the last step, for the finite-difference velocity (see slider_velocity).
         self.last_slider_pos = torch.zeros(shape, device=device, dtype=torch.float32)
         self.reset_rows = torch.zeros(num_envs, device=device, dtype=torch.bool)  # envs reset before this step
+        # hold: target: the desired spool angle fixed at the control step's first substep ('update_spool').
+        self.target = torch.zeros(shape, device=device, dtype=torch.float32)
 
     def update_inertia(self) -> None:
         """Recompute the rotary inertia J_eff = (armature + slider_mass) * r**2 the simulator integrates."""
         self.j_eff[:] = (self.slider_armature + self.slider_mass) * self.pully_radius**2
 
-    def commanded_delta_angle(self, container: ModuleContainer) -> torch.Tensor:
-        """The policy's scaled action per spool (rad): the commanded change of the spool angle (desired spool angle =
-        theta_m + this), ``(num_envs, num_model_tendons)``."""
+    def action_delta_angle(self, container: ModuleContainer) -> torch.Tensor:
+        """The policy's scaled action per spool (rad), ``(num_envs, num_model_tendons)``."""
         return container.scaled_act_buf[:, container.active_dof_slice][:, self.action_slots]
+
+    def commanded_delta_angle(self, container: ModuleContainer) -> torch.Tensor:
+        """The commanded change of the spool angle now (rad; desired spool angle = theta_m + this),
+        ``(num_envs, num_model_tendons)``: the action (``hold: offset``) or the fixed target less the current angle
+        (``hold: target``)."""
+        if self.hold == "target":
+            # Envs reset since the last read have no target yet: their (reset) action, as with offset.
+            return torch.where(self.just_reset.unsqueeze(-1), self.action_delta_angle(container), self.target - self.theta_m)
+        return self.action_delta_angle(container)
 
     def slider_velocity(self, container: ModuleContainer) -> torch.Tensor:
         """Slider velocity (m/s) since the last step's read: the finite difference of the slider positions.

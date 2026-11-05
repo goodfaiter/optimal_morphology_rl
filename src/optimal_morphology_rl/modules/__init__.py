@@ -25,6 +25,7 @@ from optimal_morphology_rl.modules.create_rigid_vsim_envs import CreateRigidVsim
 from optimal_morphology_rl.modules.create_robot_module import RobotModule
 from optimal_morphology_rl.modules.create_spool_module import CreateSpoolModule
 from optimal_morphology_rl.modules.update_spool_module import UpdateSpoolModule
+from optimal_morphology_rl.modules.update_kinematics_module import UpdateKinematicsModule
 from optimal_morphology_rl.modules.external_force_module import ExternalForceModule
 from optimal_morphology_rl.modules.goal_pose_module import GoalPoseModule
 from optimal_morphology_rl.modules.gravity_compensation_module import GravityCompensationModule
@@ -114,6 +115,7 @@ __all__ = [
     "CreateRigidVsimEnvs",
     "CreateSpoolModule",
     "UpdateSpoolModule",
+    "UpdateKinematicsModule",
     "ExternalForceModule",
     "GoalPoseModule",
     "GoalStateObservation",

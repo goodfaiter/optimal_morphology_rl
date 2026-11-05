@@ -42,6 +42,7 @@ class ModularEnvironment:
 
         # Build modules and run lifecycle hooks.
         self._check_post_physics_order(self.raw_config)
+        self._check_kinematics_order(self.raw_config)
         self.module_manager = ModuleManager.from_config(self.raw_config, registry=registry)
         self.module_manager.container.env = self
         self.module_manager.finalize()
@@ -206,13 +207,15 @@ class ModularEnvironment:
 
         self.module_manager.pre_physics_step()
 
-        for _ in range(self.frame_skip):
+        # The physics substeps: container.substep is their index (0 = the first after the policy's action), None
+        # outside them, so substep modules can tell a new action from a held one.
+        container = self.module_manager.container
+        for substep in range(self.frame_skip):
+            container.substep = substep
             self.module_manager.pre_gym_step()
             self.gym.step()
-            self.module_manager.post_gym_step()
-        # Kinematic sensor states are only up to date after forward kinematics (vlearn: call compute_kinematics()
-        # after Gym.step()); without it the cube sensor's linear velocity read ~0.76x the object's. Costs ~nothing.
-        self.gym.compute_kinematics()
+            self.module_manager.post_gym_step()  # forward kinematics: the 'update_kinematics' module
+        container.substep = None
 
         # Block the renderer from advancing once the frame-skip block is done;
         # this mirrors EnvironmentGpu.step and keeps rendering on the control
@@ -259,6 +262,21 @@ class ModularEnvironment:
         if "observation" in names and (names.index("observation") < reset or names.count("observation") > 1):
             raise ValueError("post_physics_step_modules: 'observation' must come once, after 'reset_envs' (its history "
                              "takes one frame per call).")
+
+    @staticmethod
+    def _check_kinematics_order(config: dict[str, Any]) -> None:
+        """Kinematic sensors read stale states without forward kinematics after the physics: 'update_kinematics' must
+        run before 'update_kinematic_sensor' (earlier in its phase, or in post_gym for a post_physics sensor)."""
+        phases = (config.get("modules") or {})
+        post_gym = [ModuleManager._extract_module_name(e) for e in phases.get("post_gym_step_modules") or []]
+        post_physics = [ModuleManager._extract_module_name(e) for e in phases.get("post_physics_step_modules") or []]
+        for phase, names, earlier in (("post_gym", post_gym, []), ("post_physics", post_physics, post_gym)):
+            if "update_kinematic_sensor" not in names:
+                continue
+            before = earlier + names[: names.index("update_kinematic_sensor")]
+            if "update_kinematics" not in before:
+                raise ValueError(f"{phase}_step_modules: 'update_kinematic_sensor' reads stale sensor states without "
+                                 "forward kinematics; list 'update_kinematics' before it (or in post_gym_step_modules).")
 
     def _observations(self) -> torch.Tensor | dict[str, torch.Tensor]:
         """The policy observations, or {"obs", "priv_obs"} with privileged (critic only) observations."""

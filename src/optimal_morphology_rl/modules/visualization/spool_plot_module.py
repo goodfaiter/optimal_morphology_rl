@@ -71,7 +71,7 @@ class SpoolPlotModule(BaseModule):
             raise RuntimeError(f"SpoolPlotModule 'spools' must be a non-empty list of spool indices in 0..{len(rows) - 1} ({rows}), got {indices}.")
         rows = [rows[i] for i in indices]
         self.selected = torch.tensor(indices, dtype=torch.long, device=container.device)
-        self.dt = spool.dt
+        self.dt = float(container.get("control_dt", spool.dt))  # one point per control step
         manager = container.env.module_manager
         self.m5 = manager.get("apply_m5_forces") if "apply_m5_forces" in manager else None
         columns = [

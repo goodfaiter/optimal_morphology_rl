@@ -120,7 +120,8 @@ class SpoolStateObservation(ObservationBaseModule):
 
         self.angle_offset[reset_buf] = draw("angle_offset_range")
         self.velocity_offset[reset_buf] = draw("velocity_offset_range")
-        dt = float(spool.dt)
+        container = env.module_manager.container
+        dt = float(container.get("control_dt", spool.dt))  # the filter advances once per observation (control step)
         self.velocity_alpha[reset_buf] = dt / (draw("velocity_lag_range") + dt)
         self.filter_restart[reset_buf] = True
 
