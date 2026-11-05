@@ -59,9 +59,10 @@ params:
     curriculum:
       # Randomization width (every randomize_* module and the spool observation noise): none at 0, full at 1.
       # As runs/adapt_cube/2026_10_26_20_23_27 (seed 4, 1.74 rad/s at full randomization).
-      levels: ${eval:'[0.2, 0.4, 0.6, 0.8, 1.0] if mode == "train" else [1.0]'}
+      levels: ${eval:'[0.25, 0.5, 0.75, 1.0] if mode == "train" else [1.0]'}
       # levels: ${eval:'[0.6, 0.8, 1.0] if mode == "train" else [1.0]'}
       # levels: ${eval:'[1.0] if mode == "train" else [1.0]'}
+      # levels: ${eval:'[0.0] if mode == "train" else [0.0]'}
       patience: 50 # epochs without a 1 % improvement
       min_delta: 0.01
       min_epochs: 50 # warm-up of each level
