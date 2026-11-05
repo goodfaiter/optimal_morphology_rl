@@ -35,7 +35,8 @@ class RandomizeObjectModule(BaseModule):
         inertia = s_m * s^2 * s_i * defined_diag_inertia      (all three axes)
 
     i.e. the inertia follows the mass and the size (same shape), and ``s_i`` adds shape uncertainty on top; the mass
-    does not follow the size (``mass_scale_range`` covers it). The size goes through vlearn's rigid body def scale,
+    does not follow the size (``mass_scale_range`` covers it). Without ``size_scale_range`` the size is not touched
+    (needed for primitive geometry such as a box, which vlearn cannot scale). The size goes through vlearn's rigid body def scale,
     then the mass and inertia are written (after it, as the scale may recompute them). Rigid body defs are shared
     by an env set, so there is one value per env set (per env with ``create_rigid_vsim_envs.num_envs_per_set: 1``);
     a set is resampled when any of its envs resets. All ranges follow the training curriculum from 1 (at 0) to the
@@ -91,9 +92,12 @@ class RandomizeObjectModule(BaseModule):
         self.set_inv_inertia_buf = (1.0 / self.defined_inertia).repeat(num_env_sets, 1)
 
         group, gym = container.env_group, container.gym
-        self.scale_cmd = gym.create_gpu_array(
-            [group.create_rigid_body_def_scale_command(v.wrap_gpu_buffer(self.set_scale_buf), def_handle)]
-        )
+        # Without a size range no scale command: vlearn cannot scale primitive geometry (a box), only meshes.
+        self.scale_cmd = None
+        if self.size_range != (1.0, 1.0):
+            self.scale_cmd = gym.create_gpu_array(
+                [group.create_rigid_body_def_scale_command(v.wrap_gpu_buffer(self.set_scale_buf), def_handle)]
+            )
         self.mass_cmd = gym.create_gpu_array(
             [group.create_rigid_body_property_command(v.RigidBodyProperty.INV_MASS, v.wrap_gpu_buffer(self.set_inv_mass_buf), def_handle)]
         )
@@ -130,6 +134,7 @@ class RandomizeObjectModule(BaseModule):
         inertia = (self.mass_scale * self.size_scale**2 * self.inertia_scale).unsqueeze(1) * self.defined_inertia
         self.set_inv_inertia_buf[:] = 1.0 / inertia
         gym = container.gym
-        gym.scale_rigid_body_defs(self.scale_cmd)
+        if self.scale_cmd is not None:
+            gym.scale_rigid_body_defs(self.scale_cmd)
         gym.set_rigid_body_properties(self.mass_cmd)
         gym.set_rigid_body_properties(self.inertia_cmd)
