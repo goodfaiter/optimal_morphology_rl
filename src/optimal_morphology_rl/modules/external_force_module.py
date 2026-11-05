@@ -20,6 +20,7 @@ class ExternalForceConfig:
     apply_prob: float = 0.02
     force_max: float = 2.0
     torque_max: float = 0.0
+    duration_steps: int = 1
     force_type: v.ForceType = v.ForceType.FORCE_TORQUE
     link_index: int = 0
 
@@ -55,6 +56,7 @@ class _BodyForceEntry:
         self.config = config
 
         self.force_buf = torch.zeros((num_envs, 1, 6), dtype=torch.float32, device=device)
+        self.steps_left = torch.zeros(num_envs, dtype=torch.long, device=device)
         self.cmd = env_group.create_rigid_body_external_force_command(
             v.wrap_gpu_buffer(self.force_buf),
             handle,
@@ -62,15 +64,19 @@ class _BodyForceEntry:
         )
         self.cmd_array = gym.create_gpu_array([self.cmd])
 
-    def sample_and_apply(self, gym: v.Gym) -> None:
-        """Sample and apply a random external force/torque."""
-        apply_mask = torch.rand(self.num_envs, device=self.device) < self.config.apply_prob
-        self.force_buf.zero_()
+    def sample_and_apply(self, gym: v.Gym, scale: float = 1.0, allowed: torch.Tensor | None = None) -> None:
+        """Apply the running pushes and start new ones (force / torque up to ``scale`` x the max; only in ``allowed``
+        envs), each lasting ``duration_steps`` steps."""
+        self.steps_left = (self.steps_left - 1).clamp(min=0)
+        self.force_buf[self.steps_left == 0] = 0.0
+        apply_mask = (self.steps_left == 0) & (torch.rand(self.num_envs, device=self.device) < self.config.apply_prob)
+        if allowed is not None:
+            apply_mask &= allowed
 
         if apply_mask.any():
             num_apply = apply_mask.sum().item()
-            f_hi = self.config.force_max
-            t_hi = self.config.torque_max
+            f_hi = self.config.force_max * scale
+            t_hi = self.config.torque_max * scale
 
             random_forces = torch.zeros((num_apply, 6), device=self.device)
             force_mags = f_hi * torch.rand((num_apply, 1), device=self.device)
@@ -79,8 +85,14 @@ class _BodyForceEntry:
             random_forces[:, 3:] = _uniform_sphere(num_apply, self.device) * torque_mags
 
             self.force_buf[apply_mask, 0, :] = random_forces
+            self.steps_left[apply_mask] = self.config.duration_steps
 
         gym.set_rigid_body_external_forces(self.cmd_array)
+
+    def clear(self, envs: torch.Tensor) -> None:
+        """Stop the pushes of ``envs`` (bool mask)."""
+        self.force_buf[envs] = 0.0
+        self.steps_left[envs] = 0
 
 
 class _ExternalForceApplier:
@@ -109,17 +121,30 @@ class _ExternalForceApplier:
             for name, handle in body_handles.items()
         }
 
-    def step(self, gym: v.Gym) -> None:
+    def step(self, gym: v.Gym, scale: float = 1.0, allowed: torch.Tensor | None = None) -> None:
         for entry in self._entries.values():
-            entry.sample_and_apply(gym)
+            entry.sample_and_apply(gym, scale, allowed)
+
+    def clear(self, envs: torch.Tensor) -> None:
+        for entry in self._entries.values():
+            entry.clear(envs)
 
 
 @register_module("external_force")
 class ExternalForceModule(BaseModule):
-    """Applies random external forces to the reward object.
+    """Applies random pushes (force / torque) to the reward object (a loaded rigid object).
 
-    Only active when the reward object is a loaded rigid object that is not the
-    cube (matching the legacy behavior).
+    Each step an env without a running push starts one with probability ``apply_prob``: a uniformly random direction
+    with a magnitude up to ``force_max`` (N) / ``torque_max`` (Nm), held for ``duration`` s (default one step). The
+    maxima follow the training curriculum (0 at curriculum 0, the full value at 1; ``curriculum: false`` keeps them
+    at the full value). No push starts while
+    'delayed_drop' still holds the object; a reset stops the env's push::
+
+        external_force:
+          apply_prob: 0.005 # per step
+          force_max: 1.0 # N
+          torque_max: 0.0 # Nm
+          duration: 0.3 # s
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -127,6 +152,8 @@ class ExternalForceModule(BaseModule):
         self.apply_prob = float(self.config.get("apply_prob", 0.02))
         self.force_max = float(self.config.get("force_max", 2.0))
         self.torque_max = float(self.config.get("torque_max", 0.0))
+        self.duration = self.config.get("duration")  # s; None = one step
+        self.follow_curriculum = bool(self.config.get("curriculum", True))
         self.force_module: _ExternalForceApplier | None = None
 
     def post_finalize(self, container: ModuleContainer) -> None:
@@ -138,13 +165,15 @@ class ExternalForceModule(BaseModule):
         from optimal_morphology_rl.modules.create_objects_module import LoadedRigidObject
 
         reward_object_name = container.get("reward_object_name", "")
-        if reward_object_name == "cube" or not isinstance(reward_object, LoadedRigidObject):
+        if not isinstance(reward_object, LoadedRigidObject):
             return
 
+        dt = float(container.timestep) * float(container.frame_skip)
         config = ExternalForceConfig(
             apply_prob=self.apply_prob,
             force_max=self.force_max,
             torque_max=self.torque_max,
+            duration_steps=1 if self.duration is None else max(1, round(float(self.duration) / dt)),
         )
         self.force_module = _ExternalForceApplier(
             body_handles={reward_object_name: reward_object.handle},
@@ -157,6 +186,12 @@ class ExternalForceModule(BaseModule):
         container.external_force = self.force_module
 
     def step(self, container: ModuleContainer) -> None:
-        """Apply a random external force/torque to the reward object."""
+        """Apply the random pushes to the reward object."""
         if self.force_module is not None:
-            self.force_module.step(container.gym)
+            held = container.get("drop_held")
+            scale = self.curriculum_factor if self.follow_curriculum else 1.0
+            self.force_module.step(container.gym, scale, None if held is None else ~held)
+
+    def reset(self, container: ModuleContainer) -> None:
+        if self.force_module is not None and container.reset_buf.any():
+            self.force_module.clear(container.reset_buf)
