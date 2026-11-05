@@ -125,8 +125,10 @@ class LoadedRigidObject(ObjectBase):
         rigid_mat = v.RigidMaterial()
         rigid_mat.static_friction = 0.0 if self.name not in ["table", "table_with_camera"] else 1.8
         rigid_mat.dynamic_friction = 0.0 if self.name not in ["table", "table_with_camera"] else 1.5
-        rigid_mat.restitution = 0.0
-        rigid_mat.damping = 0.0
+        # restitution: 0 = inelastic, 1 = elastic; negative = the stiffness of a soft (implicit spring) contact, with
+        # contact_damping its damping (vlearn uses it if either material is soft).
+        rigid_mat.restitution = float(self.config.get("restitution", 0.0))
+        rigid_mat.damping = float(self.config.get("contact_damping", 0.0))
         rigid_mat.roughness = 0.0
         rigid_mat_handle = env_def.create_rigid_material(rigid_mat)
         env_def.assign_rigid_material_to_rigid_body(object_def_handle, rigid_mat_handle)
