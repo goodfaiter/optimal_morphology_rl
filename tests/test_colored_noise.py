@@ -95,3 +95,32 @@ def test_apply_colored_noise_is_inplace():
     assert out is res
     assert res["actions"].shape == (5, 3)
     assert res["neglogpacs"].shape == (5,)
+
+
+def test_continued_noise_starts_on_the_previous_sequence() -> None:
+    torch.manual_seed(0)
+    first, tail = ColoredNoiseA2CAgent.continued_noise(2.0, 256, 4, 2, 64, None)
+    second, _ = ColoredNoiseA2CAgent.continued_noise(2.0, 256, 4, 2, 64, tail)
+    assert first.shape == (256, 4, 2) and tail.shape == (64, 4, 2)
+    torch.testing.assert_close(second[0], tail[0])  # the previous sequence's next sample
+
+
+def test_continued_noise_has_no_jump_between_rollouts_and_keeps_its_level() -> None:
+    torch.manual_seed(0)
+    tail, rollouts = None, []
+    for _ in range(40):
+        rollout, tail = ColoredNoiseA2CAgent.continued_noise(2.0, 256, 256, 1, 64, tail)
+        rollouts.append(rollout)
+    noise = torch.cat(rollouts)  # (40 * 256, envs, 1)
+    steps = (noise[1:] - noise[:-1]).abs()
+    boundary = torch.stack([steps[k * 256 - 1] for k in range(1, 40)]).mean()
+    assert boundary < 2.0 * steps.mean()  # independent rollouts jump by ~1.1 (std sqrt(2)) here
+    blended = torch.cat([r[:64] for r in rollouts[1:]])
+    assert abs(float(blended.std()) - 1.0) < 0.1  # the cos / sin blend keeps the unit std
+
+
+def test_independent_rollouts_jump_at_the_boundary() -> None:
+    torch.manual_seed(0)
+    a = powerlaw_psd_gaussian(2.0, (256, 256, 1)); b = powerlaw_psd_gaussian(2.0, (256, 256, 1))
+    within = (a[1:] - a[:-1]).abs().mean()
+    assert (b[0] - a[-1]).abs().mean() > 5 * within

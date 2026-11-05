@@ -37,6 +37,15 @@ params:
 
   config:
     name: adapt_force
+    # Exploration noise of a2c_continuous_pink (algo above): PSD ~ 1/f^beta (1 = pink, 2 = brown, 0 = white), times the
+    # policy sigma and scale. continuous: each rollout's noise continues the previous rollout's (blended over
+    # crossfade_steps) instead of jumping to a new independent sequence at every rollout boundary.
+    colored_noise:
+      enabled: true
+      beta: 1.0
+      scale: 1.0
+      continuous: true
+      crossfade_steps: 64
     env_name: adapt_force_env
     multi_gpu: False
     mixed_precision: True
