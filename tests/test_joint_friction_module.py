@@ -98,8 +98,9 @@ def test_post_finalize_builds_command_and_samples(container: ModuleContainer) ->
 
     buf = container.set_joint_friction_buf
     assert buf.shape == (1, 3)
-    assert torch.all(buf[:, :2] >= 0.05)
-    assert torch.all(buf[:, :2] <= 0.2)
+    # Revolute DOFs: their defined friction (0.5) plus a sample of the range.
+    assert torch.all(buf[:, :2] >= 0.55)
+    assert torch.all(buf[:, :2] <= 0.7)
     assert torch.all(buf[:, 2] == 0.5)  # non-revolute DOF keeps its defined friction
     assert container.env_group.commands[0][1] == ("wrapped", container.set_joint_friction_buf)
 
@@ -115,9 +116,9 @@ def test_reset_resamples_and_applies(container: ModuleContainer) -> None:
     module.reset(container)
 
     after = container.set_joint_friction_buf[:, :2]
-    assert torch.all(after >= 0.05)
-    assert torch.all(after <= 0.2)
-    assert not torch.allclose(after, torch.full_like(after, 0.2))
+    assert torch.all(after >= 0.55)  # defined 0.5 + [0.05, 0.2]
+    assert torch.all(after <= 0.7)
+    assert not torch.allclose(after, torch.full_like(after, 0.7))
     assert container.gym.calls[-1] == ("set_joint_properties", container.gpu_set_joint_friction_cmd)
 
 
@@ -130,7 +131,7 @@ def test_pinned_range_keeps_constant(container: ModuleContainer) -> None:
     container.reset_buf = torch.ones(4, dtype=torch.bool)
     module.reset(container)
 
-    assert torch.allclose(container.set_joint_friction_buf, torch.tensor([[0.1, 0.1, 0.5]]))
+    assert torch.allclose(container.set_joint_friction_buf, torch.tensor([[0.6, 0.6, 0.5]]))  # defined 0.5 + 0.1
     assert container.gym.calls[-1][0] == "set_joint_properties"
 
 

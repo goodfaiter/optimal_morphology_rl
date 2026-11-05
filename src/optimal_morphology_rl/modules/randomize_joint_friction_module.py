@@ -28,10 +28,10 @@ def _validate_range(cfg_value: Any) -> tuple[float, float]:
 class RandomizeJointFrictionModule(BaseModule):
     """Randomizes and applies the articulation joint friction.
 
-    Joint friction is sampled uniformly from ``joint_friction_range`` (``[min, max]``) and
-    applied via ``gym.set_joint_properties`` on ``JointProperty.JOINT_FRICTION``. Only the
-    revolute DOFs are randomized; the other DOFs (e.g. the prismatic tendon sliders) keep the
-    friction of their vsim joint definition. The range follows the training curriculum from its min (at 0) to
+    Joint friction is sampled uniformly from ``joint_friction_range`` (``[min, max]``), added to the friction
+    of the vsim joint definition (e.g. the free Abd joints' damping friction) and applied via
+    ``gym.set_joint_properties`` on ``JointProperty.JOINT_FRICTION``. Only the revolute DOFs are
+    randomized; the other DOFs (e.g. the prismatic tendon sliders) keep their vsim friction. The range follows the training curriculum from its min (at 0) to
     ``[min, max]`` (at 1).
 
     Joint properties belong to the shared articulation definition, so there is one value per
@@ -86,6 +86,7 @@ class RandomizeJointFrictionModule(BaseModule):
             joint_def = robot.art_def.get_joint_def(i)
             start = joint_def.dof_start_index
             defined_friction[start : start + joint_def.dof] = joint_def.joint_friction
+        self.defined_friction = defined_friction
         container.set_joint_friction_buf = defined_friction.repeat(num_env_sets, 1)
         self._randomize(container, torch.ones(num_env_sets, dtype=torch.bool, device=device))
 
@@ -102,10 +103,10 @@ class RandomizeJointFrictionModule(BaseModule):
         )
 
     def _randomize(self, container: ModuleContainer, set_mask: torch.Tensor) -> None:
-        """Sample the revolute DOF frictions of the env sets in ``set_mask`` uniformly from the range."""
+        """Revolute DOF frictions of the env sets in ``set_mask``: the defined one plus a uniform sample of the range."""
         buf = container.set_joint_friction_buf
         low, high = curriculum_range(self.friction_min, self.friction_max, self.curriculum_factor, nominal=self.friction_min)
-        samples = torch.rand(buf.shape, device=buf.device) * (high - low) + low
+        samples = self.defined_friction + torch.rand(buf.shape, device=buf.device) * (high - low) + low
         buf[:] = torch.where(set_mask.unsqueeze(1) & self.revolute_dof_mask, samples, buf)
 
     def reset(self, container: ModuleContainer) -> None:
