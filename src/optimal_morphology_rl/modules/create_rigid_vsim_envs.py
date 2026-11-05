@@ -27,7 +27,7 @@ class CreateRigidVsimEnvs(BaseModule):
     after which this module finalizes the definition and instantiates the
     environment group in ``post_finalize``.
 
-    ``num_envs_per_set`` (default: ``num_envs``, i.e. one env set) splits the envs into env
+    ``num_envs_per_set`` (default 1: one env per set) splits the envs into env
     sets. Per-articulation-def properties such as joint friction are shared within an env set,
     so ``num_envs_per_set: 1`` lets them be randomized per env. The last set holds the remainder.
 
