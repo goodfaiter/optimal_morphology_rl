@@ -56,7 +56,7 @@ params:
     reward_shaper:
       scale_value: 1.0
     normalize_advantage: True
-    gamma: 0.995 # ~1 s horizon at 200 Hz: a drop / losing the cube must outweigh a quick spin (0.96 = 0.13 s made throwing it pay)
+    gamma: ${eval:'1 - control_dt / 1.0'} # ~1 s discount horizon at any frame_skip (0.995 at 200 Hz, 0.95 at 20 Hz)
     tau: 0.95
     learning_rate: 3e-4 # 3e-4 (and more aggressive updates) collapse into flinging the cube; 1e-4: ~2x the spin (runs/adapt_cube/experiments/results_hp_summary.md)
     lr_schedule: fixed
@@ -88,8 +88,8 @@ params:
     truncate_grads: True
     ppo: True
     e_clip: 0.2
-    horizon_length: 256
-    minibatch_size: 4096 # 64 minibatches per epoch (the minibatches are shuffled across envs and steps)
+    horizon_length: ${eval:'int(round(1.28 / control_dt))'} # control steps per env and epoch: 1.28 s of rollout (256 at 200 Hz, 64 at 50 Hz)
+    minibatch_size: 4096 # must divide num_envs * horizon_length: 64 minibatches at 200 Hz, 16 at 50 Hz (shuffled across envs and steps)
     mini_epochs: 1
     critic_coef: 0.0 # Should not matter with central_value_config (the actor's own critic is unused, the central critic's values give the advantages).
     clip_actions: False

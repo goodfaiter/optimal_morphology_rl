@@ -243,6 +243,7 @@ class CameraRecorderModule(BaseModule):
           enabled: ${eval:'mode == "play"'}   # e.g. only when playing a policy
           camera_rig: camera_rig              # optional
           frame_stride: 7                     # optional, default 1 (every control step); 7 = ~30 fps at 200 Hz
+          # fps: 30                           # or: frames per second (the nearest whole stride, any frame_skip)
           num_steps: 600                      # optional: frames to record, then write the videos
           output_dir: ...                     # optional in play mode (frames)
           video_dir: ...                      # optional, where the .mp4 files go
@@ -264,6 +265,8 @@ class CameraRecorderModule(BaseModule):
         self.rig_name: str | None = self.config.get("camera_rig")
         self.video_dir: str | None = self.config.get("video_dir")
         self.video_prefix = str(self.config.get("video_prefix", ""))
+        if "fps" in self.config and "frame_stride" in self.config:
+            raise ValueError("camera_recorder: give 'fps' or 'frame_stride', not both.")
         self.frame_stride = int(self.config.get("frame_stride", 1))
         self.keep_frames = bool(self.config.get("keep_frames", False))
         object_axes = self.config.get("object_axes")
@@ -299,6 +302,8 @@ class CameraRecorderModule(BaseModule):
         )
         container.camera_recorder = self.recorder
         dt = float(container.timestep) * float(container.frame_skip)
+        if "fps" in self.config:  # the nearest whole stride of control steps
+            self.frame_stride = max(1, round(1.0 / (dt * float(self.config["fps"]))))
         self.fps = 1.0 / (dt * self.frame_stride)
         names = [f"{b.spec.object_name}/{b.spec.instance_name}" for b in self.recorder._bindings]
         print(f"CameraRecorder: {names} -> {self.recorder.output_dir} every {self.frame_stride} steps ({self.fps:.1f} fps)")

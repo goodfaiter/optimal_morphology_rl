@@ -43,7 +43,12 @@ _ALLOWED_EXPR_NODES: tuple[type[ast.AST], ...] = (
     ast.Load,
     ast.Tuple,
     ast.List,
+    ast.Call,  # only of _ALLOWED_FUNCTIONS (checked in _safe_eval)
 )
+
+# Pure builtins a config expression may call by name, e.g. a step count from seconds:
+# ${eval:'int(round(1.28 / control_dt))'}.
+_ALLOWED_FUNCTIONS = {"int": int, "float": float, "round": round, "min": min, "max": max, "abs": abs}
 
 # Matches a value that is *entirely* an OmegaConf interpolation.
 _INTERPOLATION_RE = re.compile(r"^\$\{(.+)\}$")
@@ -79,9 +84,11 @@ def _safe_eval(expr: str, context: dict[str, Any]) -> Any:
     for node in ast.walk(tree):
         if not isinstance(node, _ALLOWED_EXPR_NODES):
             raise ValueError(f"Disallowed syntax in config expression {expr!r}: {type(node).__name__}")
+        if isinstance(node, ast.Call) and not (isinstance(node.func, ast.Name) and node.func.id in _ALLOWED_FUNCTIONS):
+            raise ValueError(f"Disallowed call in config expression {expr!r}: only {sorted(_ALLOWED_FUNCTIONS)}")
 
     compiled = compile(tree, filename="<config-eval>", mode="eval")
-    return eval(compiled, {"__builtins__": {}}, context)
+    return eval(compiled, {"__builtins__": {}, **_ALLOWED_FUNCTIONS}, context)
 
 
 def _looks_like_expression(text: str) -> bool:

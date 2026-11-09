@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from typing import Any
 
 import torch
@@ -24,7 +26,8 @@ class ForceGoalModule(BaseModule):
     are shared defaults a type block can override. All targets stay in ``force_range``.
 
     - ``discrete``: a constant target drawn uniformly from ``force_range`` (0 with probability ``zero_prob``: no contact
-      wanted), redrawn on reset and with probability ``resample_prob`` per env per step.
+      wanted), redrawn on reset and on average every ``mean_hold_sec`` seconds (exponential hold times: probability
+      1 - exp(-dt / mean_hold_sec) per control step, so the same for any frame_skip).
     - ``sinusoidal``: center of the range + amplitude * sin(2 pi f t + phase); every reset draws the frequency in
       ``[min_frequency, max_frequency]`` (Hz), the amplitude as a fraction (``min/max_amplitude_fraction``) of the
       half-range and the phase.
@@ -38,7 +41,7 @@ class ForceGoalModule(BaseModule):
           force_range: [0.0, 3.0] # N
           types:
             discrete:
-              resample_prob: 0.003 # per step (~1.7 s at 200 Hz)
+              mean_hold_sec: 1.67
               zero_prob: 0.1
             sinusoidal:
               sinusoidal: {min_frequency: 0.1, max_frequency: 0.5, min_amplitude_fraction: 0.2, max_amplitude_fraction: 1.0}
@@ -69,6 +72,14 @@ class ForceGoalModule(BaseModule):
         self.sensor_index = sensors.force_sensor_link_names.index(self.sensor_link)
         n, device = container.total_num_envs, container.device
         self.dt = float(container.timestep) * float(container.frame_skip)
+        self.resample_prob = 0.0
+        if "discrete" in self.blocks:
+            block = self.blocks["discrete"]
+            if "resample_prob" in block:
+                raise ValueError("force_goal: 'resample_prob' (per step) is replaced by 'mean_hold_sec' (seconds).")
+            mean_hold = block.get("mean_hold_sec")
+            if mean_hold is not None:
+                self.resample_prob = 1.0 - math.exp(-self.dt / float(mean_hold))
         names = list(self.blocks)
         entry = torch.arange(n, device=device) * len(self.entries) // n
         env_type = torch.tensor([names.index(name) for name in self.entries], device=device)[entry]
@@ -121,8 +132,7 @@ class ForceGoalModule(BaseModule):
     def step(self, container: ModuleContainer) -> None:
         self._measure(container)
         if "discrete" in self.masks:
-            prob = float(self.blocks["discrete"].get("resample_prob", 0.0))
-            envs = self.masks["discrete"] & (torch.rand_like(self.time) < prob)
+            envs = self.masks["discrete"] & (torch.rand_like(self.time) < self.resample_prob)
             if envs.any():
                 self._discrete(container, envs)
         if "sinusoidal" in self.masks:

@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from vlearn.spaces import Box
 
-from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.base_module import BaseModule, seconds_to_steps
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import ModuleManager, register_module
 from optimal_morphology_rl.modules.observations.observation_base_module import (
@@ -45,8 +45,8 @@ class ObservationManagerModule(BaseModule):
     Config shape (``modules`` maps each sub-module, in observation order, to its config)::
 
         observation:
-          num_hist: 3
-          hist_stride: 10
+          num_hist: 3          # history frames (the network input size)
+          hist_stride: 10      # control steps between frames; or hist_period (s), independent of frame_skip
           modules:
             robot_state: {}
             spool_state:
@@ -61,6 +61,8 @@ class ObservationManagerModule(BaseModule):
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
         self.num_hist = int(self.config.get("num_hist", 1))
+        if "hist_period" in self.config and "hist_stride" in self.config:
+            raise ValueError("observation: give 'hist_period' (s) or 'hist_stride' (control steps), not both.")
         self.hist_stride = int(self.config.get("hist_stride", 1))
 
         self.sub_manager = self._build_sub_manager("modules")
@@ -94,6 +96,8 @@ class ObservationManagerModule(BaseModule):
         env = container.get("env")
         if env is None:
             raise RuntimeError("ObservationManagerModule requires 'env' in the shared container.")
+        if "hist_period" in self.config:  # seconds between history frames, independent of frame_skip
+            self.hist_stride = seconds_to_steps(self.config["hist_period"], container.control_dt, "observation.hist_period")
 
         offset = 0
         self._obs_slices = {}

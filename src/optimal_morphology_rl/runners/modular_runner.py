@@ -111,9 +111,13 @@ def load_task_configs(
 
     env_config = load_yaml_with_context(env_path, context=context)
 
-    num_envs = env_config.get("create_rigid_vsim_envs", {}).get("num_envs")
+    sim = env_config.get("create_rigid_vsim_envs", {})
+    num_envs = sim.get("num_envs")
     num_hist = env_config.get("observation", {}).get("num_hist", 1)
-    ppo_context = {**(context or {}), "num_envs": num_envs, "num_hist": num_hist}
+    # The control step (s), so ppo.yaml can give time constants in seconds, e.g. a discount horizon:
+    # gamma: ${eval:'1 - control_dt / 1.0'} (1 s at any frame_skip).
+    control_dt = float(sim.get("timestep", 1.0 / 60.0)) * int(sim.get("frame_skip", 1))
+    ppo_context = {**(context or {}), "num_envs": num_envs, "num_hist": num_hist, "control_dt": control_dt}
     ppo_config = load_yaml_with_context(ppo_path, context=ppo_context)
 
     return env_path, env_config, ppo_config

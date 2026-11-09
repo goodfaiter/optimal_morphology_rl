@@ -14,6 +14,16 @@ def curriculum_range(low: Any, high: Any, factor: float, nominal: Any = None) ->
     return nominal + factor * (low - nominal), nominal + factor * (high - nominal)
 
 
+def seconds_to_steps(seconds: float, step_dt: float, name: str, exact: bool = True) -> int:
+    """A duration (s) as a whole number of steps of ``step_dt`` (s), e.g. control steps (``container.control_dt``), so
+    configs in seconds hold for any frame_skip. ``exact``: raise unless the duration is a whole number of steps (within
+    1e-6), e.g. a history spacing; otherwise round to the nearest step (at least 1)."""
+    steps = float(seconds) / float(step_dt)
+    if exact and (abs(steps - round(steps)) > 1e-6 or round(steps) < 1):
+        raise ValueError(f"{name} = {seconds} s is not a whole number of {step_dt:g} s steps ({steps:g}).")
+    return max(1, int(round(steps)))
+
+
 class BaseModule(ABC):
     """Minimal lifecycle interface for a modular environment component.
 

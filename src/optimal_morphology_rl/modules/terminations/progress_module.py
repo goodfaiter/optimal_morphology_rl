@@ -6,6 +6,7 @@ from typing import Any
 
 import torch
 
+from optimal_morphology_rl.modules.base_module import seconds_to_steps
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.terminations.termination_base_module import (
     TerminationBaseModule,
@@ -20,14 +21,23 @@ class ProgressModule(TerminationBaseModule):
     This module increments ``progress_buf`` every step and marks environments
     as truncated when ``progress_buf >= max_episode_length``.  It also resets
     ``progress_buf`` for environments selected by ``reset_buf``.
+
+    The episode length is ``max_episode_sec`` (seconds, converted to control steps: independent of frame_skip) or
+    ``max_episode_length`` (control steps).
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
+        if "max_episode_sec" in self.config and "max_episode_length" in self.config:
+            raise ValueError("progress: give 'max_episode_sec' or 'max_episode_length', not both.")
         self.max_episode_length = int(self.config.get("max_episode_length", 6 * 60))
 
     def post_finalize(self, container: ModuleContainer) -> None:
         """Allocate the per-environment progress buffer."""
+        if "max_episode_sec" in self.config:
+            self.max_episode_length = seconds_to_steps(
+                self.config["max_episode_sec"], container.control_dt, "max_episode_sec", exact=False
+            )
         if container.get("progress_buf") is not None:
             return
         if container.get("total_num_envs") is None or container.get("device") is None:
