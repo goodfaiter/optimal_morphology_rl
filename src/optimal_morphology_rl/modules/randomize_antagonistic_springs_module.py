@@ -1,4 +1,4 @@
-"""Module that randomizes the 'antagonistic_spring' spring constants."""
+"""Module that randomizes the 'antagonistic_spring' spring constants and preloads."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Any
 
 import torch
 
-from optimal_morphology_rl.modules.base_module import BaseModule
+from optimal_morphology_rl.modules.base_module import BaseModule, curriculum_range
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import register_module
 
@@ -20,10 +20,15 @@ class RandomizeAntagonisticSpringsModule(BaseModule):
     ``spring_constants``; motors without a spring stay at 0). The width follows the training curriculum
     (``scale * curriculum_factor``: the nominal constants at 0, the full range at 1).
 
+    With ``preload_range`` ([low, high], Nm) the preload (pretension) of every motor with a spring is drawn uniformly
+    from that absolute range, per env and motor on reset (the nominal preload may be 0, so a relative scale would not
+    work); the curriculum shrinks the range toward the configured ``spring_preloads``.
+
     Config shape::
 
         randomize_antagonistic_springs:
           scale: 0.1
+          preload_range: [0.0, 0.01] # Nm, optional
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -31,6 +36,10 @@ class RandomizeAntagonisticSpringsModule(BaseModule):
         self.scale = float(self.config.get("scale", 0.1))
         if not 0.0 <= self.scale <= 1.0:
             raise RuntimeError(f"RandomizeAntagonisticSprings config 'scale' must be in [0, 1], got {self.scale}.")
+        preload_range = self.config.get("preload_range")
+        self.preload_range = None if preload_range is None else (float(preload_range[0]), float(preload_range[1]))
+        if self.preload_range is not None and not 0.0 <= self.preload_range[0] <= self.preload_range[1]:
+            raise RuntimeError(f"RandomizeAntagonisticSprings 'preload_range' must be [low, high] with 0 <= low <= high, got {preload_range}.")
         self.spring = None
 
     def _setup(self, container: ModuleContainer) -> None:
@@ -49,3 +58,9 @@ class RandomizeAntagonisticSpringsModule(BaseModule):
         values = self.spring.spring_constants_buf
         factor = 1.0 + self.scale * self.curriculum_factor * (2.0 * torch.rand_like(values) - 1.0)
         values[reset_buf] = (self.spring.spring_constants * factor)[reset_buf]
+        if self.preload_range is not None:
+            nominal = self.spring.spring_preloads
+            low, high = curriculum_range(*self.preload_range, self.curriculum_factor, nominal=nominal)
+            preloads = (low + (high - low) * torch.rand_like(values)).clamp(min=0.0)
+            preloads = preloads * (self.spring.spring_constants > 0.0)  # only motors with a spring
+            self.spring.spring_preloads_buf[reset_buf] = preloads[reset_buf]

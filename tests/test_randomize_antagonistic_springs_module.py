@@ -82,3 +82,24 @@ def test_missing_spring_module_raises() -> None:
 def test_invalid_scale_raises(scale) -> None:
     with pytest.raises(RuntimeError, match="scale"):
         RandomizeAntagonisticSpringsModule({"scale": scale})
+
+
+def test_preload_range_draws_absolute_preloads_on_spring_motors_only() -> None:
+    _, spring, container = _make(0.1)
+    module = RandomizeAntagonisticSpringsModule({"scale": 0.1, "preload_range": [0.0, 0.01]})
+    module.reset(container)
+    preloads = spring.spring_preloads_buf
+    assert torch.all((preloads[:, :3] >= 0.0) & (preloads[:, :3] <= 0.01 + 1e-9))
+    assert torch.unique(preloads[:, :3]).numel() > NUM_ENVS  # independent per env and motor
+    assert torch.all(preloads[:, 3] == 0.0)  # the slider has no spring
+    module.set_curriculum_factor(0.5, container)
+    module.reset(container)
+    assert torch.all(spring.spring_preloads_buf[:, :3] <= 0.005 + 1e-9)  # shrunk toward the nominal 0
+    # The force uses the per-env preload.
+    spring.step(container)
+    assert torch.allclose(container.antagonistic_spring_force_buf[:, :3], -spring.spring_preloads_buf[:, :3])
+
+
+def test_invalid_preload_range_raises() -> None:
+    with pytest.raises(RuntimeError, match="preload_range"):
+        RandomizeAntagonisticSpringsModule({"preload_range": [0.01, 0.0]})

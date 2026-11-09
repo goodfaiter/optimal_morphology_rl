@@ -41,9 +41,9 @@ class AntagonisticSpring(BaseModule):
     Both also take a dict per joint, keyed by the revolute motor (= joint) name, with an optional ``default`` for the
     joints not listed (else 0), e.g. ``{default: 0.005, Thumb_MCP: 0.01}``; unknown names raise.
 
-    The constants are kept per env in ``spring_constants_buf`` ``(num_envs,
-    num_motors)``, all at ``spring_constants`` unless 'randomize_antagonistic_springs'
-    resamples them on reset.
+    The constants and preloads are kept per env in ``spring_constants_buf`` and
+    ``spring_preloads_buf`` ``(num_envs, num_motors)``, at ``spring_constants`` / ``spring_preloads`` unless
+    'randomize_antagonistic_springs' resamples them on reset.
 
     The computed force is written to
     ``container.antagonistic_spring_force_buf`` so ``robot_control`` can add it
@@ -100,6 +100,7 @@ class AntagonisticSpring(BaseModule):
         self.spring_constants = per_motor(spring_constants, "spring_constants")
         self.spring_constants_buf = self.spring_constants.repeat(container.total_num_envs, 1)
         self.spring_preloads = per_motor(self.config.get("spring_preloads", 0.0), "spring_preloads")
+        self.spring_preloads_buf = self.spring_preloads.repeat(container.total_num_envs, 1)
         if torch.any(self.spring_constants < 0.0) or torch.any(self.spring_preloads < 0.0):
             raise RuntimeError("AntagonisticSpring 'spring_constants' and 'spring_preloads' must be non-negative (the elastic only resists flexion).")
 
@@ -114,5 +115,5 @@ class AntagonisticSpring(BaseModule):
         """Compute the antagonistic spring force for each motor."""
         robot = container.robot
 
-        force = -(self.spring_constants_buf * robot.get_joint_pos_buf[:, robot.motor_to_joint_dof_index] + self.spring_preloads)
+        force = -(self.spring_constants_buf * robot.get_joint_pos_buf[:, robot.motor_to_joint_dof_index] + self.spring_preloads_buf)
         container.antagonistic_spring_force_buf[:] = force * self.revolute_motor_mask
