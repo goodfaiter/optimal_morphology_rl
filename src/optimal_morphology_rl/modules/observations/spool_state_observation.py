@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 from typing import Any
 
 import torch
@@ -52,11 +50,6 @@ class SpoolStateObservation(ObservationBaseModule):
 
     - ``angle_std`` (rad): standard deviation of a Gaussian added to ``theta_m``.
     - ``velocity_std`` (rad/s): standard deviation of a Gaussian added to ``omega_m`` (after the lag and bias).
-    - ``std_tau`` (s, default 0 = white): correlation time of that noise. With ``tau > 0`` it is a first-order
-      (AR(1)) process of the same standard deviation, ``n = rho * n + sqrt(1 - rho^2) * std * N(0, 1)`` with
-      ``rho = exp(-dt / tau)``: consecutive observations differ by ~``std * sqrt(2 dt / tau)`` instead of
-      ``std * sqrt(2)``, so a policy kept smooth across consecutive observations (rl_games
-      ``temporal_smoothness_coef``) need not ignore the spool state to stay smooth.
 
     Config shape (under ``observation.modules``)::
 
@@ -69,11 +62,10 @@ class SpoolStateObservation(ObservationBaseModule):
             velocity_offset_range: [-0.2, 0.2]
             angle_std: 0.0
             velocity_std: 0.0
-            std_tau: 0.0
     """
 
     NOISE_KEYS = ("angle_offset_range", "velocity_lag_range", "velocity_offset_range")
-    STD_KEYS = ("angle_std", "velocity_std", "std_tau")
+    STD_KEYS = ("angle_std", "velocity_std")
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
@@ -88,10 +80,8 @@ class SpoolStateObservation(ObservationBaseModule):
         self.ranges = {key: self._range(noise, key) for key in self.NOISE_KEYS}
         self.angle_std = float(noise.get("angle_std", 0.0))
         self.velocity_std = float(noise.get("velocity_std", 0.0))
-        self.std_tau = float(noise.get("std_tau", 0.0))
-        if self.angle_std < 0.0 or self.velocity_std < 0.0 or self.std_tau < 0.0:
-            raise ValueError("spool_state 'noise.angle_std' / 'noise.velocity_std' / 'noise.std_tau' must be >= 0.")
-        self.std_noise: torch.Tensor | None = None  # the correlated (std_tau > 0) noise, N(0, 1) per input
+        if self.angle_std < 0.0 or self.velocity_std < 0.0:
+            raise ValueError("spool_state 'noise.angle_std' / 'noise.velocity_std' must be >= 0.")
         if self.ranges["velocity_lag_range"][0] < 0.0:
             raise ValueError("spool_state 'noise.velocity_lag_range' must be >= 0 (seconds).")
         self.noisy = any(low != 0.0 or high != 0.0 for low, high in self.ranges.values())
@@ -170,20 +160,10 @@ class SpoolStateObservation(ObservationBaseModule):
         if self.angle_offset is not None:
             self._apply_episode_noise(out)
         n = out.shape[1] // 2
-        if self.angle_std == 0.0 and self.velocity_std == 0.0:
-            return
-        if self.std_tau > 0.0:
-            if self.std_noise is None:
-                self.std_noise = torch.randn_like(out)  # starts stationary
-            else:
-                dt = float(env.module_manager.container.get("control_dt", spool.dt))
-                rho = math.exp(-dt / self.std_tau)
-                self.std_noise = rho * self.std_noise + math.sqrt(1.0 - rho * rho) * torch.randn_like(out)
-            noise = self.std_noise
-        else:
-            noise = torch.randn_like(out)
-        out[:, :n] += self.angle_std * noise[:, :n]
-        out[:, n:] += self.velocity_std * noise[:, n:]
+        if self.angle_std > 0.0:
+            out[:, :n] += self.angle_std * torch.randn_like(out[:, :n])
+        if self.velocity_std > 0.0:
+            out[:, n:] += self.velocity_std * torch.randn_like(out[:, n:])
 
     def _apply_episode_noise(self, out: torch.Tensor) -> None:
         """The per-episode encoder offset, velocity lag and velocity bias."""
