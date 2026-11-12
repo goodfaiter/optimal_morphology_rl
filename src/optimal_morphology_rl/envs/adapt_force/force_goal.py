@@ -7,6 +7,7 @@ import math
 from typing import Any
 
 import torch
+from vlearn.torch_utils.torch_jit_utils import quat_rotate
 
 from optimal_morphology_rl.modules.base_module import BaseModule
 from optimal_morphology_rl.modules.module_container import ModuleContainer
@@ -198,7 +199,8 @@ class FingertipGuideReward(RewardBaseModule):
     keeps the fingertip at the contact for low / zero targets too (resting on the object, not moving away).
 
     The fingertip is the kinematic sensor ``tip_sensor`` (default Middle_DP, at the DP tip), the point the reward
-    object's kinematic sensor plus ``target_offset`` (m, env frame; e.g. the cylinder's top face center)::
+    object's kinematic sensor plus ``target_offset`` (m, in the object's frame, so it follows a tilted object; e.g. the
+    cylinder's top face center)::
 
         fingertip_guide_reward:
           scale: 0.1
@@ -213,6 +215,7 @@ class FingertipGuideReward(RewardBaseModule):
         tip = container.kinematic_sensors[str(self.config.get("tip_sensor", "Middle_DP"))]
         target = container.kinematic_sensors[container.reward_object_name]
         offset = torch.tensor(self.config.get("target_offset", [0.0, 0.0, 0.0]), device=env.device, dtype=torch.float32)
+        offset = quat_rotate(target.quat_sensor_to_world, offset.expand(target.pos_in_world.shape[0], 3))  # object frame
         distance = torch.norm(tip.pos_in_world - (target.pos_in_world + offset), dim=-1)
         active = (container.force_goal > 0.0).float() if self.config.get("only_with_goal", True) else 1.0
         raw = torch.exp(-((distance / float(self.config.get("normalize", 0.02))) ** 2)) * active

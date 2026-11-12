@@ -270,15 +270,43 @@ class Cube(LoadedRigidObject):
 
 class Cylinder(LoadedRigidObject):
     """A fixed cylinder (axis along env z) at ``position`` (m, env frame): ``asset`` in assets/objects (default
-    cylinder_r125_h15: radius 12.5 mm, height 15 mm)."""
+    cylinder_r125_h15: radius 12.5 mm, height 15 mm).
+
+    Optional pose randomization, drawn per env on reset (without it the cylinder stays where it was created):
+    ``height_range`` [low, high] (m, added to the height of ``position``) and ``tilt_deg`` (a rotation about env x and
+    one about env y, each in +-tilt_deg; about the cylinder's center)::
+
+        cylinder:
+          position: [-0.099, -0.172, 0.1475]
+          height_range: ${eval:'[-0.005, 0.005] if mode == "train" else [0.0, 0.0]'}
+          tilt_deg: ${eval:'10.0 if mode == "train" else 0.0'}
+    """
 
     def __init__(self, config: dict[str, Any] | None = None):
         asset = (config or {}).get("asset", "cylinder_r125_h15")
         super().__init__(name="cylinder", asset_path=_object_asset_path(asset), fixed=True, config=config)
         self.load_position = tuple(float(x) for x in self.config.get("position", [0.0, 0.0, 0.0]))
+        self.height_range = tuple(float(x) for x in self.config.get("height_range", (0.0, 0.0)))
+        self.tilt = math.radians(float(self.config.get("tilt_deg", 0.0)))
+        if len(self.height_range) != 2 or self.height_range[0] > self.height_range[1] or self.tilt < 0.0:
+            raise ValueError(f"cylinder needs height_range [low, high] and tilt_deg >= 0, got {self.config}.")
+        self.randomized = self.height_range != (0.0, 0.0) or self.tilt > 0.0
 
     def reset_idx(self, gym: v.Gym, reset_buf: torch.Tensor) -> None:
-        """Fixed: it stays where it was created."""
+        """A new height and tilt for the resetting envs (with the randomization; else it stays where it was created)."""
+        if not self.randomized:
+            return
+        from vlearn.torch_utils.torch_jit_utils import quat_from_euler_xyz
+
+        n, device = reset_buf.shape[0], reset_buf.device
+        low, high = self.height_range
+        roll = (2.0 * torch.rand(n, device=device) - 1.0) * self.tilt
+        pitch = (2.0 * torch.rand(n, device=device) - 1.0) * self.tilt
+        self.set_trans_object_to_world_buf[:, :4] = quat_from_euler_xyz(roll, pitch, torch.zeros_like(roll))
+        self.set_trans_object_to_world_buf[:, 4:] = torch.tensor(self.load_position, device=device)
+        self.set_trans_object_to_world_buf[:, 6] += low + (high - low) * torch.rand(n, device=device)
+        self.set_vel_in_world_buf[:] = 0.0
+        gym.set_rigid_body_kinematic_states(self.gpu_set_object_kin_cmd_array)  # masked: the resetting envs only
 
 
 class CubeSmall(LoadedRigidObject):
