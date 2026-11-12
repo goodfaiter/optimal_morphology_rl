@@ -42,6 +42,12 @@ class ObservationManagerModule(BaseModule):
     then returns ``{"obs", "priv_obs"}``, and the critic (rl_games ``central_value_config``) sees obs + priv_obs
     while the policy keeps the robot's observations.
 
+    ``teacher`` (optional; set by ``omrl --mode distill`` from the teacher run's saved env.yaml, not written by
+    hand) is a second observation group of the same shape as this block (``num_hist``, ``hist_period`` /
+    ``hist_stride``, ``modules`` with their own noise): the teacher's observation as it was trained, with its own
+    sub-modules and history, built every step next to this one into ``container.teacher_obs_buf``
+    (``env.teacher_observation_space``). Its ``privileged_modules`` are not built (critic only).
+
     Config shape (``modules`` maps each sub-module, in observation order, to its config)::
 
         observation:
@@ -65,6 +71,11 @@ class ObservationManagerModule(BaseModule):
             raise ValueError("observation: give 'hist_period' (s) or 'hist_stride' (control steps), not both.")
         self.hist_stride = int(self.config.get("hist_stride", 1))
 
+        # The buffer this group fills: the policy's obs_buf, or the teacher group's teacher_obs_buf.
+        self._teacher_group = bool(self.config.get("_teacher_group", False))
+        self._buffer_name = "teacher_obs_buf" if self._teacher_group else "obs_buf"
+        self._space_name = "teacher_observation_space" if self._teacher_group else "observation_space"
+
         self.sub_manager = self._build_sub_manager("modules")
         self._obs_modules: list[ObservationBaseModule] = [m for m in self.sub_manager if isinstance(m, ObservationBaseModule)]
         self._priv_modules: list[ObservationBaseModule] = []
@@ -72,6 +83,10 @@ class ObservationManagerModule(BaseModule):
             self.priv_sub_manager = self._build_sub_manager("privileged_modules")
             self._priv_modules = [m for m in self.priv_sub_manager if isinstance(m, ObservationBaseModule)]
         self._priv_slices: dict[str, slice] = {}
+        self.teacher: ObservationManagerModule | None = None
+        if self.config.get("teacher"):
+            teacher = {k: v for k, v in dict(self.config["teacher"]).items() if k not in ("privileged_modules", "teacher")}
+            self.teacher = ObservationManagerModule({**teacher, "_teacher_group": True})
 
         self.base_obs: torch.Tensor | None = None
         self.obs_history: Any | None = None
@@ -111,13 +126,16 @@ class ObservationManagerModule(BaseModule):
         self._base_obs_dim = offset
         num_obs = self._base_obs_dim * self.num_hist
 
-        env.observation_space = Box(
+        setattr(env, self._space_name, Box(
             low=np.full(num_obs, np.finfo("f").min, dtype=np.float32),
             high=np.full(num_obs, np.finfo("f").max, dtype=np.float32),
             dtype=np.float32,
-        )
+        ))
 
-        print(f"Observation space size: {num_obs} (base={self._base_obs_dim}, num_hist={self.num_hist}, stride={self.hist_stride})")
+        label = "Teacher observation" if self._teacher_group else "Observation space"
+        print(f"{label} size: {num_obs} (base={self._base_obs_dim}, num_hist={self.num_hist}, stride={self.hist_stride})")
+        if self.teacher is not None:
+            self.teacher.finalize(container)
 
         if self._priv_modules:
             offset = 0
@@ -138,11 +156,8 @@ class ObservationManagerModule(BaseModule):
         device = env.device
         total_num_envs = env.total_num_envs
 
-        container.obs_buf = torch.zeros(
-            (total_num_envs,) + env.observation_space.shape,
-            device=device,
-            dtype=torch.float32,
-        )
+        buffer = torch.zeros((total_num_envs,) + getattr(env, self._space_name).shape, device=device, dtype=torch.float32)
+        setattr(container, self._buffer_name, buffer)
 
         self.base_obs = torch.zeros((total_num_envs, self._base_obs_dim), device=device, dtype=torch.float32)
         if self._priv_modules:
@@ -160,9 +175,12 @@ class ObservationManagerModule(BaseModule):
             stride=self.hist_stride,
             device=device,
         )
+        if self.teacher is not None:
+            self.teacher.post_finalize(container)
 
     def step(self, container: ModuleContainer) -> None:
-        """Fill ``env.obs_buf`` from sub-module observations and history."""
+        """Fill ``env.obs_buf`` (the teacher group: ``container.teacher_obs_buf``) from sub-module observations and
+        history."""
         env = container.get("env")
         if env is None:
             raise RuntimeError("ObservationManagerModule requires 'env' in the shared container.")
@@ -175,10 +193,12 @@ class ObservationManagerModule(BaseModule):
             module.compute_observation(env, self.base_obs[:, slc])
 
         self.obs_history.add(self.base_obs)
-        env.obs_buf[:] = self.obs_history.get().view(env.total_num_envs, -1)
+        getattr(container, self._buffer_name)[:] = self.obs_history.get().view(env.total_num_envs, -1)
 
         for module in self._priv_modules:
             module.compute_observation(env, container.priv_obs_buf[:, self._priv_slices[type(module).__name__]])
+        if self.teacher is not None:
+            self.teacher.step(container)
 
     def reset(self, container: ModuleContainer) -> None:
         """Reset the observation history and the sub-modules (e.g. per-episode observation noise)."""
@@ -188,3 +208,5 @@ class ObservationManagerModule(BaseModule):
         env = container.get("env")
         for module in self._obs_modules + self._priv_modules:
             module.reset(env)
+        if self.teacher is not None:
+            self.teacher.reset(container)

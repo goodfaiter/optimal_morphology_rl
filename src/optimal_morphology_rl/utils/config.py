@@ -141,6 +141,30 @@ def _register_eval_resolver(context: dict[str, Any]) -> None:
     OmegaConf.register_new_resolver("eval", _eval, replace=True)
 
 
+def overlay_config(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """``base`` with ``overlay`` merged in: maps merge key by key, any other value (lists too) replaces, ``None``
+    (YAML null) deletes the key. Neither input is changed; works on raw (unresolved) configs."""
+    merged = dict(base)
+    for key, value in overlay.items():
+        if value is None:
+            merged.pop(key, None)
+        elif isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = overlay_config(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_raw_yaml(path: str | Path, overlay: str | Path | None = None) -> dict[str, Any]:
+    """A YAML file unresolved (interpolations kept), optionally with an ``overlay`` file merged in (overlay_config)."""
+    with open(path, "r") as f:
+        raw = yaml.safe_load(f) or {}
+    if overlay is not None:
+        with open(overlay, "r") as f:
+            raw = overlay_config(raw, yaml.safe_load(f) or {})
+    return raw
+
+
 def load_yaml_with_context(
     path: str | Path,
     context: dict[str, Any] | None = None,

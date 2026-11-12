@@ -1,0 +1,5 @@
+observation:
+  modules:
+    spool_state: {}
+    spool_torques:
+      signals: ["tau_inertia", "tau_m", "tau_f_max"]
