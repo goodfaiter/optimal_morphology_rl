@@ -29,9 +29,13 @@ class ForceGoalModule(BaseModule):
     - ``discrete``: a constant target drawn uniformly from ``force_range`` (0 with probability ``zero_prob``: no contact
       wanted), redrawn on reset and on average every ``mean_hold_sec`` seconds (exponential hold times: probability
       1 - exp(-dt / mean_hold_sec) per control step, so the same for any frame_skip).
-    - ``sinusoidal``: center of the range + amplitude * sin(2 pi f t + phase); every reset draws the frequency in
+    - ``sinusoidal``: center + amplitude * sin(2 pi f t + phase); every reset draws the frequency in
       ``[min_frequency, max_frequency]`` (Hz), the amplitude as a fraction (``min/max_amplitude_fraction``) of the
-      half-range and the phase.
+      half-range and the phase. The center is the middle of the range, or with ``random_center: true`` drawn
+      uniformly where the whole sine stays in the range (low + amplitude ... high - amplitude).
+    - ``ramp``: piecewise-linear targets: from a start drawn in the range, the target moves at a constant rate toward
+      the next target drawn in the range, then holds it for an exponential time (mean ``mean_hold_sec``, 0: no hold)
+      before the next segment; every segment draws its rate in ``[min_rate, max_rate]`` (N/s).
 
     The measured force is the norm of the force of the force sensor on ``sensor_link`` ('create_force_sensor';
     refreshed by 'update_force_sensors', listed before this). Writes ``container.force_goal`` (N,) and
@@ -45,10 +49,13 @@ class ForceGoalModule(BaseModule):
               mean_hold_sec: 1.67
               zero_prob: 0.1
             sinusoidal:
-              sinusoidal: {min_frequency: 0.1, max_frequency: 0.5, min_amplitude_fraction: 0.2, max_amplitude_fraction: 1.0}
+              sinusoidal: {min_frequency: 0.1, max_frequency: 0.5, min_amplitude_fraction: 0.2, max_amplitude_fraction: 1.0,
+                           random_center: true}
+            ramp:
+              ramp: {min_rate: 0.1, max_rate: 1.0, mean_hold_sec: 0.5} # N/s, s
     """
 
-    TYPES = ("discrete", "sinusoidal")
+    TYPES = ("discrete", "sinusoidal", "ramp")
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
@@ -89,6 +96,10 @@ class ForceGoalModule(BaseModule):
         self.freq = torch.zeros(n, device=device)
         self.amp = torch.zeros(n, device=device)
         self.phase = torch.zeros(n, device=device)
+        self.center = torch.full((n,), (self.force_range[0] + self.force_range[1]) / 2.0, device=device)
+        self.ramp_target = torch.zeros(n, device=device)
+        self.ramp_rate = torch.zeros(n, device=device)
+        self.ramp_hold = torch.zeros(n, device=device)  # seconds left to hold the reached target
         container.force_goal = torch.zeros(n, device=device)
         container.fingertip_force = torch.zeros(n, device=device)
 
@@ -109,11 +120,46 @@ class ForceGoalModule(BaseModule):
         self.amp[envs] = (a_lo + (a_hi - a_lo) * torch.rand(n, device=device)) * half
         self.phase[envs] = 2.0 * torch.pi * torch.rand(n, device=device)
         self.time[envs] = 0.0
+        low, high = self.force_range
+        if cfg.get("random_center", False):  # anywhere the whole sine stays in the range
+            amp = self.amp[envs]
+            self.center[envs] = low + amp + (high - low - 2.0 * amp) * torch.rand(n, device=device)
+        else:
+            self.center[envs] = (low + high) / 2.0
 
     def _sinusoid(self, container: ModuleContainer, envs: torch.Tensor) -> None:
-        center = (self.force_range[0] + self.force_range[1]) / 2.0
         wave = torch.sin(2.0 * torch.pi * self.freq[envs] * self.time[envs] + self.phase[envs])
-        container.force_goal[envs] = center + self.amp[envs] * wave
+        container.force_goal[envs] = self.center[envs] + self.amp[envs] * wave
+
+    def _ramp_segment(self, envs: torch.Tensor) -> None:
+        """Draw the next ramp segment of the given envs: its target and rate."""
+        n, device = int(envs.sum()), envs.device
+        cfg = self.blocks["ramp"].get("ramp", {})
+        r_lo, r_hi = float(cfg.get("min_rate", 0.1)), float(cfg.get("max_rate", 1.0))
+        low, high = self.force_range
+        self.ramp_target[envs] = low + (high - low) * torch.rand(n, device=device)
+        self.ramp_rate[envs] = r_lo + (r_hi - r_lo) * torch.rand(n, device=device)
+
+    def _ramp(self, container: ModuleContainer, envs: torch.Tensor) -> None:
+        """One control step of the ramp envs: hold, or move toward the target; on reaching it, hold, then a new segment."""
+        cfg = self.blocks["ramp"].get("ramp", {})
+        mean_hold = float(cfg.get("mean_hold_sec", 0.5))
+        holding = envs & (self.ramp_hold > 0.0)
+        self.ramp_hold[holding] = (self.ramp_hold[holding] - self.dt).clamp(min=0.0)
+        new_segment = holding & (self.ramp_hold <= 0.0)
+        if new_segment.any():
+            self._ramp_segment(new_segment)
+        moving = envs & ~holding
+        goal = container.force_goal
+        gap = self.ramp_target - goal
+        step = (self.ramp_rate * self.dt).clamp(max=gap.abs())
+        goal[moving] = (goal + torch.sign(gap) * step)[moving]
+        reached = moving & ((self.ramp_target - goal).abs() < 1e-6)
+        if reached.any():
+            if mean_hold > 0.0:
+                self.ramp_hold[reached] = -mean_hold * torch.log(1.0 - torch.rand_like(goal[reached]))
+            else:
+                self._ramp_segment(reached)
 
     def _measure(self, container: ModuleContainer) -> None:
         container.fingertip_force[:] = torch.norm(self.sensors.force_sensor_buf[:, self.sensor_index, :3], dim=-1)
@@ -125,6 +171,11 @@ class ForceGoalModule(BaseModule):
                 continue
             if name == "discrete":
                 self._discrete(container, envs)
+            elif name == "ramp":  # a start in the range, then the first segment
+                low, high = self.force_range
+                container.force_goal[envs] = low + (high - low) * torch.rand(int(envs.sum()), device=envs.device)
+                self.ramp_hold[envs] = 0.0
+                self._ramp_segment(envs)
             else:
                 self._sinusoid_draw(envs)
                 self._sinusoid(container, envs)
@@ -139,6 +190,8 @@ class ForceGoalModule(BaseModule):
         if "sinusoidal" in self.masks:
             self.time += self.dt
             self._sinusoid(container, self.masks["sinusoidal"])
+        if "ramp" in self.masks:
+            self._ramp(container, self.masks["ramp"])
 
 
 @register_observation("force_goal")
