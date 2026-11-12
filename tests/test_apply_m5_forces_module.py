@@ -216,3 +216,44 @@ def test_friction_scale_scales_the_m5_budget_per_env() -> None:
     module.friction_scale[:] = torch.tensor([[1.5], [0.5]])
     module.step(container)
     assert torch.allclose(container.spool_motor_force_buf[:, 0], torch.tensor([1.0 - 0.75, 1.0 - 0.25]) / R)
+
+
+def _applied_torques(module, container, commands):
+    """Step the module with a changing command (one env); return the applied motor torques."""
+    torques = []
+    for command in commands:
+        container.spool.commanded_delta_angle = lambda c, v=command: torch.full((1, 1), v)
+        module.step(container)
+        torques.append(float(module.last_signals["tau_m"][0, 0]))
+    return torques
+
+
+def test_command_delay_applies_the_command_of_n_steps_ago() -> None:
+    module, container = _module(torch.zeros(1), 0.0, max_spool_velocity=None, command_delay_steps=2)
+    module.reset(SimpleNamespace(reset_buf=torch.ones(1, dtype=torch.bool)))
+    # The unit motor of _module: tau_m = the commanded spool angle change.
+    assert _applied_torques(module, container, [1.0, 2.0, 3.0, 4.0, 5.0]) == [0.0, 0.0, 1.0, 2.0, 3.0]
+
+
+def test_command_delay_restarts_with_no_current_on_reset() -> None:
+    module, container = _module(torch.zeros(1), 0.0, max_spool_velocity=None, command_delay_steps=1)
+    module.reset(SimpleNamespace(reset_buf=torch.ones(1, dtype=torch.bool)))
+    _applied_torques(module, container, [3.0, 3.0])
+    module.reset(SimpleNamespace(reset_buf=torch.ones(1, dtype=torch.bool)))
+    assert _applied_torques(module, container, [5.0, 5.0]) == [0.0, 5.0]
+
+
+def test_command_delay_range_is_drawn_per_env() -> None:
+    module, _ = _module(torch.zeros(500), 0.0, max_spool_velocity=None, command_delay_steps=[1, 4])
+    module.reset(SimpleNamespace(reset_buf=torch.ones(500, dtype=torch.bool)))
+    assert set(module.delay.flatten().tolist()) == {1, 2, 3, 4}
+    assert module.command_history.shape[0] == 5
+
+
+def test_no_command_delay_by_default_and_invalid_delays_raise() -> None:
+    module, container = _module(torch.zeros(1), 0.0, max_spool_velocity=None)
+    assert module.command_history is None
+    assert _applied_torques(module, container, [1.0, 2.0]) == [1.0, 2.0]
+    for bad in (-1, [3, 1]):
+        with pytest.raises(RuntimeError, match="command_delay_steps"):
+            _module(torch.zeros(1), 0.0, command_delay_steps=bad)

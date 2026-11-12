@@ -78,6 +78,12 @@ class ApplyM5ForcesModule(BaseModule):
     The model is stateful (input history per row): it runs one forward pass over
     num_envs x num_model_tendons rows, and ``reset`` restarts the rows of the resetting envs.
 
+    With ``command_delay_steps`` the servo applies the current command of that many control steps ago (the robot's
+    bus write and current loop: its measured current follows the command 2-4 steps (10-20 ms) late): a number, or a
+    ``[min, max]`` range of whole steps drawn per env on every reset. Before an env's first commands after a reset the
+    delayed command is 0 (no current). The friction's load terms use the applied (delayed) motor torque; the policy's
+    own observations are not delayed.
+
     With ``friction: false`` the friction torque is left out (tau_f = 0, F = tau_m / r): an ideal,
     frictionless servo, e.g. to compare against the M5 law on the robot.
 
@@ -166,6 +172,18 @@ class ApplyM5ForcesModule(BaseModule):
 
         self.friction = bool(self.config.get("friction", True))
 
+        # Command delay (control steps), per env, redrawn on reset: a ring buffer of the last current commands.
+        delay = self.config.get("command_delay_steps", 0)
+        low, high = (int(delay[0]), int(delay[1])) if isinstance(delay, (list, tuple)) else (int(delay), int(delay))
+        if low < 0 or high < low:
+            raise RuntimeError(f"ApplyM5Forces config 'command_delay_steps' must be >= 0 (or a [min, max] range), got {delay}.")
+        self.delay_range = (low, high)
+        self.command_history = None
+        if high > 0:
+            self.command_history = torch.zeros((high + 1, num_envs, num_tendons), device=device, dtype=torch.float32)
+            self.history_index = 0
+            self.delay = torch.full((num_envs, 1), low, device=device, dtype=torch.long)
+
         # Optional debug print of one (env, tendon) pair. Off by default: .item() forces a GPU sync.
         self.debug = bool(self.config.get("debug", False))
         self.debug_env = int(self.config.get("debug_env", 0))
@@ -174,8 +192,19 @@ class ApplyM5ForcesModule(BaseModule):
 
     def _motor_torque(self, error):
         """Motor torque of a spool angle error (target - theta): current command, then torque past the deadband."""
-        current = self.motor_position_gain * error
+        return self._current_torque(self.motor_position_gain * error)
+
+    def _current_torque(self, current):
+        """Motor torque of a current command (A): the torque constant past the current deadband."""
         return self.torque_constant * torch.sign(current) * torch.clamp(current.abs() - self.current_deadband, min=0.0)
+
+    def _delayed_current(self, current):
+        """Store this step's current command and return the one each env's servo applies now (``delay`` steps ago)."""
+        size = self.command_history.shape[0]
+        self.history_index = (self.history_index + 1) % size
+        self.command_history[self.history_index] = current
+        rows = (self.history_index - self.delay) % size  # (num_envs, 1)
+        return self.command_history.gather(0, rows.T.unsqueeze(-1).expand(1, -1, current.shape[1]))[0]
 
     def _friction_budget(self, tau_m, tau_e, omega):
         """M5: directional load-dependent friction with Stribeck decay (paper, eq. 9).
@@ -193,6 +222,12 @@ class ApplyM5ForcesModule(BaseModule):
         """The reset envs' torques in ``last_signals`` (read by observations) are the reset state's: no command and no
         tension, so 0; the friction model's input history of the resetting envs restarts."""
         reset_buf = container.reset_buf
+        if self.command_history is not None and bool(reset_buf.any()):
+            # No current before the reset envs' first command; a new delay per env.
+            self.command_history[:, reset_buf] = 0.0
+            low, high = self.delay_range
+            draw = torch.randint(low, high + 1, (int(reset_buf.sum()), 1), device=reset_buf.device)
+            self.delay[reset_buf] = draw
         if self.last_signals is not None and bool(reset_buf.any()):
             # New tensors: 'tau_e' is the spool's own (create_spool makes new tensors every step).
             for name in ("tau_m", "tau_f", "tau_f_max", "tau_e"):
@@ -218,7 +253,10 @@ class ApplyM5ForcesModule(BaseModule):
         # The action is the change of the spool angle: desired = theta_m + action, capped at -1 rad, so it asks to unwind
         # at most 1 rad below the tared taut angle (the hand controller applies the same law and cap on the robot).
         actions = (theta_m + spool.commanded_delta_angle(container)).clamp(min=-1.0)  # desired spool angle
-        tau_m = self._motor_torque(actions - theta_m)
+        if self.command_history is None:
+            tau_m = self._motor_torque(actions - theta_m)
+        else:  # the servo applies the current commanded command_delay_steps ago
+            tau_m = self._current_torque(self._delayed_current(self.motor_position_gain * (actions - theta_m)))
 
         if not self.friction:
             tau_f_max = torch.zeros_like(tau_m)
