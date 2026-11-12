@@ -295,7 +295,7 @@ def test_vsim_emits_fingertip_kinematic_sensor() -> None:
 
     urdf = URDF.load(str(u.INPUT_URDF), build_scene_graph=False, load_meshes=False)
     vsim = u.URDFVsimQueryWrapper(urdf)
-    u.add_sensors(vsim)
+    u.add_sensors(vsim, u.INPUT_URDF.parent)
     u.add_kinematic_sensors(vsim, u.INPUT_URDF.parent)
 
     text = u.urdf_to_text_rounded(vsim)
