@@ -402,6 +402,11 @@ def export_info(env: ModularEnvironment) -> dict[str, Any]:
         info["num_hist"] = obs_module.num_hist
         info["hist_stride"] = obs_module.hist_stride
         info["observation_modules"] = list(obs_module.config.get("modules", []))
+        spool_state = (obs_module.config.get("modules") or {}).get("spool_state")
+        if spool_state is not None:
+            # Which spool signals the policy observes (the robot's controller builds the same frame).
+            spool_state = spool_state or {}
+            info["spool_state"] = {"angle": bool(spool_state.get("angle", True)), "velocity": bool(spool_state.get("velocity", True))}
 
     spool = getattr(container, "spool", None)
     if spool is not None:

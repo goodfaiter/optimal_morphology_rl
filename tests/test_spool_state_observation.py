@@ -176,3 +176,16 @@ def test_observation_modules_must_be_a_mapping() -> None:
 
     with pytest.raises(ValueError, match="must map each observation sub-module"):
         ObservationManagerModule({"modules": ["spool_state"]})
+
+
+def test_angle_false_observes_only_the_velocity() -> None:
+    import pytest
+
+    env = _spool_env()
+    module = SpoolStateObservation({"angle": False})
+    assert module.get_obs_dim(env) == 2
+    out = torch.zeros((2, 2))
+    module.compute_observation(env, out)
+    assert torch.allclose(out, RAW[:, 2:])  # [omega_m], no theta_m
+    with pytest.raises(ValueError, match="cannot both be false"):
+        SpoolStateObservation({"angle": False, "velocity": False})
