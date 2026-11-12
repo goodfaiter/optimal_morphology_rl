@@ -138,12 +138,14 @@ class ApplyM5ForcesModule(BaseModule):
 
         # Optional learned friction envelope (TorchScript: model(omega, theta_delta) -> tau_f_max, Nm).
         self.friction_model = None
+        self.friction_model_name = None  # the model file's name (the export tells the robot which model to run)
         model_path = self.config.get("friction_model_path")
         if model_path:
             model_path = _resolve_model_path(str(model_path))
             if not model_path.is_file():
                 raise RuntimeError(f"ApplyM5Forces: friction model '{model_path}' not found.")
             self.friction_model = torch.jit.load(str(model_path), map_location=device)
+            self.friction_model_name = model_path.name
             self.friction_model.eval()
             frequency = float(getattr(self.friction_model, "frequency", 1.0 / self.dt))
             if abs(frequency * self.dt - 1.0) > 1e-6:

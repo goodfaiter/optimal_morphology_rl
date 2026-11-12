@@ -408,6 +408,10 @@ def export_info(env: ModularEnvironment) -> dict[str, Any]:
         # How a held action is applied between policy steps ('create_spool' hold), for the robot's controller.
         info["hold"] = spool.hold
 
+    if "apply_m5_forces" in manager and manager.get("apply_m5_forces").friction_model_name is not None:
+        # The learned friction envelope the robot's controller must run for tau_f_max.
+        info["friction_model"] = manager.get("apply_m5_forces").friction_model_name
+
     if "process_variable_actions" in manager:
         actions = manager.get("process_variable_actions")
         num_actions = env.action_space.shape[0]
