@@ -77,7 +77,7 @@ spool_plot:
 # M5-friction servo law on the spools (as adapt_finger): slider motor force (tau_motor + tau_friction) / r, applied
 # by 'apply_motor_forces'. The action is the change of the spool angle: desired = max(theta + action, -1).
 apply_m5_forces:
-  friction_model_path: mlp_dynamic_envelope.pt # learned tau_f_max(omega, target - theta)
+  friction_model_path: 2026_10_21_mlp_dynamic_envelope.pt # learned tau_f_max(omega, target - theta)
   friction_model_output: envelope # the budget tau_f_max of the stick logic (torque: a signed tau_f applied as is)
   motor_position_gain: 0.1 # A/rad, current = gain * (target - position), as on the robot
   torque_constant: 0.500 # Nm/A, torque = K_t * sign(i) * max(|i| - i_0, 0)
