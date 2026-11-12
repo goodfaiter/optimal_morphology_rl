@@ -257,3 +257,45 @@ def test_no_command_delay_by_default_and_invalid_delays_raise() -> None:
     for bad in (-1, [3, 1]):
         with pytest.raises(RuntimeError, match="command_delay_steps"):
             _module(torch.zeros(1), 0.0, command_delay_steps=bad)
+
+
+def test_tau_inertia_is_j_eff_over_dt_times_the_spool_speed() -> None:
+    """tau_inertia = J_eff / dt * omega: the robot knows it from the spool speed (unlike tau_f, which needs tau_e)."""
+    omega = torch.tensor([0.0, 2.0, -3.0])
+    module, container = _module(omega, command=0.5, max_spool_velocity=None, tension=4.0)
+    module.step(container)
+    assert torch.allclose(module.last_signals["tau_inertia"][:, 0], J / DT * omega)
+
+
+class _EnvelopeTauEModel(_EnvelopeModel):
+    """Two-output stand-in (output_columns): tau_e first, then the envelope 0.5 + |theta_delta|; tau_e = -0.2 * theta_delta."""
+
+    def __init__(self):
+        super().__init__()
+        self.output_columns = ["tau_external_Nm", "friction_envelope_Nm"]
+
+    def forward(self, omega: torch.Tensor, theta_delta: torch.Tensor) -> torch.Tensor:
+        if self.force_buffer.shape[0] != omega.shape[0]:
+            self.force_buffer = torch.zeros(omega.shape[0], 1)
+            self.resets = torch.zeros(omega.shape[0])
+        return torch.stack([-0.2 * theta_delta, 0.5 + theta_delta.abs()], 1)
+
+
+def test_two_output_model_gives_the_envelope_and_the_tau_e_prediction(tmp_path) -> None:
+    # The columns by name: the envelope is the budget, tau_external_Nm the nominal tau_e_predicted (not scaled).
+    path = tmp_path / "envelope_tau_e.pt"
+    torch.jit.script(_EnvelopeTauEModel()).save(str(path))
+    module, container = _module(torch.zeros(2), command=1.0, max_spool_velocity=None, friction_model_path=str(path))
+    module.set_curriculum_factor(0.5, container)
+    module.step(container)
+    assert torch.allclose(module.last_signals["tau_f_max"][:, 0], torch.full((2,), 0.75))
+    assert torch.allclose(module.last_signals["tau_e_predicted"][:, 0], torch.full((2,), -0.2))
+    container.reset_buf = torch.tensor([True, False])
+    module.reset(container)
+    assert torch.allclose(module.last_signals["tau_e_predicted"][:, 0], torch.tensor([0.0, -0.2]))
+
+
+def test_single_output_model_has_no_tau_e_prediction(tmp_path) -> None:
+    module, container = _with_envelope_model(tmp_path)
+    module.step(container)
+    assert "tau_e_predicted" not in module.last_signals

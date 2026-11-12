@@ -69,7 +69,10 @@ class ApplyM5ForcesModule(BaseModule):
     ``model(omega, theta_delta)`` with the spool speed (rad/s) and theta_delta = target - theta_m (rad), at
     the 200 Hz control rate. ``friction_model_output`` says what it predicts: ``envelope`` (default) the
     friction budget tau_f_max (the Karnopp stop torque still uses the simulator's J_eff), ``torque`` the
-    signed friction torque tau_f itself (applied as is).
+    signed friction torque tau_f itself (applied as is). A model with several outputs names them in ``output_columns``:
+    ``friction_envelope_Nm`` is the envelope (or torque), ``tau_external_Nm`` (if present) its prediction of the
+    external (tendon) load torque tau_e, kept as the signal ``tau_e_predicted`` (the model's nominal output: the
+    estimate the robot computes too; the sim's own tau_e still drives the spool).
 
     The friction (budget, or the model's torque) is scaled by the training curriculum factor
     (``curriculum_factor``: rl_games 'curriculum' levels, e.g. 0 -> 1; 1.0 outside a curriculum) and by
@@ -153,7 +156,16 @@ class ApplyM5ForcesModule(BaseModule):
             self.friction_model_output = str(self.config.get("friction_model_output", "envelope"))
             if self.friction_model_output not in ("envelope", "torque"):
                 raise RuntimeError("ApplyM5Forces config 'friction_model_output' must be 'envelope' or 'torque'.")
-            print(f"ApplyM5Forces: friction {self.friction_model_output} from '{model_path.name}'")
+            # Output columns: a single output is the envelope; several are named (output_columns).
+            columns = list(getattr(self.friction_model, "output_columns", []) or [])
+            self.envelope_column, self.tau_e_column = None, None
+            if len(columns) > 1:
+                if "friction_envelope_Nm" not in columns:
+                    raise RuntimeError(f"ApplyM5Forces: friction model '{model_path.name}' outputs {columns}, no 'friction_envelope_Nm'.")
+                self.envelope_column = columns.index("friction_envelope_Nm")
+                self.tau_e_column = columns.index("tau_external_Nm") if "tau_external_Nm" in columns else None
+            print(f"ApplyM5Forces: friction {self.friction_model_output} from '{model_path.name}'"
+                  + (" (+ tau_e prediction)" if self.tau_e_column is not None else ""))
 
         # Per env factor on the friction (randomize_m5 redraws it on reset).
         self.friction_scale = torch.ones((num_envs, 1), device=device, dtype=torch.float32)
@@ -232,8 +244,9 @@ class ApplyM5ForcesModule(BaseModule):
             self.delay[reset_buf] = draw
         if self.last_signals is not None and bool(reset_buf.any()):
             # New tensors: 'tau_e' is the spool's own (create_spool makes new tensors every step).
-            for name in ("tau_m", "tau_f", "tau_f_max", "tau_e"):
-                self.last_signals[name] = torch.where(reset_buf.unsqueeze(-1), 0.0, self.last_signals[name])
+            for name in ("tau_m", "tau_f", "tau_f_max", "tau_e", "tau_inertia", "tau_e_predicted"):
+                if name in self.last_signals:
+                    self.last_signals[name] = torch.where(reset_buf.unsqueeze(-1), 0.0, self.last_signals[name])
         if self.friction_model is None:
             return
         rows = reset_buf.unsqueeze(-1).expand(-1, self.num_tendons).reshape(-1)
@@ -243,10 +256,14 @@ class ApplyM5ForcesModule(BaseModule):
                 self.friction_model.reset(rows)
 
     def _model_output(self, omega_m, theta_delta):
-        """Learned model output (envelope or friction torque), one batched forward pass over every env and tendon."""
+        """Learned model output, one batched forward pass over every env and tendon: (envelope or friction torque,
+        predicted tau_e or None), each shaped like ``omega_m``."""
         with torch.no_grad():
-            output = self.friction_model(omega_m.reshape(-1), theta_delta.reshape(-1)).view_as(omega_m)
-        return output
+            output = self.friction_model(omega_m.reshape(-1), theta_delta.reshape(-1))
+        if self.envelope_column is None:
+            return output.view_as(omega_m), None
+        tau_e = output[:, self.tau_e_column].view_as(omega_m) if self.tau_e_column is not None else None
+        return output[:, self.envelope_column].view_as(omega_m), tau_e
 
     def step(self, container: ModuleContainer) -> None:
         spool = container.spool
@@ -260,10 +277,14 @@ class ApplyM5ForcesModule(BaseModule):
         else:  # the servo applies the current commanded command_delay_steps ago
             tau_m = self._current_torque(self._delayed_current(self.motor_position_gain * (actions - theta_m)))
 
+        nominal_budget, tau_e_predicted = None, None
+        if self.friction_model is not None:
+            # The robot's estimates, before the scaling (also without friction: the tau_e prediction is an observation).
+            nominal_budget, tau_e_predicted = self._model_output(omega_m, actions - theta_m)
         if not self.friction:
             tau_f_max = torch.zeros_like(tau_m)
         elif self.friction_model is not None:
-            tau_f_max = self._model_output(omega_m, actions - theta_m)
+            tau_f_max = nominal_budget
         else:
             tau_f_max = self._friction_budget(tau_m, tau_e, omega_m)
         tau_f_max = tau_f_max * (self.curriculum_factor * self.friction_scale)
@@ -286,10 +307,15 @@ class ApplyM5ForcesModule(BaseModule):
         container.spool_motor_force_buf[:, spool.motor_indices] = force
 
         # Signals of the last step, shape (num_envs, num_model_tendons), for inspection tools.
+        # tau_inertia = J_eff / dt * omega_m: the torque that stops the spool within one physics step (the robot knows it
+        # from the spool speed, unlike tau_f, which needs the tendon load tau_e).
         self.last_signals = {
             "theta_m": theta_m, "omega_m": omega_m, "tension": spool.tension, "tau_e": tau_e,
             "tau_m": tau_m, "tau_f": tau_f, "tau_f_max": tau_f_max, "force": force, "action": actions,
+            "tau_inertia": spool.j_eff / self.dt * omega_m,
         }
+        if tau_e_predicted is not None:
+            self.last_signals["tau_e_predicted"] = tau_e_predicted
 
         if self.debug:
             e, t = self.debug_env, self.debug_tendon

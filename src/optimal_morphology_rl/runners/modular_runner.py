@@ -412,6 +412,28 @@ def export_info(env: ModularEnvironment) -> dict[str, Any]:
         # The learned friction envelope the robot's controller must run for tau_f_max.
         info["friction_model"] = manager.get("apply_m5_forces").friction_model_name
 
+    torques = ((manager.get("observation").config.get("modules") or {}).get("spool_torques")
+               if "observation" in manager else None)
+    if torques is not None and spool is not None and "apply_m5_forces" in manager:
+        # The servo signals the policy observes and the constants the robot's controller computes them with (nominal:
+        # an env built in play mode has no randomization).
+        m5 = manager.get("apply_m5_forces")
+        num_spools = spool.j_eff.shape[-1]
+        if "randomize_spool" in manager:  # the nominal J_eff (a training env's spools are randomized)
+            randomize = manager.get("randomize_spool")
+            j_eff = (randomize.nominal_armature + spool.slider_mass) * randomize.nominal_radius[0] ** 2
+        else:
+            j_eff = spool.j_eff[0]
+        per_spool = lambda value: value.reshape(-1, num_spools)[0].cpu().tolist()  # noqa: E731  (the same in every env)
+        info["spool_torques"] = {
+            "signals": list((torques or {}).get("signals", ["tau_f_max"])),
+            "physics_dt": float(m5.dt),
+            "j_eff": j_eff.cpu().tolist(),  # kg m^2 per spool
+            "motor_position_gain": per_spool(m5.motor_position_gain),  # A/rad
+            "torque_constant": per_spool(m5.torque_constant),  # Nm/A
+            "current_deadband": per_spool(m5.current_deadband),  # A
+        }
+
     if "process_variable_actions" in manager:
         actions = manager.get("process_variable_actions")
         num_actions = env.action_space.shape[0]

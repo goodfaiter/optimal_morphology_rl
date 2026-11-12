@@ -13,7 +13,10 @@ from optimal_morphology_rl.modules.observations.observation_manager_module impor
     register_observation,
 )
 
-SIGNALS = ("tau_f_max", "tau_f", "tau_m", "tau_e")
+# The robot can compute tau_f_max (the friction model), tau_m (the servo law), tau_inertia (J_eff / dt * spool speed) and
+# tau_e_predicted (the friction model's tau_e output, if it has one); tau_f and tau_e need the tendon load, which only
+# the sim knows.
+SIGNALS = ("tau_f_max", "tau_f", "tau_m", "tau_e", "tau_inertia", "tau_e_predicted")
 
 
 @register_observation("spool_torques")
@@ -21,13 +24,15 @@ class SpoolTorquesObservation(ObservationBaseModule):
     """Servo torques of the current step per spool, from ``apply_m5_forces.last_signals`` (Nm).
 
     ``signals`` selects them, in order (default ``[tau_f_max]``, the friction budget); the layout is
-    ``[signal 1 (num_model_tendons), signal 2 (...), ...]``. The robot cannot measure these: list the module
-    under ``observation.privileged_modules`` (critic only).
+    ``[signal 1 (num_model_tendons), signal 2 (...), ...]``. The robot's hand controller computes tau_f_max (the
+    friction model), tau_m (the servo law), tau_inertia (J_eff / dt * omega) and tau_e_predicted (the friction model's
+    prediction of tau_e: a model with a ``tau_external_Nm`` output) from its own state; tau_f and tau_e need
+    the tendon load: for those, list the module under ``observation.privileged_modules`` (critic only).
 
     Config shape::
 
         spool_torques:
-          signals: [tau_f_max]  # any of tau_f_max, tau_f, tau_m, tau_e
+          signals: [tau_f_max]  # any of tau_f_max, tau_f, tau_m, tau_e, tau_inertia, tau_e_predicted
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -48,4 +53,8 @@ class SpoolTorquesObservation(ObservationBaseModule):
         if last is None:  # before the first control step (the initial reset)
             out.zero_()
             return
+        missing = [name for name in self.signals if name not in last]
+        if missing:
+            raise RuntimeError(f"spool_torques: apply_m5_forces has no {missing} (tau_e_predicted needs a friction model "
+                               "with a 'tau_external_Nm' output, e.g. 2026_11_10_mlp_dynamic_envelope_tau_e.pt).")
         out[:] = torch.cat([last[name] for name in self.signals], dim=-1)

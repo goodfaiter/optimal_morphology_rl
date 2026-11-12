@@ -15,6 +15,7 @@ SIGNALS = {
     "tau_f": torch.tensor([[-0.01, 0.0], [0.0, 0.01]]),
     "tau_m": torch.tensor([[0.1, 0.2], [0.3, 0.4]]),
     "tau_e": torch.tensor([[-0.05, -0.06], [-0.07, -0.08]]),
+    "tau_inertia": torch.tensor([[0.0, 0.24], [-0.36, 0.12]]),
 }
 
 
@@ -92,3 +93,12 @@ def test_env_returns_the_privileged_observations_as_a_dict() -> None:
     obs = env._observations()
     assert set(obs) == {"obs", "priv_obs"}
     assert torch.equal(obs["obs"], container.obs_buf) and torch.equal(obs["priv_obs"], container.priv_obs_buf)
+
+
+def test_spool_torques_robot_signals() -> None:
+    """The signals the robot's controller computes: tau_inertia, tau_m, tau_f_max, in the given order."""
+    env, _ = _env()
+    module = SpoolTorquesObservation({"signals": ["tau_inertia", "tau_m", "tau_f_max"]})
+    out = torch.zeros(2, module.get_obs_dim(env))
+    module.compute_observation(env, out)
+    assert torch.equal(out, torch.cat([SIGNALS["tau_inertia"], SIGNALS["tau_m"], SIGNALS["tau_f_max"]], dim=-1))
