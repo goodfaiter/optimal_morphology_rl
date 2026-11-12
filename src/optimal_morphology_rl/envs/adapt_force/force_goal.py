@@ -166,14 +166,21 @@ class FingertipForceObservation(ObservationBaseModule):
 @register_reward("force_tracking_reward")
 class ForceTrackingReward(RewardBaseModule):
     """``scale * exp(-((force - goal) / normalize)^2)``: the measured fingertip force at the 'force_goal' target. With
-    ``max_error`` the error is clipped to +-max_error N first. A list of widths (``normalize: [0.3, 1.0]``) gives the
-    mean of their kernels: the wide one still rewards (and gives a gradient toward) a target far off. Logs force_error_n (the clipped |error|, N) and
-    force_tracking_reward (the unscaled reward), with fingertip_force_n and force_goal_n::
+    ``max_error`` the error is clipped to +-max_error N first. A list of widths (``normalize: [0.3, 0.1]``) gives the
+    sum of their kernels (up to one per width): the wide one still rewards (and gives a gradient toward) a target far
+    off, the narrow one rewards being close. With
+    ``allow_overshoot`` a force above the goal counts as on target (full reward): only undershoot is penalized;
+    ``overshoot_tolerance`` (N, with allow_overshoot) limits that to forces up to goal + tolerance, a larger force is
+    penalized from there (without it, pressing as hard as possible earns the full reward for every goal). Logs
+    force_error_n (the |error| after max_error, N, overshoot included) and force_tracking_reward (the unscaled
+    reward), with fingertip_force_n and force_goal_n::
 
         force_tracking_reward:
           scale: 1.0
           normalize: 0.2 # N
           max_error: 3.0 # N, optional
+          allow_overshoot: false # optional
+          overshoot_tolerance: 0.5 # N, optional (with allow_overshoot)
     """
 
     def compute(self, env: Any) -> torch.Tensor | None:
@@ -183,7 +190,12 @@ class ForceTrackingReward(RewardBaseModule):
         widths = [float(w) for w in normalize] if isinstance(normalize, (list, tuple)) else [float(normalize)]
         max_error = self.config.get("max_error")
         clipped = error if max_error is None else error.clamp(-float(max_error), float(max_error))
-        reward = sum(torch.exp(-((clipped / w) ** 2)) for w in widths) / len(widths)
+        rewarded = clipped
+        if self.config.get("allow_overshoot", False):
+            tolerance = self.config.get("overshoot_tolerance")
+            over = torch.zeros_like(clipped) if tolerance is None else (clipped - float(tolerance)).clamp(min=0.0)
+            rewarded = torch.where(clipped > 0.0, over, clipped)
+        reward = sum(torch.exp(-((rewarded / w) ** 2)) for w in widths)
         n = env.total_num_envs
         env.info["rewards"]["force_error_n"] = clipped.abs().sum().item() / n
         env.info["rewards"]["force_tracking_reward"] = reward.sum().item() / n

@@ -38,3 +38,25 @@ def test_force_goal_mean_hold_gives_the_same_hold_time_for_any_frame_skip() -> N
     for dt in (0.005, 0.02, 0.05):
         p = 1.0 - math.exp(-dt / 1.67)
         assert dt / p == pytest.approx(1.67, rel=0.02)
+
+
+def test_force_tracking_allow_overshoot_rewards_forces_above_the_goal() -> None:
+    import torch
+    from optimal_morphology_rl.envs.adapt_force.force_goal import ForceTrackingReward
+
+    container = SimpleNamespace(fingertip_force=torch.tensor([3.0, 1.0, 2.0]), force_goal=torch.tensor([2.0, 2.0, 2.0]))
+    env = SimpleNamespace(module_manager=SimpleNamespace(container=container), info={"rewards": {}}, total_num_envs=3)
+    plain = ForceTrackingReward({"normalize": 1.0}).compute(env)
+    over = ForceTrackingReward({"normalize": 1.0, "allow_overshoot": True}).compute(env)
+    assert over.tolist() == pytest.approx([1.0, math.exp(-1.0), 1.0])
+    assert plain.tolist() == pytest.approx([math.exp(-1.0), math.exp(-1.0), 1.0])
+
+
+def test_force_tracking_overshoot_tolerance_penalizes_beyond_it() -> None:
+    import torch
+    from optimal_morphology_rl.envs.adapt_force.force_goal import ForceTrackingReward
+
+    container = SimpleNamespace(fingertip_force=torch.tensor([2.4, 3.5, 1.0]), force_goal=torch.tensor([2.0, 2.0, 2.0]))
+    env = SimpleNamespace(module_manager=SimpleNamespace(container=container), info={"rewards": {}}, total_num_envs=3)
+    reward = ForceTrackingReward({"normalize": 1.0, "allow_overshoot": True, "overshoot_tolerance": 0.5}).compute(env)
+    assert reward.tolist() == pytest.approx([1.0, math.exp(-1.0), math.exp(-1.0)])
