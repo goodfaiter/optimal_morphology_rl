@@ -113,6 +113,17 @@ class ProcessVariableActionsModule(BaseModule):
         # Shared so an action source can invert the scaling (interactive_slider_control 'spool_positions').
         container.dof_scale_range = (self.min_dof_scale, self.max_dof_scale)
 
+    def export_info(self, container: ModuleContainer) -> dict[str, Any]:
+        """The per-action command bounds the [-1, 1] policy actions map to (root velocities, then the active dofs)."""
+        num_actions = container.env.action_space.shape[0]
+        lower = torch.full((num_actions,), -1.0)
+        upper = torch.full((num_actions,), 1.0)
+        lower[container.root_slice] = self.min_velocity.cpu()
+        upper[container.root_slice] = self.max_velocity.cpu()
+        lower[container.active_dof_slice] = self.min_dof_scale.cpu()
+        upper[container.active_dof_slice] = self.max_dof_scale.cpu()
+        return {"action_lower": lower.tolist(), "action_upper": upper.tolist()}
+
     def step(self, container: ModuleContainer) -> None:
         """Update action history, copy new actions, and scale them."""
         act_buf = container.act_buf

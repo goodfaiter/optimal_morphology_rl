@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
 from optimal_morphology_rl.modules.base_module import BaseModule
@@ -159,6 +161,10 @@ class CreateSpoolModule(BaseModule):
         self.reset_rows = torch.zeros(num_envs, device=device, dtype=torch.bool)  # envs reset before this step
         # hold: target: the desired spool angle fixed once per control step ('update_spool_target').
         self.target = torch.zeros(shape, device=device, dtype=torch.float32)
+
+    def export_info(self, container: ModuleContainer) -> dict[str, Any]:
+        """How a held action is applied between policy steps (``hold``: offset or target), for the robot's controller."""
+        return {"hold": self.hold}
 
     def update_inertia(self) -> None:
         """Recompute the rotary inertia J_eff = (armature + slider_mass) * r**2 the simulator integrates."""

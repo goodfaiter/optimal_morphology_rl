@@ -168,6 +168,10 @@ class CreateRigidVsimEnvs(BaseModule):
         container.max_contact_patches_per_env = self.max_contact_patches_per_env
         container.max_contact_points_per_patch = self.max_contact_points_per_patch
 
+    def export_info(self, container: ModuleContainer) -> dict[str, Any]:
+        """The control (policy) frequency, Hz."""
+        return {"frequency": 1.0 / (self.timestep * self.frame_skip)}
+
     def post_finalize(self, container: ModuleContainer) -> None:
         """Finalize the environment definition and create the environment group."""
         if container.get("env_def") is None:

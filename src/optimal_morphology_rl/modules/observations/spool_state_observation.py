@@ -146,6 +146,10 @@ class SpoolStateObservation(ObservationBaseModule):
             raise RuntimeError("spool_state observation requires the 'create_spool' module.")
         return spool
 
+    def export_info(self, container: Any) -> dict[str, Any]:
+        """Which spool signals the policy observes (``spool_state``: angle, velocity), so the robot builds the same frame."""
+        return {"spool_state": {"angle": self.angle, "velocity": self.velocity}}
+
     def get_obs_dim(self, env: Any) -> int:
         return (int(self.velocity) + int(self.angle)) * len(self._spool(env).model_tendon_indices)
 

@@ -24,6 +24,7 @@ import optimal_morphology_rl.networks.transformer_network  # noqa: F401  # regis
 from optimal_morphology_rl.algos.colored_noise_agent import ColoredNoiseA2CAgent
 from optimal_morphology_rl.algos.distill_agent import DistillAgent
 from optimal_morphology_rl.envs.modular_environment import ModularEnvironment
+from optimal_morphology_rl.modules.base_module import merge_export_info
 from optimal_morphology_rl.utils.config import load_raw_yaml, load_yaml_with_context, resolve_config
 
 # Built-in task folders (the --task-root default).
@@ -388,68 +389,12 @@ def make_env_creator(env_config: dict[str, Any], mode: str):
 
 
 def export_info(env: ModularEnvironment) -> dict[str, Any]:
-    """Deployment parameters of a built env for rl_games' policy export.
-
-    Control frequency, observation history layout and the per-action command bounds that
-    ``process_variable_actions`` maps the [-1, 1] policy actions to.
-    """
+    """Deployment parameters of a built env for rl_games' policy export: every module's ``export_info`` merged (each
+    key from one module, e.g. the control frequency, the observation history layout, the action bounds)."""
     manager = env.module_manager
-    container = manager.container
-    info: dict[str, Any] = {"frequency": 1.0 / (container.timestep * container.frame_skip)}
-
-    if "observation" in manager:
-        obs_module = manager.get("observation")
-        info["num_hist"] = obs_module.num_hist
-        info["hist_stride"] = obs_module.hist_stride
-        info["observation_modules"] = list(obs_module.config.get("modules", []))
-        spool_state = (obs_module.config.get("modules") or {}).get("spool_state")
-        if spool_state is not None:
-            # Which spool signals the policy observes (the robot's controller builds the same frame).
-            spool_state = spool_state or {}
-            info["spool_state"] = {"angle": bool(spool_state.get("angle", True)), "velocity": bool(spool_state.get("velocity", True))}
-
-    spool = getattr(container, "spool", None)
-    if spool is not None:
-        # How a held action is applied between policy steps ('create_spool' hold), for the robot's controller.
-        info["hold"] = spool.hold
-
-    if "apply_m5_forces" in manager and manager.get("apply_m5_forces").friction_model_name is not None:
-        # The learned friction envelope the robot's controller must run for tau_f_max.
-        info["friction_model"] = manager.get("apply_m5_forces").friction_model_name
-
-    torques = ((manager.get("observation").config.get("modules") or {}).get("spool_torques")
-               if "observation" in manager else None)
-    if torques is not None and spool is not None and "apply_m5_forces" in manager:
-        # The servo signals the policy observes and the constants the robot's controller computes them with (nominal:
-        # an env built in play mode has no randomization).
-        m5 = manager.get("apply_m5_forces")
-        num_spools = spool.j_eff.shape[-1]
-        if "randomize_spool" in manager:  # the nominal J_eff (a training env's spools are randomized)
-            randomize = manager.get("randomize_spool")
-            j_eff = (randomize.nominal_armature + spool.slider_mass) * randomize.nominal_radius[0] ** 2
-        else:
-            j_eff = spool.j_eff[0]
-        per_spool = lambda value: value.reshape(-1, num_spools)[0].cpu().tolist()  # noqa: E731  (the same in every env)
-        info["spool_torques"] = {
-            "signals": list((torques or {}).get("signals", ["tau_f_max"])),
-            "physics_dt": float(m5.dt),
-            "j_eff": j_eff.cpu().tolist(),  # kg m^2 per spool
-            "motor_position_gain": per_spool(m5.motor_position_gain),  # A/rad
-            "torque_constant": per_spool(m5.torque_constant),  # Nm/A
-            "current_deadband": per_spool(m5.current_deadband),  # A
-        }
-
-    if "process_variable_actions" in manager:
-        actions = manager.get("process_variable_actions")
-        num_actions = env.action_space.shape[0]
-        lower = torch.full((num_actions,), -1.0)
-        upper = torch.full((num_actions,), 1.0)
-        lower[container.root_slice] = actions.min_velocity.cpu()
-        upper[container.root_slice] = actions.max_velocity.cpu()
-        lower[container.active_dof_slice] = actions.min_dof_scale.cpu()
-        upper[container.active_dof_slice] = actions.max_dof_scale.cpu()
-        info["action_lower"] = lower.tolist()
-        info["action_upper"] = upper.tolist()
+    info: dict[str, Any] = {}
+    for module in manager:
+        merge_export_info(info, module.export_info(manager.container), type(module).__name__)
     return info
 
 

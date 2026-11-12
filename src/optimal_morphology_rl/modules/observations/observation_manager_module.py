@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from vlearn.spaces import Box
 
-from optimal_morphology_rl.modules.base_module import BaseModule, seconds_to_steps
+from optimal_morphology_rl.modules.base_module import BaseModule, merge_export_info, seconds_to_steps
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.module_manager import ModuleManager, register_module
 from optimal_morphology_rl.modules.observations.observation_base_module import (
@@ -199,6 +199,18 @@ class ObservationManagerModule(BaseModule):
             module.compute_observation(env, container.priv_obs_buf[:, self._priv_slices[type(module).__name__]])
         if self.teacher is not None:
             self.teacher.step(container)
+
+    def export_info(self, container: ModuleContainer) -> dict[str, Any]:
+        """The history layout and the observation sub-modules (in order), plus what each policy sub-module exports
+        (not the critic's privileged ones, nor the teacher group of a distill run)."""
+        info: dict[str, Any] = {
+            "num_hist": self.num_hist,
+            "hist_stride": self.hist_stride,
+            "observation_modules": list(self.config.get("modules", [])),
+        }
+        for module in self._obs_modules:
+            merge_export_info(info, module.export_info(container), type(module).__name__)
+        return info
 
     def reset(self, container: ModuleContainer) -> None:
         """Reset the observation history and the sub-modules (e.g. per-episode observation noise)."""

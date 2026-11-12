@@ -42,6 +42,28 @@ class SpoolTorquesObservation(ObservationBaseModule):
         if unknown or not self.signals:
             raise ValueError(f"spool_torques 'signals' must be a non-empty subset of {SIGNALS}, got {self.signals}.")
 
+    def export_info(self, container: Any) -> dict[str, Any]:
+        """``spool_torques``: the observed signals and the constants the robot's controller computes them with, per
+        spool: the physics step, J_eff and the servo law's gain, K_t and i0 (nominal: a training env's spools are
+        randomized, an env built in play mode is not)."""
+        manager = container.env.module_manager
+        spool, m5 = container.spool, manager.get("apply_m5_forces")
+        num_spools = spool.j_eff.shape[-1]
+        if "randomize_spool" in manager:  # the nominal J_eff
+            randomize = manager.get("randomize_spool")
+            j_eff = (randomize.nominal_armature + spool.slider_mass) * randomize.nominal_radius[0] ** 2
+        else:
+            j_eff = spool.j_eff[0]
+        per_spool = lambda value: value.reshape(-1, num_spools)[0].cpu().tolist()  # noqa: E731  (the same in every env)
+        return {"spool_torques": {
+            "signals": list(self.signals),
+            "physics_dt": float(m5.dt),
+            "j_eff": j_eff.cpu().tolist(),  # kg m^2 per spool
+            "motor_position_gain": per_spool(m5.motor_position_gain),  # A/rad
+            "torque_constant": per_spool(m5.torque_constant),  # Nm/A
+            "current_deadband": per_spool(m5.current_deadband),  # A
+        }}
+
     def get_obs_dim(self, env: Any) -> int:
         spool = env.module_manager.container.get("spool")
         if spool is None:

@@ -87,38 +87,56 @@ def test_sanity_check_rejects_mismatching_export(tmp_path: Path) -> None:
         policy_export.check_exported_policy(path, model, 7 * 40)
 
 
+class _Exporting:
+    def __init__(self, info):
+        self.info = info
+
+    def export_info(self, container):
+        return self.info
+
+
 class _FakeManager:
+    """Iterates its modules as ModuleManager does."""
+
     def __init__(self, modules, container):
         self._modules = modules
         self.container = container
 
-    def __contains__(self, name):
-        return name in self._modules
-
-    def get(self, name):
-        return self._modules[name]
+    def __iter__(self):
+        return iter(self._modules)
 
 
-def test_export_info_reads_built_env() -> None:
-    container = SimpleNamespace(timestep=1 / 200, frame_skip=1, root_slice=slice(0, 1), active_dof_slice=slice(1, 3))
-    modules = {
-        "observation": SimpleNamespace(num_hist=40, hist_stride=10, config={"modules": {"spool_state": {}, "goal_finger_tip": {}}}),
-        "process_variable_actions": SimpleNamespace(
-            min_velocity=torch.tensor([-0.5]),
-            max_velocity=torch.tensor([0.5]),
-            min_dof_scale=torch.tensor([0.0, 0.0]),
-            max_dof_scale=torch.tensor([3.3, 3.3]),
-        ),
-    }
-    env = SimpleNamespace(module_manager=_FakeManager(modules, container), action_space=SimpleNamespace(shape=(3,)))
+def test_export_info_merges_every_module_and_rejects_a_key_set_twice() -> None:
+    modules = [_Exporting({"frequency": 20.0}), _Exporting({}), _Exporting({"hold": "target", "num_hist": 25})]
+    env = SimpleNamespace(module_manager=_FakeManager(modules, SimpleNamespace()))
+    assert export_info(env) == {"frequency": 20.0, "hold": "target", "num_hist": 25}
+    env = SimpleNamespace(module_manager=_FakeManager(modules + [_Exporting({"hold": "offset"})], SimpleNamespace()))
+    with pytest.raises(ValueError, match="'hold'"):
+        export_info(env)
 
-    info = export_info(env)
 
-    assert info["frequency"] == pytest.approx(200.0)
-    assert info["num_hist"] == 40 and info["hist_stride"] == 10
-    assert info["observation_modules"] == ["spool_state", "goal_finger_tip"]
+def test_modules_export_their_deployment_parameters() -> None:
+    from optimal_morphology_rl.modules.create_rigid_vsim_envs import CreateRigidVsimEnvs
+    from optimal_morphology_rl.modules.observations.observation_manager_module import ObservationManagerModule
+    from optimal_morphology_rl.modules.observations.spool_state_observation import SpoolStateObservation
+    from optimal_morphology_rl.modules.process_variable_actions_module import ProcessVariableActionsModule
+
+    assert CreateRigidVsimEnvs.export_info(SimpleNamespace(timestep=1 / 200, frame_skip=10), None) == {"frequency": pytest.approx(20.0)}
+
+    container = SimpleNamespace(root_slice=slice(0, 1), active_dof_slice=slice(1, 3),
+                                env=SimpleNamespace(action_space=SimpleNamespace(shape=(3,))))
+    actions = SimpleNamespace(min_velocity=torch.tensor([-0.5]), max_velocity=torch.tensor([0.5]),
+                              min_dof_scale=torch.tensor([0.0, 0.0]), max_dof_scale=torch.tensor([3.3, 3.3]))
+    info = ProcessVariableActionsModule.export_info(actions, container)
     assert info["action_lower"] == pytest.approx([-0.5, 0.0, 0.0])
     assert info["action_upper"] == pytest.approx([0.5, 3.3, 3.3])
+
+    # The observation block: its history layout and module order, plus its policy sub-modules' own info.
+    observation = SimpleNamespace(num_hist=40, hist_stride=10, config={"modules": {"spool_state": {"angle": False}, "force_goal": {}}},
+                                  _obs_modules=[SpoolStateObservation({"angle": False})])
+    info = ObservationManagerModule.export_info(observation, container)
+    assert info == {"num_hist": 40, "hist_stride": 10, "observation_modules": ["spool_state", "force_goal"],
+                    "spool_state": {"angle": False, "velocity": True}}
 
 
 def test_mlp_actor_is_exported_lean_and_frozen(tmp_path: Path) -> None:

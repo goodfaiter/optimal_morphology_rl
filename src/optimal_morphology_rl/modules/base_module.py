@@ -24,6 +24,15 @@ def seconds_to_steps(seconds: float, step_dt: float, name: str, exact: bool = Tr
     return max(1, int(round(steps)))
 
 
+def merge_export_info(info: dict[str, Any], extra: dict[str, Any], source: str) -> dict[str, Any]:
+    """Add a module's ``export_info`` to ``info`` (in place, returned); a key set twice is an error."""
+    for key, value in extra.items():
+        if key in info:
+            raise ValueError(f"export_info: '{key}' of {source} is already set by another module.")
+        info[key] = value
+    return info
+
+
 class BaseModule(ABC):
     """Minimal lifecycle interface for a modular environment component.
 
@@ -70,6 +79,12 @@ class BaseModule(ABC):
     def step(self, container: ModuleContainer) -> None:
         """Main step function called at pre/post gym/physics steps."""
         pass
+
+    def export_info(self, container: ModuleContainer) -> dict[str, Any]:
+        """Deployment parameters of this module for the exported policy's metadata (rl_games policy export): what
+        the robot's controller needs to run the policy as it was trained, e.g. the control frequency or the action
+        bounds. Called once on the built env; the keys must be unique across modules. Default: none."""
+        return {}
 
     def set_curriculum_factor(self, factor: float, container: ModuleContainer) -> None:
         """Called whenever the training curriculum changes level; modules read ``self.curriculum_factor``."""

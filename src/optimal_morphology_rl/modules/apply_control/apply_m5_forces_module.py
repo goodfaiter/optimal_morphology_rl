@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import optimal_morphology_rl_assets
 import torch
@@ -203,6 +204,11 @@ class ApplyM5ForcesModule(BaseModule):
         self.debug_env = int(self.config.get("debug_env", 0))
         self.debug_tendon = int(self.config.get("debug_tendon", 0))
         self.last_signals: dict[str, torch.Tensor] | None = None  # the signals of the last step (see step)
+
+    def export_info(self, container: ModuleContainer) -> dict[str, Any]:
+        """The learned friction envelope's file name (``friction_model``): the robot's controller runs the same model
+        for tau_f_max."""
+        return {"friction_model": self.friction_model_name} if self.friction_model_name is not None else {}
 
     def _motor_torque(self, error):
         """Motor torque of a spool angle error (target - theta): current command, then torque past the deadband."""
