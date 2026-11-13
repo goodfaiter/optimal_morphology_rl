@@ -15,10 +15,12 @@ class DistillAgent(A2CAgent):
     exploration noise: its own mistakes give the states it has to learn to recover from); each rollout step stores the
     student's observation with the teacher's mean action there as its label. The update minimizes the squared error
     between the student's and the teacher's mean actions (policy units) over the usual mini-epochs and minibatches; no
-    value function, entropy or critic. The episode rewards (the best checkpoint, the curriculum's early stopping) are
+    value function, entropy or critic. With ``temporal_smoothness_coef`` > 0 (ppo.yaml, as in PPO) the loss also gets
+    the PPO agent's temporal smoothness term, coef * |mu(s_t) - mu(s_t+1)| (L1) of the student on random consecutive
+    rollout steps (not across an episode start), one pair per minibatch sample. The episode rewards (the best checkpoint, the curriculum's early stopping) are
     the student's own.
 
-    Logged per epoch (distill/): the loss, the action gap (mean |student - teacher mean action| on the visited states,
+    Logged per epoch (distill/): the loss (the imitation loss alone), the temporal smoothness term (when on), the action gap (mean |student - teacher mean action| on the visited states,
     before the update), the mean reward per step and the mean |force error| (N; tasks with a force goal).
 
     The student is an ordinary rl_games model: checkpoints, the deployment export, play mode, the curriculum and its
@@ -80,7 +82,9 @@ class DistillAgent(A2CAgent):
         return self.teacher({"is_train": False, "prev_actions": None, "obs": obs, "rnn_states": None})["mus"]
 
     def play_steps(self):
-        obses = torch.zeros((self.horizon_length, self.num_actors) + self.obs_shape, device=self.ppo_device)
+        # The student's observations and the episode starts go to the experience buffer, where the temporal smoothness
+        # term (A2CAgent.temporal_smoothness_loss) samples its consecutive pairs: dones[n] = obs n starts an episode.
+        buffer = self.experience_buffer
         labels = torch.zeros((self.horizon_length, self.num_actors, self.actions_num), device=self.ppo_device)
         step_time = 0.0
         # Sums over the rollout (on the device).
@@ -89,7 +93,8 @@ class DistillAgent(A2CAgent):
         for n in range(self.horizon_length):
             student_mus = self.get_action_values(self.obs)["mus"]
             teacher_mus = self.teacher_mus()
-            obses[n] = self.obs["obs"]
+            buffer.update_data("obses", n, self.obs["obs"])
+            buffer.update_data("dones", n, self.dones)
             labels[n] = teacher_mus
             gap_sum += (student_mus - teacher_mus).abs().mean(dim=-1).sum()
 
@@ -118,7 +123,7 @@ class DistillAgent(A2CAgent):
         stats = {"action_gap": (gap_sum / steps).item(), "step_reward": (reward_sum / steps).item()}
         if has_force:
             stats["force_error_n"] = (error_sum / steps).item()
-        return {"obses": obses.reshape((-1,) + self.obs_shape), "labels": labels.reshape(-1, self.actions_num),
+        return {"obses": buffer.tensor_dict["obses"].reshape((-1,) + self.obs_shape), "labels": labels.reshape(-1, self.actions_num),
                 "played_frames": self.batch_size, "step_time": step_time, "stats": stats}
 
     def train_epoch(self):
@@ -134,7 +139,8 @@ class DistillAgent(A2CAgent):
         self.curr_frames = batch.pop("played_frames")
         self.algo_observer.after_steps()
         obses, labels = batch["obses"], batch["labels"]
-        losses = []
+        losses, smooth_losses = [], []
+        use_temporal = self.temporal_smoothness_coef > 0.0
         for _ in range(self.mini_epochs_num):
             perm = torch.randperm(obses.shape[0], device=self.ppo_device)
             for start in range(0, obses.shape[0], self.minibatch_size):
@@ -142,8 +148,13 @@ class DistillAgent(A2CAgent):
                 result = self.model({"is_train": True, "prev_actions": labels[idx],
                                      "obs": self._preproc_obs(obses[idx]), "rnn_states": None})
                 loss = ((result["mus"] - labels[idx]) ** 2).sum(dim=-1).mean()
+                total = loss
+                if use_temporal:
+                    smooth = self.temporal_smoothness_loss(idx.shape[0])
+                    total = total + self.temporal_smoothness_coef * smooth
+                    smooth_losses.append(smooth.detach())
                 self.optimizer.zero_grad(set_to_none=True)
-                loss.backward()
+                total.backward()
                 if self.truncate_grads:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
                 self.optimizer.step()
@@ -154,6 +165,8 @@ class DistillAgent(A2CAgent):
 
         frame = self.frame // self.num_agents
         self._distill_stats = {"loss": torch_ext.mean_list(losses).item(), **batch["stats"]}
+        if smooth_losses:
+            self._distill_stats["temporal_smoothness"] = torch_ext.mean_list(smooth_losses).item()
         for name, value in self._distill_stats.items():
             self.writer.add_scalar(f"distill/{name}", value, frame)
         zero = [torch.zeros((), device=self.ppo_device)]
@@ -166,7 +179,10 @@ class DistillAgent(A2CAgent):
         d = self._distill_stats
         if not d:
             return lines
-        parts = [f"loss {d['loss']:.4f}", f"action gap {d['action_gap']:.3f}", f"reward/step {d['step_reward']:.3f}"]
+        parts = [f"loss {d['loss']:.4f}"]
+        if "temporal_smoothness" in d:
+            parts.append(f"temporal {d['temporal_smoothness']:.4f}")
+        parts += [f"action gap {d['action_gap']:.3f}", f"reward/step {d['step_reward']:.3f}"]
         if "force_error_n" in d:
             parts.append(f"force error {d['force_error_n']:.2f} N")
         return lines + [" | ".join(parts)]

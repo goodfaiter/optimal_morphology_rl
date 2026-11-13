@@ -26,3 +26,4 @@ params:
       patience: 100
     colored_noise: null # PPO's exploration noise
     central_value_config: null # PPO's critic
+    temporal_smoothness_coef: 0.05
