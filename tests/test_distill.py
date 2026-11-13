@@ -11,7 +11,7 @@ import yaml
 from optimal_morphology_rl.algos.distill_agent import DistillAgent
 from optimal_morphology_rl.modules.module_container import ModuleContainer
 from optimal_morphology_rl.modules.observations.observation_manager_module import ObservationManagerModule
-from optimal_morphology_rl.runners.modular_runner import RunConfigObserver, add_teacher, is_student_run
+from optimal_morphology_rl.runners.modular_runner import RunConfigObserver, add_teacher, is_student_run, plain_config, task_configs_raw
 from optimal_morphology_rl.utils.config import overlay_config
 
 TAU_F_MAX = torch.tensor([[0.01, 0.02], [0.03, 0.04]])
@@ -143,6 +143,35 @@ def test_run_config_observer_copies_the_config_files(tmp_path: Path) -> None:
     assert yaml.safe_load((run / "config" / "ppo.yaml").read_text()) == {"params": {"algo": {"name": "distill"}}}
     (run / "nn").mkdir()
     assert is_student_run(str(run / "nn" / "x.pth"))
+
+
+def test_student_run_keeps_its_overlays_and_base_files(tmp_path: Path) -> None:
+    task = tmp_path / "task"
+    task.mkdir()
+    (task / "env.yaml").write_text("a: 1\nb: 2\n")
+    (task / "env_student.yml").write_text("# student\nb: 3\n")
+    (task / "ppo.yaml").write_text("params: {algo: {name: a2c_continuous}}\n")
+    (task / "dagger.yml").write_text("params: {algo: {name: distill}}\n")
+    files = task_configs_raw("task", tmp_path, student=True)
+    run = tmp_path / "runs" / "2026_11_09_00_00_02"
+    algo = SimpleNamespace(experiment_dir=str(run), games_to_track=10, ppo_device="cpu", writer=None)
+    RunConfigObserver(files).after_init(algo)
+    saved = run / "config"
+    assert sorted(p.name for p in saved.iterdir()) == ["dagger.yml", "env.yaml", "env_base.yaml", "env_student.yml",
+                                                        "ppo.yaml", "ppo_base.yaml"]
+    assert yaml.safe_load((saved / "env.yaml").read_text()) == {"a": 1, "b": 3}  # merged: what the run used
+    assert (saved / "env_student.yml").read_text() == "# student\nb: 3\n"  # the overlay as it was
+    assert (saved / "env_base.yaml").read_text() == "a: 1\nb: 2\n"
+    assert is_student_run(str(run / "nn" / "x.pth"))
+    # A PPO run keeps env.yaml / ppo.yaml only.
+    assert set(task_configs_raw("task", tmp_path)) == {"env.yaml", "ppo.yaml"}
+
+
+def test_plain_config_keeps_only_yaml_types() -> None:
+    config = {"path": Path("/a/b"), "pair": (1, 2.0), "array": torch.tensor([0.5, 1.0]), 3: None, "nested": [{"x": True}]}
+    plain = plain_config(config)
+    assert plain == {"path": "/a/b", "pair": [1, 2.0], "array": [0.5, 1.0], "3": None, "nested": [{"x": True}]}
+    assert yaml.safe_load(yaml.safe_dump(plain)) == plain
 
 
 def test_is_student_run_false_for_ppo_runs_and_runs_without_config(tmp_path: Path) -> None:

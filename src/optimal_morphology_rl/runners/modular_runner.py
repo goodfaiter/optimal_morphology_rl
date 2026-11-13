@@ -116,10 +116,14 @@ def task_config_paths(task: str, task_root: Path, student: bool = False) -> tupl
 
 def task_configs_raw(task: str, task_root: Path, student: bool = False) -> dict[str, Path | dict[str, Any]]:
     """The run's configs as <run>/config/ keeps them: env.yaml / ppo.yaml (files), the student's merged with their
-    overlays (unresolved dicts)."""
+    overlays (unresolved dicts: what the run used, read by play, the trials and the export). A student's run also keeps
+    the files it was built from, as they were: the overlays env_student.yml and dagger.yml and the task's env.yaml /
+    ppo.yaml (as env_base.yaml / ppo_base.yaml)."""
     env_path, env_overlay, ppo_path, ppo_overlay = task_config_paths(task, task_root, student)
-    return {"env.yaml": load_raw_yaml(env_path, env_overlay) if env_overlay else env_path,
-            "ppo.yaml": load_raw_yaml(ppo_path, ppo_overlay) if ppo_overlay else ppo_path}
+    if not student:
+        return {"env.yaml": env_path, "ppo.yaml": ppo_path}
+    return {"env.yaml": load_raw_yaml(env_path, env_overlay), "ppo.yaml": load_raw_yaml(ppo_path, ppo_overlay),
+            "env_student.yml": env_overlay, "dagger.yml": ppo_overlay, "env_base.yaml": env_path, "ppo_base.yaml": ppo_path}
 
 
 def load_task_configs(
@@ -411,9 +415,22 @@ def register_colored_noise_algo(runner: Runner) -> None:
     runner.player_factory.register_builder("distill", lambda **kwargs: players.PpoPlayerContinuous(**kwargs))
 
 
+def plain_config(value: Any) -> Any:
+    """``value`` (a resolved config) with only YAML types: paths and other objects as strings, tuples as lists."""
+    if isinstance(value, dict):
+        return {str(k): plain_config(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [plain_config(v) for v in value]
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if hasattr(value, "tolist"):  # numpy / torch values
+        return plain_config(value.tolist())
+    return str(value)
+
+
 class RunConfigObserver(VlearnAlgoObserver):
-    """Also writes the run's configs into <run>/config/ (as env.yaml / ppo.yaml) once the run folder exists: a file
-    is copied, a dict (an unresolved config, e.g. ppo.yaml with dagger.yml merged in) is written as YAML."""
+    """Also writes the run's configs into <run>/config/ (env.yaml / ppo.yaml; a student's also its overlays and base
+    files, see task_configs_raw) once the run folder exists: a file is copied, a dict (an unresolved config, e.g. ppo.yaml with dagger.yml merged in) is written as YAML."""
 
     def __init__(self, files: dict[str, Path | dict[str, Any]] | None = None):
         super().__init__()
@@ -443,7 +460,10 @@ def run_rl_games(
     wandb_project: str | None = None,
     config_files: dict[str, Path | dict[str, Any]] | None = None,
 ) -> None:
-    """``mode`` train / distill (train the student) / play. ``config_files``: copied into <run>/config/ (training)."""
+    """``mode`` train / distill (train the student) / play. ``config_files``: copied into <run>/config/ (training),
+    with the resolved configs the run uses (every expression evaluated in its mode, the command-line overrides, a
+    student's teacher block) as env_resolved.yaml / ppo_resolved.yaml. Play and the trials read env.yaml / ppo.yaml:
+    their expressions take the mode they are loaded in."""
     cfg = ppo_config["params"]["config"]
     env_name = cfg["env_name"]
     num_envs = cfg["num_actors"]
@@ -507,7 +527,11 @@ def run_rl_games(
             save_code=True,
         )
 
-    runner = Runner(algo_observer=RunConfigObserver(config_files if mode in ("train", "distill") else None))
+    saved = None
+    if mode in ("train", "distill"):
+        saved = {**(config_files or {}), "env_resolved.yaml": plain_config(env_config),
+                 "ppo_resolved.yaml": plain_config(ppo_config)}
+    runner = Runner(algo_observer=RunConfigObserver(saved))
     register_colored_noise_algo(runner)
     runner.load(ppo_config)
     try:
