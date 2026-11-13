@@ -2,7 +2,7 @@ params:
   seed: 200964
 
   algo:
-    name: a2c_continuous_pink
+    name: a2c_continuous_pink # PPO with colored (pink) exploration noise, see colored_noise
 
   model:
     name: continuous_a2c_logstd
@@ -20,9 +20,6 @@ params:
         sigma_init:
           name: const_initializer
           val: 0
-          # name: random_uniform_initializer
-          # a: -0.1
-          # b: 0.1
         fixed_sigma: True
 
     mlp:
@@ -45,7 +42,7 @@ params:
       beta: 1.0
       scale: 1.0
       continuous: true
-      crossfade_steps: 64
+      crossfade_steps: 16 # <= horizon_length
     env_name: adapt_force_env
     multi_gpu: False
     mixed_precision: True
@@ -56,48 +53,53 @@ params:
     reward_shaper:
       scale_value: 1.0
     normalize_advantage: True
-    gamma: ${eval:'1 - control_dt / 1.0'} # ~1 s discount horizon at any frame_skip (0.995 at 200 Hz, 0.95 at 20 Hz)
+    gamma: ${eval:'1 - control_dt / 1.0'} # ~1 s discount horizon at any frame_skip (0.95 at 20 Hz)
     tau: 0.95
-    learning_rate: 3e-4 # 3e-4 (and more aggressive updates) collapse into flinging the cube; 1e-4: ~2x the spin (runs/adapt_cube/experiments/results_hp_summary.md)
+    learning_rate: 3e-4
     lr_schedule: fixed
     kl_threshold: 0.016
     score_to_win: 20000000
     max_epochs: 5000
-    # Each level advances when the mean reward plateaus; the last level's plateau stops training (early stopping:
+    # Each level advances when the mean reward plateaus; the last stage's plateau stops training (early stopping:
     # levels [1.0] is plain early stopping). Every level runs at least min_epochs + patience epochs.
     curriculum:
-      # Randomization width (every randomize_* module and the spool observation noise): none at 0, full at 1.
-      # As runs/adapt_cube/2026_10_26_20_23_27 (seed 4, 1.74 rad/s at full randomization).
-      # levels: ${eval:'[0.25, 0.5, 0.75, 1.0] if mode == "train" else [1.0]'}
-      # levels: ${eval:'[0.6, 0.8, 1.0] if mode == "train" else [1.0]'}
-      # levels: ${eval:'[1.0] if mode == "train" else [1.0]'}
-      levels: ${eval:'[0.0] if mode == "train" else [0.0]'}
+      # Randomization width (every randomize_* module and the observation noise) and the friction (apply_m5_forces
+      # scales tau_f_max by the factor): 1.25 ends on 25 % more friction than nominal.
+      levels: ${eval:'[0.5, 0.75, 1.0] if mode == "train" else [1.0]'}
       patience: 50 # epochs without a 1 % improvement
       min_delta: 0.01
       min_epochs: 50 # warm-up of each level
+      learn_sigma: True
     save_best_after: 50
     # Mean episode reward over the last 1000 episodes (~9 epochs at 1024 envs) instead of 100 (~1 epoch): ~3x less
     # noise for the best checkpoint and the curriculum (and its early stopping), which react a few epochs later.
-    games_to_track: 1000 # at 4096 envs ~3 epochs of episodes
+    games_to_track: 1000
     save_frequency: 100
     print_stats: True
     grad_norm: 1.0
     entropy_coef: 0.0
     # Clipping the gradient norm (grad_norm) removed the KL spikes / policy collapses: rare samples (episode ends, mu in
-    # the saturated action range) gave gradients up to ~200 (runs/adapt_cube/experiments trunc_s1, combo_s*, rand_s*).
+    # the saturated action range) gave gradients up to ~200.
     truncate_grads: True
     ppo: True
     e_clip: 0.2
-    horizon_length: ${eval:'int(round(1.28 / control_dt))'} # control steps per env and epoch: 1.28 s of rollout (256 at 200 Hz, 64 at 50 Hz)
-    minibatch_size: 4096 # must divide num_envs * horizon_length: 64 minibatches at 200 Hz, 16 at 50 Hz (shuffled across envs and steps)
+    horizon_length: 32 # control steps per env and epoch: 1.6 s of rollout at 20 Hz
+    minibatch_size: 4096 # must divide num_envs * horizon_length: 8 minibatches at 1024 envs
     mini_epochs: 1
-    critic_coef: 0.0 # Should not matter with central_value_config (the actor's own critic is unused, the central critic's values give the advantages).
+    critic_coef: 0.0 # the actor's own critic is unused: the central critic's values give the advantages
     clip_actions: False
     clip_value: False
     seq_length: 4
-    # Pulls the policy mean back inside +-1.1. Outside the servo's working range (below the -1 rad unwind floor, above
-    # the 50 N slider force limit) the action has no effect and nothing else holds mu: 1e-4 let |mu| drift to 10-30.
+    # Pulls the policy mean back inside +-bounds_loss_soft_bound: beyond the servo's working range (below the -1 rad
+    # unwind floor, above the slider force limit) the action has no effect and nothing else holds mu (1e-4 let |mu|
+    # drift to 10-30).
     bounds_loss_coef: 0.01
+    # |mu| above which the bounds loss starts (bounds_loss_coef * excess^2; a number or one per action). The command is
+    # mu x the action scale (process_variable_actions), so 1.1 with a 0.75 scale is a ~0.8 rad command.
+    bounds_loss_soft_bound: 4.4
+    # Temporal smoothness of the policy mean: coef * |mu(s_t) - mu(s_t+1)| (L1) on consecutive rollout steps. 0.1 removes
+    # the bang-bang dither that oscillates on the robot (2026_11_09_weak_gain_report round 1); off here.
+    temporal_smoothness_coef: 0.05
     # With central_value_config the actor model's own critic tower is unused (the central critic's values give the
     # advantages); False skips its value loss, so the actor model trains the policy only.
     use_experimental_cv: False

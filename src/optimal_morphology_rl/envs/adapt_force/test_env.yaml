@@ -101,7 +101,7 @@ spool_plot:
 
 apply_m5_forces:
   # friction: False
-  friction_model_path: mlp_dynamic_envelope.pt # learned tau_f_max(omega, target - theta)
+  friction_model_path: 2026_10_21_mlp_dynamic_envelope.pt # learned tau_f_max(omega, target - theta)
   friction_model_output: envelope # the budget tau_f_max of the stick logic (torque: a signed tau_f applied as is)
   motor_position_gain: 0.1 # A/rad, current = gain * (target - position), as on the robot
   torque_constant: 0.500 # Nm/A, torque = K_t * sign(i) * max(|i| - i_0, 0)
