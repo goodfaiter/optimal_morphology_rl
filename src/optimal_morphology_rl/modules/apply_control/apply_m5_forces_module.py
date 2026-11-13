@@ -68,12 +68,11 @@ class ApplyM5ForcesModule(BaseModule):
 
     With 'friction_model_path' set, a learned TorchScript model replaces the M5 constants:
     ``model(omega, theta_delta)`` with the spool speed (rad/s) and theta_delta = target - theta_m (rad), at
-    the 200 Hz control rate. ``friction_model_output`` says what it predicts: ``envelope`` (default) the
-    friction budget tau_f_max (the Karnopp stop torque still uses the simulator's J_eff), ``torque`` the
-    signed friction torque tau_f itself (applied as is). A model with several outputs names them in ``output_columns``:
-    ``friction_envelope_Nm`` is the envelope (or torque); the other outputs are ignored.
+    the 200 Hz control rate. It predicts the friction budget tau_f_max (the Karnopp stop torque still uses the
+    simulator's J_eff). A model with several outputs names them in ``output_columns``: ``friction_envelope_Nm`` is the
+    envelope; the other outputs are ignored.
 
-    The friction (budget, or the model's torque) is scaled by the training curriculum factor
+    The friction budget is scaled by the training curriculum factor
     (``curriculum_factor``: rl_games 'curriculum' levels, e.g. 0 -> 1; 1.0 outside a curriculum) and by
     ``friction_scale`` ``(num_envs, 1)``, one factor per env (ones; redrawn on reset by 'randomize_m5').
 
@@ -152,9 +151,6 @@ class ApplyM5ForcesModule(BaseModule):
             frequency = float(getattr(self.friction_model, "frequency", 1.0 / self.dt))
             if abs(frequency * self.dt - 1.0) > 1e-6:
                 print(f"ApplyM5Forces: WARNING friction model runs at {frequency:g} Hz, the env control at {1.0 / self.dt:g} Hz")
-            self.friction_model_output = str(self.config.get("friction_model_output", "envelope"))
-            if self.friction_model_output not in ("envelope", "torque"):
-                raise RuntimeError("ApplyM5Forces config 'friction_model_output' must be 'envelope' or 'torque'.")
             # Output columns: a single output is the envelope; several are named (output_columns).
             columns = list(getattr(self.friction_model, "output_columns", []) or [])
             self.envelope_column = None
@@ -162,7 +158,7 @@ class ApplyM5ForcesModule(BaseModule):
                 if "friction_envelope_Nm" not in columns:
                     raise RuntimeError(f"ApplyM5Forces: friction model '{model_path.name}' outputs {columns}, no 'friction_envelope_Nm'.")
                 self.envelope_column = columns.index("friction_envelope_Nm")
-            print(f"ApplyM5Forces: friction {self.friction_model_output} from '{model_path.name}'")
+            print(f"ApplyM5Forces: friction envelope from '{model_path.name}'")
 
         # Per env factor on the friction (randomize_m5 redraws it on reset).
         self.friction_scale = torch.ones((num_envs, 1), device=device, dtype=torch.float32)
@@ -258,7 +254,7 @@ class ApplyM5ForcesModule(BaseModule):
                 self.friction_model.reset(rows)
 
     def _model_output(self, omega_m, theta_delta):
-        """Learned model output, one batched forward pass over every env and tendon: the envelope or friction torque,
+        """Learned model output, one batched forward pass over every env and tendon: the friction envelope tau_f_max,
         shaped like ``omega_m``."""
         with torch.no_grad():
             output = self.friction_model(omega_m.reshape(-1), theta_delta.reshape(-1))
@@ -284,14 +280,9 @@ class ApplyM5ForcesModule(BaseModule):
             tau_f_max = self._model_output(omega_m, actions - theta_m)
         else:
             tau_f_max = self._friction_budget(tau_m, tau_e, omega_m)
-        tau_f_max = tau_f_max * (self.curriculum_factor * self.friction_scale)
-        if self.friction and self.friction_model is not None and self.friction_model_output == "torque":
-            tau_f = tau_f_max  # the model's friction torque itself
-            tau_f_max = tau_f.abs()
-        else:
-            tau_f_max = tau_f_max.clamp(min=0.0)
-            tau_f_stop = -(spool.j_eff / self.dt * omega_m + tau_m + tau_e)
-            tau_f = torch.clamp(tau_f_stop, -tau_f_max, tau_f_max)
+        tau_f_max = (tau_f_max * (self.curriculum_factor * self.friction_scale)).clamp(min=0.0)
+        tau_f_stop = -(spool.j_eff / self.dt * omega_m + tau_m + tau_e)
+        tau_f = torch.clamp(tau_f_stop, -tau_f_max, tau_f_max)
 
         tau = tau_m + tau_f
         # tau = tau_m

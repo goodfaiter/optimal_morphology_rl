@@ -185,22 +185,6 @@ def test_load_friction_depends_on_the_winding_direction(omega, tau_m, tau_e, k_e
     assert budget.item() == pytest.approx(k_e * abs(tau_e))
 
 
-def test_friction_model_torque_output_is_applied_as_is(tmp_path) -> None:
-    # The stand-in returns 0.5 + |theta_delta|; as a torque model that is tau_f itself (no stop torque, no clamp).
-    module, container = _with_envelope_model(tmp_path, friction_model_output="torque")
-    module.set_curriculum_factor(0.5, container)
-    container.spool.theta_m = torch.tensor([[0.0], [0.4]])
-    module.step(container)
-    tau_f = 0.5 * torch.tensor([1.5, 1.5])  # theta_delta = the action, 1 rad
-    assert torch.allclose(module.last_signals["tau_f"][:, 0], tau_f)
-    assert torch.allclose(container.spool_motor_force_buf[:, 0], (torch.ones(2) + tau_f) / R)
-
-
-def test_invalid_friction_model_output_raises(tmp_path) -> None:
-    with pytest.raises(RuntimeError, match="friction_model_output"):
-        _with_envelope_model(tmp_path, friction_model_output="budget")
-
-
 def test_curriculum_factor_scales_the_m5_friction() -> None:
     # Stalled spool, unit motor: tau_m = 1 against a K_c budget of 0.5 x factor.
     for factor, held in ((1.0, 0.5), (0.5, 0.25), (0.0, 0.0)):
