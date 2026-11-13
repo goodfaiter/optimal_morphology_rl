@@ -268,7 +268,7 @@ def test_tau_inertia_is_j_eff_over_dt_times_the_spool_speed() -> None:
 
 
 class _EnvelopeTauEModel(_EnvelopeModel):
-    """Two-output stand-in (output_columns): tau_e first, then the envelope 0.5 + |theta_delta|; tau_e = -0.2 * theta_delta."""
+    """Two-output stand-in (output_columns): another output first, then the envelope 0.5 + |theta_delta|."""
 
     def __init__(self):
         super().__init__()
@@ -281,21 +281,11 @@ class _EnvelopeTauEModel(_EnvelopeModel):
         return torch.stack([-0.2 * theta_delta, 0.5 + theta_delta.abs()], 1)
 
 
-def test_two_output_model_gives_the_envelope_and_the_tau_e_prediction(tmp_path) -> None:
-    # The columns by name: the envelope is the budget, tau_external_Nm the nominal tau_e_predicted (not scaled).
+def test_two_output_model_uses_the_envelope_column(tmp_path) -> None:
+    # The columns by name: the envelope is the budget, the other output is ignored.
     path = tmp_path / "envelope_tau_e.pt"
     torch.jit.script(_EnvelopeTauEModel()).save(str(path))
     module, container = _module(torch.zeros(2), command=1.0, max_spool_velocity=None, friction_model_path=str(path))
     module.set_curriculum_factor(0.5, container)
     module.step(container)
     assert torch.allclose(module.last_signals["tau_f_max"][:, 0], torch.full((2,), 0.75))
-    assert torch.allclose(module.last_signals["tau_e_predicted"][:, 0], torch.full((2,), -0.2))
-    container.reset_buf = torch.tensor([True, False])
-    module.reset(container)
-    assert torch.allclose(module.last_signals["tau_e_predicted"][:, 0], torch.tensor([0.0, -0.2]))
-
-
-def test_single_output_model_has_no_tau_e_prediction(tmp_path) -> None:
-    module, container = _with_envelope_model(tmp_path)
-    module.step(container)
-    assert "tau_e_predicted" not in module.last_signals
