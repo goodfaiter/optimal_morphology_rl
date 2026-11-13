@@ -99,7 +99,7 @@ params:
     bounds_loss_soft_bound: 4.4
     # Temporal smoothness of the policy mean: coef * |mu(s_t) - mu(s_t+1)| (L1) on consecutive rollout steps. 0.1 removes
     # the bang-bang dither that oscillates on the robot (2026_11_09_weak_gain_report round 1); off here.
-    temporal_smoothness_coef: 0.05
+    temporal_smoothness_coef: 0.1
     # With central_value_config the actor model's own critic tower is unused (the central critic's values give the
     # advantages); False skips its value loss, so the actor model trains the policy only.
     use_experimental_cv: False
