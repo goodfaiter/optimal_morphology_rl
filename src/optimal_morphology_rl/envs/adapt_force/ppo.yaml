@@ -45,7 +45,7 @@ params:
       crossfade_steps: 16 # <= horizon_length
     env_name: adapt_force_env
     multi_gpu: False
-    mixed_precision: True
+    mixed_precision: False # no speed gain on this MLP; bfloat16 quantizes mu (PPO ratio scatter, weaker smoothness gradient)
     normalize_input: True
     normalize_value: True
     value_bootstrap: True
