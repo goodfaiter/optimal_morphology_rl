@@ -154,6 +154,10 @@ class UpdateRobotModule(BaseModule):
     """Refreshes robot state buffers for the robot created by ``create_robot``.
 
     Joint and tendon velocities are the simulator's (``robot.get_joint_vel_buf``, ``robot.get_tendon_vel_buf``).
+    The root-frame state (``container.robot_state``: root pose, gravity and root velocities in the robot frame) of a
+    fixed hand (``create_robot.fixed_hand``) only changes on reset (the root is set there), so it is computed in
+    ``reset`` and not every step; the joint, tendon and root buffers themselves are read every step.
+
     While a joint stands still under load they read an offset (sliders ~-0.005 rad/s at the spool, finger joints
     up to ~0.2 rad/s), and the spatial tendon velocity buffer does not track the tendon length rate. The spools
     therefore use the finite-difference slider velocity of 'create_spool' (``slider_velocity``).
@@ -172,10 +176,12 @@ class UpdateRobotModule(BaseModule):
         if robot is None:
             return
         _refresh_buffers(robot, container.gym)
-        container.robot_state = _get_state(container)
+        if not robot.fixed_hand:
+            container.robot_state = _get_state(container)
 
     def reset(self, container: ModuleContainer) -> None:
         """Read the reset state (written by the modules listed before, e.g. create_robot): link transforms and tendons
         follow the joint state only after forward kinematics."""
         container.gym.compute_kinematics()
-        self.step(container)
+        _refresh_buffers(container.robot, container.gym)
+        container.robot_state = _get_state(container)
