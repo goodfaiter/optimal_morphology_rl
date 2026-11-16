@@ -107,8 +107,13 @@ class RandomizeLinkInertiaModule(BaseModule):
         self.mass_scale = torch.ones((num_env_sets, num_links), device=device)
         self.inertia_scale = torch.ones((num_env_sets, num_links), device=device)
 
+        # Only the env sets that contain a resetting env are written (one mask entry per env set).
+        self.set_mask = torch.zeros(num_env_sets, dtype=torch.bool, device=device)
+
         def command(prop, buf):
-            cmd = container.env_group.create_link_property_command(prop, v.wrap_gpu_buffer(buf), robot.def_handle, (0, num_links))
+            cmd = container.env_group.create_link_property_command(
+                prop, v.wrap_gpu_buffer(buf), robot.def_handle, (0, num_links), v.wrap_gpu_buffer(self.set_mask)
+            )
             return container.gym.create_gpu_array([cmd])
 
         container.gpu_set_link_mass_cmd = command(v.LinkProperty.MASS, container.set_link_mass_buf)
@@ -125,7 +130,8 @@ class RandomizeLinkInertiaModule(BaseModule):
         if not reset_buf.any():
             return
         num_env_sets = self.mass_scale.shape[0]
-        set_mask = torch.zeros(num_env_sets, dtype=torch.bool, device=reset_buf.device)
+        set_mask = self.set_mask
+        set_mask[:] = False
         set_mask[self.env_set_index[reset_buf]] = True
         rows = set_mask.unsqueeze(1) & self.link_mask
 

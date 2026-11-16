@@ -44,7 +44,7 @@ def make(monkeypatch):
             container.spool = SimpleNamespace(slider_link_names=["mcp_slider"])
         container.gym = _Gym()
         container.env_group = SimpleNamespace(
-            create_link_property_command=lambda prop, buf, handle, index_range: (prop, buf, handle, index_range)
+            create_link_property_command=lambda prop, buf, handle, index_range, masks=None: (prop, buf, handle, index_range)
         )
         container.reset_buf = torch.ones(total, dtype=torch.bool)
         module = RandomizeLinkInertiaModule(config)

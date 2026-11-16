@@ -94,7 +94,7 @@ def test_post_finalize_builds_command_and_samples(container: ModuleContainer) ->
     assert prop == v.JointProperty.JOINT_FRICTION
     assert handle == 42
     assert index_range == (0, 3)
-    assert masks is None
+    assert masks[1] is module.set_mask  # only the env sets with a resetting env are written
 
     buf = container.set_joint_friction_buf
     assert buf.shape == (1, 3)

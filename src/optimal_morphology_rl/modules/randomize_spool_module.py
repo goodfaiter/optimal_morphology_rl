@@ -89,11 +89,14 @@ class RandomizeSpoolModule(BaseModule):
         num_dofs = robot.num_joints
         defined = torch.tensor([robot.art_def.get_joint_dof_def(i).armature for i in range(num_dofs)], device=device, dtype=torch.float32)
         container.set_dof_armature_buf = defined.repeat(num_env_sets, 1)
+        # Only the env sets that contain a resetting env are written (one mask entry per env set).
+        self.set_mask = torch.zeros(num_env_sets, dtype=torch.bool, device=device)
         command = container.env_group.create_joint_dof_property_command(
             v.JointDofProperty.ARMATURE,
             v.wrap_gpu_buffer(container.set_dof_armature_buf),
             robot.def_handle,
             (0, num_dofs),
+            v.wrap_gpu_buffer(self.set_mask),
         )
         container.gpu_set_dof_armature_cmd = container.gym.create_gpu_array([command])
 
@@ -120,7 +123,8 @@ class RandomizeSpoolModule(BaseModule):
 
         if self.armature_range is not None or self.armature_scale is not None:
             buf = container.set_dof_armature_buf
-            set_mask = torch.zeros(buf.shape[0], dtype=torch.bool, device=buf.device)
+            set_mask = self.set_mask
+            set_mask[:] = False
             set_mask[self.env_set_index[reset_buf]] = True
             low, high = self._bounds(self.armature_range, self.armature_scale, self.nominal_armature)
             samples = low + (high - low) * torch.rand((buf.shape[0], spool.dof_indices.numel()), device=buf.device)

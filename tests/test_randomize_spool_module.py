@@ -44,7 +44,7 @@ class _EnvGroup:
     def __init__(self):
         self.commands = []
 
-    def create_joint_dof_property_command(self, prop, buf, handle, index_range):
+    def create_joint_dof_property_command(self, prop, buf, handle, index_range, masks=None):
         self.commands.append((prop, buf, handle, index_range))
         return (prop, buf)
 

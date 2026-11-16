@@ -90,11 +90,14 @@ class RandomizeJointFrictionModule(BaseModule):
         container.set_joint_friction_buf = defined_friction.repeat(num_env_sets, 1)
         self._randomize(container, torch.ones(num_env_sets, dtype=torch.bool, device=device))
 
+        # Only the env sets that contain a resetting env are written (one mask entry per env set).
+        self.set_mask = torch.zeros(num_env_sets, dtype=torch.bool, device=device)
         command = container.env_group.create_joint_property_command(
             v.JointProperty.JOINT_FRICTION,
             v.wrap_gpu_buffer(container.set_joint_friction_buf),
             robot.def_handle,
             (0, num_dofs),
+            v.wrap_gpu_buffer(self.set_mask),
         )
         container.gpu_set_joint_friction_cmd = container.gym.create_gpu_array([command])
         print(
@@ -114,7 +117,8 @@ class RandomizeJointFrictionModule(BaseModule):
         reset_buf = container.reset_buf
         if not reset_buf.any():
             return
-        set_mask = torch.zeros(container.set_joint_friction_buf.shape[0], dtype=torch.bool, device=reset_buf.device)
+        set_mask = self.set_mask
+        set_mask[:] = False
         set_mask[self.env_set_index[reset_buf]] = True
         self._randomize(container, set_mask)
         container.gym.set_joint_properties(container.gpu_set_joint_friction_cmd)

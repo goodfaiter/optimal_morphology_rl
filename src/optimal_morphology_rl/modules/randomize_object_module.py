@@ -92,19 +92,22 @@ class RandomizeObjectModule(BaseModule):
         self.set_inv_inertia_buf = (1.0 / self.defined_inertia).repeat(num_env_sets, 1)
 
         group, gym = container.env_group, container.gym
+        # Only the env sets that contain a resetting env are written (one mask entry per env set).
+        self.set_mask = torch.zeros(num_env_sets, dtype=torch.bool, device=device)
+        mask = v.wrap_gpu_buffer(self.set_mask)
         # Without a size range no scale command: vlearn cannot scale primitive geometry (a box), only meshes.
         self.scale_cmd = None
         if self.size_range != (1.0, 1.0):
             self.scale_cmd = gym.create_gpu_array(
-                [group.create_rigid_body_def_scale_command(v.wrap_gpu_buffer(self.set_scale_buf), def_handle)]
+                [group.create_rigid_body_def_scale_command(v.wrap_gpu_buffer(self.set_scale_buf), def_handle, mask)]
             )
         self.mass_cmd = gym.create_gpu_array(
-            [group.create_rigid_body_property_command(v.RigidBodyProperty.INV_MASS, v.wrap_gpu_buffer(self.set_inv_mass_buf), def_handle)]
+            [group.create_rigid_body_property_command(v.RigidBodyProperty.INV_MASS, v.wrap_gpu_buffer(self.set_inv_mass_buf), def_handle, mask)]
         )
         self.inertia_cmd = gym.create_gpu_array(
             [
                 group.create_rigid_body_property_command(
-                    v.RigidBodyProperty.DIAG_INV_INERTIA, v.wrap_gpu_buffer(self.set_inv_inertia_buf), def_handle
+                    v.RigidBodyProperty.DIAG_INV_INERTIA, v.wrap_gpu_buffer(self.set_inv_inertia_buf), def_handle, mask
                 )
             ]
         )
@@ -118,7 +121,8 @@ class RandomizeObjectModule(BaseModule):
         reset_buf = container.reset_buf
         if not reset_buf.any():
             return
-        set_mask = torch.zeros_like(self.size_scale, dtype=torch.bool)
+        set_mask = self.set_mask
+        set_mask[:] = False
         set_mask[self.env_set_index[reset_buf]] = True
 
         def draw(low_high):
