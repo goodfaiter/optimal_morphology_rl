@@ -224,6 +224,10 @@ class ModularEnvironment:
         self.module_manager.post_physics_step()
         container = self.module_manager.container
         term, trunc = container.episode_end_term, container.episode_end_trunc
+        # NaN guard: a diverged simulation (NaN / inf states) stops the run instead of training on it.
+        if not bool(torch.isfinite(self.rew_buf).all() & torch.isfinite(self.obs_buf).all()):
+            bad = (~torch.isfinite(self.rew_buf) | ~torch.isfinite(self.obs_buf).all(dim=-1)).nonzero().flatten().tolist()
+            raise RuntimeError(f"Non-finite reward or observation in envs {bad[:20]} ({len(bad)} envs): the simulation diverged.")
 
         return (
             self._observations(),
