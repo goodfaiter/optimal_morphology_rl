@@ -97,9 +97,10 @@ class TerminationManagerModule(BaseModule):
         if not forced:  # a manual reset is not an episode outcome (drop_rate, away_rate, ...)
             for module in self._termination_modules:
                 module.log_end_rate(env, container.reset_buf, self.end_rate_episodes)
-        # Time-limit truncations, read by rl_games to bootstrap the value of cut-off episodes (value_bootstrap).
-        # Cloned: trunc_buf is cleared in place by the reset in the same ModularEnvironment.step.
-        env.info["time_outs"] = env.trunc_buf.clone()
+        # Time-limit truncations, read by rl_games to bootstrap the value of cut-off episodes (value_bootstrap); not
+        # the episodes that also terminated in this step (a terminal state has no value to bootstrap). A new tensor:
+        # trunc_buf is cleared in place by the reset in the same ModularEnvironment.step.
+        env.info["time_outs"] = env.trunc_buf & ~env.term_buf
 
     def reset(self, container: ModuleContainer) -> None:
         """Reset termination state for the environments selected by reset_buf."""
