@@ -39,7 +39,17 @@ class ForceGoalModule(BaseModule):
 
     The measured force is the norm of the force of the force sensor on ``sensor_link`` ('create_force_sensor';
     refreshed by 'update_force_sensors', listed before this). Writes ``container.force_goal`` (N,) and
-    ``container.fingertip_force`` (N,), both N::
+    ``container.fingertip_force`` (N,), both N. On reset the measured force of the reset envs is 0: the sensor still
+    holds the ended episode's contact force until the next physics step.
+
+    This module's step only measures the force; the goals advance in 'force_goal_advance', listed after 'reward' (and
+    before 'reset_envs'), so the reward compares the force with the goal the policy saw when it chose the action, and
+    the observation then shows the next goal::
+
+        post_physics_step_modules: [..., update_force_sensors, force_goal, reward, termination, force_goal_advance,
+                                    reset_envs, observation]
+
+    Config::
 
         force_goal:
           sensor_link: Middle_DP
@@ -72,6 +82,10 @@ class ForceGoalModule(BaseModule):
         self.force_range = (low, high)
 
     def post_finalize(self, container: ModuleContainer) -> None:
+        env = container.get("env")
+        if env is not None and "force_goal_advance" not in env.module_manager:
+            raise RuntimeError("force_goal: the goals advance in 'force_goal_advance'; list it in "
+                               "post_physics_step_modules after 'reward' / 'termination' and before 'reset_envs'.")
         sensors = container.get("force_sensors")
         if sensors is None or self.sensor_link not in sensors.force_sensor_link_names:
             found = None if sensors is None else sensors.force_sensor_link_names
@@ -101,6 +115,9 @@ class ForceGoalModule(BaseModule):
         self.ramp_rate = torch.zeros(n, device=device)
         self.ramp_hold = torch.zeros(n, device=device)  # seconds left to hold the reached target
         container.force_goal = torch.zeros(n, device=device)
+        # The goal the last step's force was scored against (the goal before 'force_goal_advance'), for evaluations
+        # that read goal and force after env.step.
+        container.force_goal_scored = torch.zeros(n, device=device)
         container.fingertip_force = torch.zeros(n, device=device)
 
     def _discrete(self, container: ModuleContainer, envs: torch.Tensor) -> None:
@@ -180,9 +197,16 @@ class ForceGoalModule(BaseModule):
                 self._sinusoid_draw(envs)
                 self._sinusoid(container, envs)
         self._measure(container)
+        # The sensor still reads the ended episode's contact force (no physics step since the reset).
+        container.fingertip_force[container.reset_buf] = 0.0
 
     def step(self, container: ModuleContainer) -> None:
+        """Measure the fingertip force (the goals advance in 'force_goal_advance', after the reward)."""
         self._measure(container)
+
+    def advance(self, container: ModuleContainer) -> None:
+        """One control step of every goal type."""
+        container.force_goal_scored[:] = container.force_goal
         if "discrete" in self.masks:
             envs = self.masks["discrete"] & (torch.rand_like(self.time) < self.resample_prob)
             if envs.any():
@@ -192,6 +216,26 @@ class ForceGoalModule(BaseModule):
             self._sinusoid(container, self.masks["sinusoidal"])
         if "ramp" in self.masks:
             self._ramp(container, self.masks["ramp"])
+
+
+@register_module("force_goal_advance")
+class ForceGoalAdvanceModule(BaseModule):
+    """Advances the 'force_goal' targets by one control step. List it in ``post_physics_step_modules`` after 'reward'
+    and 'termination' and before 'reset_envs' (a reset draws the new episode's goals) and 'observation'.
+    ``container.force_goal_scored`` keeps the goal the step's force was scored against."""
+
+    def finalize(self, container: ModuleContainer) -> None:
+        manager = container.env.module_manager
+        if "force_goal" not in manager:
+            raise RuntimeError("force_goal_advance requires the 'force_goal' module.")
+        names = [type(m).__name__ for m in manager._phase_modules["post_physics_step_modules"]]
+        order = [names.index(n) if n in names else -1 for n in ("RewardManagerModule", "ForceGoalAdvanceModule", "ResetEnvsModule")]
+        if order[1] < order[0] or (order[2] >= 0 and order[1] > order[2]):
+            raise RuntimeError("force_goal_advance must be listed in post_physics_step_modules after 'reward' and "
+                               "before 'reset_envs'.")
+
+    def step(self, container: ModuleContainer) -> None:
+        container.env.module_manager.get("force_goal").advance(container)
 
 
 @register_observation("force_goal")

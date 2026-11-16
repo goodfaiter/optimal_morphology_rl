@@ -104,7 +104,7 @@ class DistillAgent(A2CAgent):
 
             reward_sum += rewards.sum()
             if has_force:
-                error_sum += (self._container.fingertip_force - self._container.force_goal).abs().sum()
+                error_sum += (self._container.fingertip_force - self._container.force_goal_scored).abs().sum()
 
             self.current_rewards.add_(rewards)
             self.current_shaped_rewards.add_(self.rewards_shaper(rewards))

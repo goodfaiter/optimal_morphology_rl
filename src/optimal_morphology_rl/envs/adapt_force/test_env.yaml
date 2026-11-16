@@ -29,6 +29,7 @@ modules:
     - force_plot
     - reward
     - termination
+    - force_goal_advance
     - reset_envs
     - observation
 

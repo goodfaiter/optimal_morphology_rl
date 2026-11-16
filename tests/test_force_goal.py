@@ -26,7 +26,7 @@ def test_ramp_moves_at_its_rate_and_holds_at_the_target() -> None:
     module, container = _goal({"ramp": {"ramp": {"min_rate": 0.5, "max_rate": 0.5, "mean_hold_sec": 0.0}}})
     start = container.force_goal.clone()
     target = module.ramp_target.clone()
-    module.step(container)
+    module.advance(container)
     moved = container.force_goal - start
     far = (target - start).abs() > 0.02  # not reached within one 20 ms step
     assert torch.allclose(moved[far].abs(), torch.full_like(moved[far], 0.5 * 0.02), atol=1e-6)  # 0.5 N/s
@@ -37,7 +37,7 @@ def test_ramp_stays_in_the_range_and_reaches_its_targets() -> None:
     module, container = _goal({"ramp": {"ramp": {"min_rate": 0.1, "max_rate": 1.0, "mean_hold_sec": 0.5}}})
     held = torch.zeros(N, dtype=torch.bool)
     for _ in range(1000):  # 20 s
-        module.step(container)
+        module.advance(container)
         assert torch.all((container.force_goal >= 0.5 - 1e-6) & (container.force_goal <= 5.0 + 1e-6))
         held |= module.ramp_hold > 0.0
     assert held.float().mean() > 0.9  # most envs reached a target and held it
@@ -50,7 +50,7 @@ def test_sinusoid_random_center_keeps_the_whole_sine_in_the_range() -> None:
     assert torch.all(module.center - module.amp >= 0.5 - 1e-6) and torch.all(module.center + module.amp <= 5.0 + 1e-6)
     assert module.center.std() > 0.2  # not always the middle
     for _ in range(200):
-        module.step(container)
+        module.advance(container)
         assert torch.all((container.force_goal >= 0.5 - 1e-6) & (container.force_goal <= 5.0 + 1e-6))
 
 
