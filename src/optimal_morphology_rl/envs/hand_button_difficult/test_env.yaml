@@ -59,6 +59,7 @@ create_robot:
   vsim_path: /workspace/data/optimal_hands/button_difficult.vsim
   fixed_hand: false
   use_tendon: true
+  link_friction: 0.2 # hand material (contact with the objects: half, their material is 0)
   randomize_pose: false
 
 create_objects:
@@ -84,7 +85,7 @@ gravity_compensation: {}
 apply_root_forces: {}
 
 randomize_robot_friction:
-  friction_range: [0.1, 0.1] # contact friction (hand material: 2x)
+  scale: 0.0
   dynamic_ratio: 0.75
 
 interactive_slider_control:

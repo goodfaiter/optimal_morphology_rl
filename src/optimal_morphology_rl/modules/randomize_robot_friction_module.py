@@ -1,4 +1,4 @@
-"""Module that randomizes the friction of the robot's rigid material per env set on reset."""
+"""Module that randomizes the friction of the robot's rigid material within +-scale of link_friction per env set on reset."""
 
 from __future__ import annotations
 
@@ -14,33 +14,35 @@ from optimal_morphology_rl.modules.module_manager import register_module
 
 @register_module("randomize_robot_friction")
 class RandomizeRobotFrictionModule(BaseModule):
-    """Randomizes the friction between the hand and the objects, per env set, on reset.
+    """Randomizes the friction of the hand's material within +-``scale`` (a fraction) of ``create_robot``'s
+    ``link_friction``, per env set, on reset:
 
-    A contact's friction is the average of its two materials' frictions, and the objects' material has friction 0
-    ('create_objects'), so the hand's material gets twice the desired contact friction. ``friction_range`` is the
-    contact (effective) static friction mu; per env set it is drawn uniformly on reset and written as
+        hand static friction  = link_friction * U[1 - scale, 1 + scale]
+        hand dynamic friction = dynamic_ratio * static
 
-        hand static friction  = 2 * mu
-        hand dynamic friction = 2 * mu * dynamic_ratio
-
-    Rigid materials are shared by an env set (one value per set; per env with
-    ``create_rigid_vsim_envs.num_envs_per_set: 1``); a set is resampled when any of its envs resets. The range
-    follows the training curriculum from the nominal contact friction, ``create_robot``'s ``link_friction`` / 2 (at
-    0), to ``friction_range`` (at 1).
+    A contact's friction is the average of its two materials' frictions and the objects' material has friction 0
+    ('create_objects'), so the hand-object contact friction is half of that (``self.friction``), with the same relative
+    spread. Rigid materials are shared by an env set (one value per set; per env with
+    ``create_rigid_vsim_envs.num_envs_per_set: 1``); a set is resampled when any of its envs resets. The spread follows
+    the training curriculum: +-scale * factor (just link_friction at 0).
 
     Config::
 
         randomize_robot_friction:
-          friction_range: [0.3, 0.7]   # contact static friction mu
-          dynamic_ratio: 1.0           # optional (default 1.0, as create_robot): dynamic = ratio * static
+          scale: 0.3          # +-30 % of link_friction (0 <= scale <= 1)
+          dynamic_ratio: 1.0  # optional (default 1.0, as create_robot): dynamic = ratio * static
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
-        value = self.config.get("friction_range")
-        if not isinstance(value, (list, tuple)) or len(value) != 2 or not 0.0 <= float(value[0]) <= float(value[1]):
-            raise RuntimeError(f"RandomizeRobotFrictionModule config 'friction_range' must be [min, max] with 0 <= min <= max, got {value}.")
-        self.low, self.high = float(value[0]), float(value[1])
+        if "friction_range" in self.config:
+            raise RuntimeError(
+                "RandomizeRobotFrictionModule: the absolute 'friction_range' was replaced by 'scale' "
+                "(+- fraction of create_robot.link_friction)."
+            )
+        self.scale = float(self.config.get("scale", 0.0))
+        if not 0.0 <= self.scale <= 1.0:
+            raise RuntimeError(f"RandomizeRobotFrictionModule config 'scale' must be in [0, 1], got {self.scale}.")
         self.dynamic_ratio = float(self.config.get("dynamic_ratio", 1.0))
 
     def finalize(self, container: ModuleContainer) -> None:
@@ -74,7 +76,8 @@ class RandomizeRobotFrictionModule(BaseModule):
         ]
         self.command_array = container.gym.create_gpu_array(commands)
         print(
-            f"RandomizeRobotFrictionModule: contact friction {[self.low, self.high]} (nominal {self.nominal:g}), "
+            f"RandomizeRobotFrictionModule: hand friction {robot.link_friction:g} +-{self.scale * 100:g} % "
+            f"(contact with the objects {self.nominal:g} +-{self.scale * 100:g} %), "
             f"dynamic ratio {self.dynamic_ratio:g}, {num_env_sets} env sets"
         )
 
@@ -85,8 +88,8 @@ class RandomizeRobotFrictionModule(BaseModule):
             return
         self.set_mask[:] = False
         self.set_mask[self.env_set_index[reset_buf]] = True
-        low, high = curriculum_range(self.low, self.high, self.curriculum_factor, nominal=self.nominal)
-        samples = low + (high - low) * torch.rand_like(self.friction)
+        low, high = curriculum_range(1.0 - self.scale, 1.0 + self.scale, self.curriculum_factor, nominal=1.0)
+        samples = self.nominal * (low + (high - low) * torch.rand_like(self.friction))
         self.friction[:] = torch.where(self.set_mask, samples, self.friction)
         self.set_static_buf[:] = 2.0 * self.friction
         self.set_dynamic_buf[:] = 2.0 * self.friction * self.dynamic_ratio

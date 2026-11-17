@@ -423,12 +423,12 @@ def _friction_module(container: ModuleContainer, config: dict) -> RandomizeRobot
 
 
 def test_randomize_robot_friction_resamples_the_reset_env_sets(container: ModuleContainer) -> None:
-    module = _friction_module(container, {"friction_range": [0.2, 0.8], "dynamic_ratio": 0.75})
+    module = _friction_module(container, {"scale": 0.6, "dynamic_ratio": 0.75})
     container.reset_buf[[1, 3]] = True
     module.reset(container)
 
     assert module.set_mask.tolist() == [False, True, False, True]
-    assert torch.all((module.friction[[1, 3]] >= 0.2) & (module.friction[[1, 3]] <= 0.8))
+    assert torch.all((module.friction[[1, 3]] >= 0.2) & (module.friction[[1, 3]] <= 0.8))  # 0.5 x [0.4, 1.6]: +-60 %
     assert torch.allclose(module.friction[[0, 2]], torch.tensor([0.5, 0.5]))  # not reset: nominal
     # The hand material gets twice the contact friction (objects' material: 0), dynamic = ratio * static.
     assert torch.allclose(module.set_static_buf, 2.0 * module.friction)
@@ -437,8 +437,18 @@ def test_randomize_robot_friction_resamples_the_reset_env_sets(container: Module
 
 
 def test_randomize_robot_friction_follows_the_curriculum(container: ModuleContainer) -> None:
-    module = _friction_module(container, {"friction_range": [0.2, 0.8]})
+    module = _friction_module(container, {"scale": 0.6})
     module.set_curriculum_factor(0.0, container)
     container.reset_buf[:] = True
     module.reset(container)
     assert torch.allclose(module.friction, torch.full((4,), 0.5))  # factor 0: the nominal link_friction / 2
+
+
+def test_randomize_robot_friction_scales_the_nominal(container: ModuleContainer) -> None:
+    module = _friction_module(container, {"scale": 0.6})
+    module.set_curriculum_factor(0.5, container)  # +-30 %
+    container.reset_buf[:] = True
+    module.reset(container)
+    assert torch.all((module.friction >= 0.35) & (module.friction <= 0.65))  # 0.5 x [0.7, 1.3]
+    with pytest.raises(RuntimeError, match="scale"):
+        RandomizeRobotFrictionModule({"friction_range": [0.2, 0.8]})
