@@ -69,7 +69,7 @@ params:
       patience: 50 # epochs without a 1 % improvement
       min_delta: 0.01
       min_epochs: 50 # warm-up of each level
-      learn_sigma: True
+      learn_sigma: False
     save_best_after: 50
     # Mean episode reward over the last 1000 episodes (~9 epochs at 1024 envs) instead of 100 (~1 epoch): ~3x less
     # noise for the best checkpoint and the curriculum (and its early stopping), which react a few epochs later.
