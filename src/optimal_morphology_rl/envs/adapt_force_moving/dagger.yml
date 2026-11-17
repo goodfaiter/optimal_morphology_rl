@@ -1,0 +1,29 @@
+# Student training of 'omrl adapt_force --mode distill' (with env_student.yml): supervised learning (DAgger) from a
+# teacher run, instead of PPO. Only what differs from ppo.yaml, merged over it: maps merge key by key, any other value
+# replaces, null deletes the key. The run saves the merged result as its config/ppo.yaml.
+#
+# The student drives the env from the start; each step labels the student's observation with the teacher's mean action
+# there, and the update minimizes the squared error between the student's and the teacher's mean actions. No critic,
+# value function, entropy or exploration noise; the rest of ppo.yaml (network, learning rate, horizon, minibatches,
+# mini-epochs, checkpoints) applies to the student as to PPO.
+params:
+  algo:
+    name: distill
+
+  config:
+    # distill:
+    #   # The teacher: a run folder (its best checkpoint nn/<run>.pth) or a .pth in it. Its config/ (written by every
+    #   # training run) gives the teacher's observation and network. 'omrl ... --mode distill --cp <teacher .pth>' overrides it.
+    #   # wgF_force_t01_noise (2026_11_09_weak_gain_report): Bota force input, trained with fingertip_force noise.
+    #   teacher: runs/adapt_force/2026_11_09_23_39_54
+    # 4 passes over each rollout and patience 100 (wgD_student_noise_me4_vel_p100, 2026_11_09_weak_gain_report): 0.26-0.31 N
+    # in sim over three seeds and robust to 1.25 x friction; 8 passes overfit (collapse at stronger friction), 1 pass learns slowly.
+    mini_epochs: 8
+    # Full randomization from the start (the teacher was trained up to it); the reward plateau stops training.
+    curriculum:
+      levels: [1.0]
+      learn_sigma: false
+      patience: 100
+    colored_noise: null # PPO's exploration noise
+    central_value_config: null # PPO's critic
+    temporal_smoothness_coef: 0.0

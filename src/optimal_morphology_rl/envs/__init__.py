@@ -6,6 +6,7 @@ from optimal_morphology_rl.envs.modular_environment import ModularEnvironment
 from optimal_morphology_rl.envs import adapt_cube
 from optimal_morphology_rl.envs import adapt_finger
 from optimal_morphology_rl.envs import adapt_force
+from optimal_morphology_rl.envs import adapt_force_moving
 from optimal_morphology_rl.envs import adapt_hand
 from optimal_morphology_rl.envs import hand_button
 from optimal_morphology_rl.envs import hand_button_difficult
