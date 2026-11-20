@@ -7,6 +7,11 @@ from optimal_morphology_rl.modules.observations.goal_finger_tip_observation impo
 from optimal_morphology_rl.modules.observations.goal_state_observation import (
     GoalStateObservation,
 )
+from optimal_morphology_rl.modules.observations.motor_state_observation import (
+    MotorActionObservation,
+    MotorStateObservation,
+    MotorTorquesObservation,
+)
 from optimal_morphology_rl.modules.observations.object_state_observation import (
     ObjectStateObservation,
 )
@@ -35,6 +40,9 @@ __all__ = [
     "OBSERVATION_REGISTRY",
     "GoalFingerTipObservation",
     "GoalStateObservation",
+    "MotorActionObservation",
+    "MotorStateObservation",
+    "MotorTorquesObservation",
     "ObjectStateObservation",
     "ObservationBaseModule",
     "ObservationManagerModule",

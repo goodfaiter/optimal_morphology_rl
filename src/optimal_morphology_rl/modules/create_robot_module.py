@@ -178,7 +178,7 @@ class Robot:
         for i in range(self.num_sensors):
             print(i, self.art_def.get_force_sensor_def(i))
 
-        for i in range(self.num_tendons):
+        for i in range(self.num_tendons or 0):
             print(i, self.art_def.get_spatial_tendon_def(i))
 
         rigid_mat = v.RigidMaterial()

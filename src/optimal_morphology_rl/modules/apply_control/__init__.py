@@ -2,6 +2,7 @@
 
 from optimal_morphology_rl.modules.apply_control.apply_m5_forces_module import ApplyM5ForcesModule
 from optimal_morphology_rl.modules.apply_control.apply_motor_forces_module import ApplyMotorForcesModule
+from optimal_morphology_rl.modules.apply_control.apply_motor_servo_module import ApplyMotorServoModule
 from optimal_morphology_rl.modules.apply_control.apply_root_forces_module import ApplyRootForcesModule
 from optimal_morphology_rl.modules.apply_control.apply_root_velocity_module import ApplyRootVelocityModule
 from optimal_morphology_rl.modules.apply_control.apply_tendon_forces_module import ApplyTendonForcesModule
@@ -9,6 +10,7 @@ from optimal_morphology_rl.modules.apply_control.apply_tendon_forces_module impo
 __all__ = [
     "ApplyM5ForcesModule",
     "ApplyMotorForcesModule",
+    "ApplyMotorServoModule",
     "ApplyRootForcesModule",
     "ApplyRootVelocityModule",
     "ApplyTendonForcesModule",

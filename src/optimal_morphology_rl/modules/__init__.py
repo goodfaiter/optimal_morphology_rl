@@ -23,7 +23,10 @@ from optimal_morphology_rl.modules.create_kinematic_sensor_module import CreateK
 from optimal_morphology_rl.modules.create_objects_module import CreateObjectsModule
 from optimal_morphology_rl.modules.create_rigid_vsim_envs import CreateRigidVsimEnvs
 from optimal_morphology_rl.modules.create_robot_module import RobotModule
+from optimal_morphology_rl.modules.create_motor_module import CreateMotorModule
 from optimal_morphology_rl.modules.create_spool_module import CreateSpoolModule
+from optimal_morphology_rl.modules.update_motor_module import UpdateMotorModule
+from optimal_morphology_rl.modules.update_motor_target_module import UpdateMotorTargetModule
 from optimal_morphology_rl.modules.update_spool_module import UpdateSpoolModule
 from optimal_morphology_rl.modules.update_spool_target_module import UpdateSpoolTargetModule
 from optimal_morphology_rl.modules.update_kinematics_module import UpdateKinematicsModule
@@ -114,7 +117,10 @@ __all__ = [
     "CreateKinematicSensorModule",
     "CreateObjectsModule",
     "CreateRigidVsimEnvs",
+    "CreateMotorModule",
     "CreateSpoolModule",
+    "UpdateMotorModule",
+    "UpdateMotorTargetModule",
     "UpdateSpoolModule",
     "UpdateSpoolTargetModule",
     "UpdateKinematicsModule",
