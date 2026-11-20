@@ -73,7 +73,7 @@ params:
       # levels: ${eval:'[0.25, 0.5, 0.75, 1.0] if mode == "train" else [1.0]'}
       # levels: ${eval:'[0.6, 0.8, 1.0] if mode == "train" else [1.0]'}
       # levels: ${eval:'[1.0] if mode == "train" else [1.0]'}
-      levels: ${eval:'[0.25] if mode == "train" else [0.25]'}
+      levels: ${eval:'[1.0] if mode == "train" else [1.0]'}
       patience: 75 # epochs without a 1 % improvement
       min_delta: 0.01
       min_epochs: 50 # warm-up of each level
