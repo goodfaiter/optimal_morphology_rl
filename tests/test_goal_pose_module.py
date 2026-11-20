@@ -1,4 +1,4 @@
-"""Unit tests for the goal_pose module (even split over discrete / sinusoidal / square goal types)."""
+"""Unit tests for the goal_pose module (even split over discrete / sinusoidal / square / linear goal types)."""
 
 import math
 from collections import Counter
@@ -18,6 +18,7 @@ BLOCKS = {
     "discrete": {},
     "sinusoidal": {"sinusoidal": {"min_frequency": 0.2, "max_frequency": 0.8, "min_amplitude_fraction": 0.5}},
     "square": {"plane": [0, 2], "speed": {"min": 0.01, "max": 0.05}},
+    "linear": {"speed": {"min": 0.01, "max": 0.05}},
 }
 
 
@@ -366,3 +367,64 @@ def test_goal_frame_is_published_for_the_envs_of_framed_types(tmp_path: Path, mo
     assert torch.allclose(container.goal_frame_pos[:2], torch.tensor([[1.0, 2.0, 0.0]] * 2), atol=1e-6)
     assert torch.equal(container.goal_frame_pos[2:], torch.zeros(2, 3))
     assert torch.equal(container.goal_frame_quat[2:], torch.tensor([[0.0, 0.0, 0.0, 1.0]] * 2))
+
+
+# ---------------------------------------------------------------- linear
+
+
+def test_linear_goal_moves_back_and_forth_on_the_segment() -> None:
+    module, container = _module(["linear"], num_envs=8, linear={"speed": {"min": 0.02, "max": 0.02}})
+    low = torch.tensor([RANGES[a][0] for a in "xyz"])
+    high = torch.tensor([RANGES[a][1] for a in "xyz"])
+    length = float(torch.norm(high - low))
+    dt = 0.01  # timestep 0.005 x frame_skip 2
+    fractions = []
+    for _ in range(int(3 * length / (0.02 * dt))):  # 1.5 round trips
+        module.step(container)
+        pos = container.goal_position_in_goal_frame
+        assert _in_ranges(pos)
+        fraction = torch.norm(pos - low, dim=-1) / length
+        # On the segment: the distances to both ends add up to its length.
+        assert torch.allclose(fraction + torch.norm(pos - high, dim=-1) / length, torch.ones(8), atol=1e-4)
+        fractions.append(fraction)
+    fractions = torch.stack(fractions)
+    assert torch.all(fractions.min(0).values < 0.01) and torch.all(fractions.max(0).values > 0.99)  # reaches both ends
+
+
+def test_linear_goal_start_fraction_and_direction() -> None:
+    module, container = _module(["linear"], num_envs=16, linear={"start_fraction": [0.5, 0.5], "direction": 1})
+    mid = torch.tensor([(RANGES[a][0] + RANGES[a][1]) / 2 for a in "xyz"])
+    assert torch.allclose(container.goal_position_in_goal_frame, mid.expand(16, 3), atol=1e-6)
+    module.step(container)
+    assert torch.all(container.goal_position_in_goal_frame[:, 0] > mid[0])  # towards the high end
+
+
+def test_linear_goal_rejects_zero_length_segment() -> None:
+    config = _config(["linear"], goal_position={"x": [0.1, 0.1], "y": [0.2, 0.2], "z": [0.3, 0.3]})
+    with pytest.raises(ValueError, match="nonzero length"):
+        GoalPoseModule(config).post_finalize(_container())
+
+
+def test_linear_goal_starts_at_the_object_spawn_point() -> None:
+    from types import SimpleNamespace
+
+    module = GoalPoseModule(_config(["linear"], linear={"start_fraction": "object"}))
+    container = _container(num_envs=3)
+    spawn = torch.zeros((3, 7))
+    # Low end (0, 0.2, 0.3), high end (0.1, 0.2, 0.34): on the segment at 25 %, off it (projected, here before the low
+    # end: clamped to 0) and past the high end (clamped to 1).
+    spawn[:, 4:7] = torch.tensor([[0.025, 0.2, 0.31], [0.05, 0.25, 0.0], [0.5, 0.2, 0.34]])
+    container.reward_object = SimpleNamespace(set_trans_object_to_world_buf=spawn)
+    module.post_finalize(container)
+    module.reset(container)
+    low, high = torch.tensor([0.0, 0.2, 0.3]), torch.tensor([0.1, 0.2, 0.34])
+    seg = high - low
+    off_segment = ((torch.tensor([0.05, 0.25, 0.0]) - low) @ seg / (seg @ seg)).clamp(0.0, 1.0).item()
+    expected_fraction = torch.tensor([0.25, off_segment, 1.0])
+    expected = low + expected_fraction.unsqueeze(-1) * seg
+    assert torch.allclose(container.goal_position_in_goal_frame, expected, atol=1e-6)
+
+
+def test_linear_goal_object_start_rejects_frame() -> None:
+    with pytest.raises(ValueError, match="environment frame"):
+        GoalPoseModule(_config(["linear"], linear={"start_fraction": "object"}, frame="Palm"))

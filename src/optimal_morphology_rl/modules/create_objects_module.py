@@ -218,6 +218,7 @@ class Cube(LoadedRigidObject):
         # 'asset': the cube's vsim in assets/objects (cube_mid: 5 cm; cube_40 / cube_60: 4 / 6 cm, same density).
         asset = (config or {}).get("asset", "cube_mid")
         super().__init__(name="cube", asset_path=_object_asset_path(asset), config=config)
+        # [x, y, z] (m, env frame); each entry a number or a [low, high] range drawn uniformly per env on reset; or 'random'.
         self.init_position = self.config.get("init_position", [-0.05, -0.15, 0.15])
         self.init_orientation = self.config.get("init_orientation", [0.7071068, -0.7071068, 0.0, 0.0])
         # Angular velocity (rad/s, env frame) on every reset, e.g. [0, 0, 0.1] to check a rotation reward.
@@ -241,9 +242,13 @@ class Cube(LoadedRigidObject):
             n = reset_buf.sum().item()
             target_buf[reset_buf] = self._sample_random_positions(n, reset_buf.device)
         else:
-            target_buf[reset_buf, 0] = position_config[0]
-            target_buf[reset_buf, 1] = position_config[1]
-            target_buf[reset_buf, 2] = position_config[2]
+            n = int(reset_buf.sum().item())
+            for axis, value in enumerate(position_config):
+                if isinstance(value, (int, float)):
+                    target_buf[reset_buf, axis] = float(value)
+                else:  # [low, high] (a list or a ListConfig)
+                    low, high = float(value[0]), float(value[1])
+                    target_buf[reset_buf, axis] = low + (high - low) * torch.rand(n, device=reset_buf.device)
 
     def _apply_orientation(
         self,

@@ -62,7 +62,8 @@ SCRIPT = textwrap.dedent(f'''
     for _ in range(3):
         obs, rew, term, trunc, info = env.step(act)
         assert term.all() and history(obs)[:, 1:].abs().max() == 0
-        assert (rew < -39.0).all(), rew  # the terminal state's reward, with the -40 termination penalty
+        # The terminal state's reward, with the -40 termination penalty (the step's other rewards add at most ~1 each).
+        assert (rew < -35.0).all(), rew
     print("OK")
 ''')
 

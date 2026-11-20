@@ -1,4 +1,4 @@
-"""Goal-pose module that splits the envs evenly over discrete, sinusoidal and square goal types."""
+"""Goal-pose module that splits the envs evenly over discrete, sinusoidal, square and linear goal types."""
 
 from __future__ import annotations
 
@@ -321,7 +321,93 @@ class _SquareGoal(_GoalType):
         return out
 
 
-GOAL_TYPES: dict[str, type[_GoalType]] = {cls.name: cls for cls in (_DiscreteGoal, _SinusoidalGoal, _SquareGoal)}
+class _LinearGoal(_GoalType):
+    """Goals moving back and forth along a straight segment at a per-env random speed.
+
+    The segment runs from the ``goal_position`` range lows ``(x_lo, y_lo, z_lo)`` to the highs ``(x_hi, y_hi, z_hi)``
+    (equal lo / hi on an axis: that coordinate stays fixed). The goal travels along it at constant speed and turns
+    around at the ends (a triangle wave). Every reset draws a speed in ``speed: {min, max}`` (m/s), a start position
+    as a fraction of the segment in ``start_fraction: [lo, hi]`` (0 = the low end, 1 = the high end; default [0, 1])
+    and a direction (towards the high or the low end, 50/50; ``direction: 1`` / ``-1`` fixes it).
+    ``start_fraction: object`` starts the goal at the reward object's reset position projected onto the segment
+    (clamped to its ends), so a cube spawned anywhere along the path starts at its goal ('create_objects' resets
+    before 'goal_pose'; needs the goal in the environment frame, i.e. no ``frame``).
+    """
+
+    name = "linear"
+
+    def __init__(self, config: dict[str, Any]):
+        super().__init__(config)
+        speed_config = config.get("speed", {})
+        self.min_speed = float(speed_config.get("min", 0.01))
+        self.max_speed = float(speed_config.get("max", 0.03))
+        if self.min_speed <= 0.0 or self.min_speed > self.max_speed:
+            raise ValueError("goal_pose 'linear' requires 0 < min_speed <= max_speed (m/s).")
+        start = config.get("start_fraction", [0.0, 1.0])
+        self.start_at_object = start == "object"
+        if self.start_at_object and self.frame is not None:
+            raise ValueError("goal_pose 'linear' start_fraction 'object' needs the goal in the environment frame (no 'frame').")
+        self.start_lo, self.start_hi = (0.0, 1.0) if self.start_at_object else (float(start[0]), float(start[1]))
+        if not 0.0 <= self.start_lo <= self.start_hi <= 1.0:
+            raise ValueError("goal_pose 'linear' requires 0 <= start_fraction[0] <= start_fraction[1] <= 1.")
+        self.fixed_direction = config.get("direction")
+        if self.fixed_direction not in (None, 1, -1):
+            raise ValueError("goal_pose 'linear' direction must be 1, -1 or omitted (random).")
+
+    def allocate(self, container: ModuleContainer) -> None:
+        device = container.device
+        n = container.total_num_envs
+        ranges = (self.x_range, self.y_range, self.z_range)
+        self._low = torch.tensor([lo for lo, _ in ranges], device=device, dtype=torch.float32)
+        self._high = torch.tensor([hi for _, hi in ranges], device=device, dtype=torch.float32)
+        self._length = float(torch.norm(self._high - self._low).item())
+        if self._length <= 0.0:
+            raise ValueError("goal_pose 'linear' needs a segment of nonzero length (goal_position lo != hi on some axis).")
+        self._dt = self._control_dt(container, self.name)
+        self._time_buf = torch.zeros(n, device=device, dtype=torch.float32)
+        self._speed = torch.zeros(n, device=device, dtype=torch.float32)
+        self._start = torch.zeros(n, device=device, dtype=torch.float32)  # distance along the unfolded path (m)
+        self._direction = torch.ones(n, device=device, dtype=torch.float32)
+
+    def resample(self, container: ModuleContainer, mask: torch.Tensor) -> None:
+        num = int(mask.sum().item())
+        device = mask.device
+        self._speed[mask] = self.min_speed + (self.max_speed - self.min_speed) * torch.rand(num, device=device)
+        if self.start_at_object:
+            obj = container.get("reward_object")
+            if obj is None:
+                raise RuntimeError("goal_pose 'linear' start_fraction 'object' needs 'create_objects' (container.reward_object).")
+            spawn = obj.set_trans_object_to_world_buf[mask, 4:7]  # the reset position just written (env frame)
+            segment = self._high - self._low
+            fraction = (((spawn - self._low) @ segment) / (self._length**2)).clamp(0.0, 1.0)
+        else:
+            fraction = self.start_lo + (self.start_hi - self.start_lo) * torch.rand(num, device=device)
+        if self.fixed_direction is None:
+            direction = torch.where(torch.rand(num, device=device) < 0.5, -1.0, 1.0)
+        else:
+            direction = torch.full((num,), float(self.fixed_direction), device=device)
+        self._direction[mask] = direction
+        # Unfolded path of length 2 L (low -> high -> low): towards the high end on the first half, back on the second.
+        self._start[mask] = torch.where(direction > 0, fraction, 2.0 - fraction) * self._length
+        self._time_buf[mask] = 0.0
+        self._sample_quat(container, mask)
+        container.goal_position_in_goal_frame[mask] = self._positions(self._start[mask])
+
+    def step(self, container: ModuleContainer, mask: torch.Tensor) -> None:
+        self._time_buf += self._dt
+        distance = self._start[mask] + self._speed[mask] * self._time_buf[mask]
+        container.goal_position_in_goal_frame[mask] = self._positions(distance)
+
+    def _positions(self, distance: torch.Tensor) -> torch.Tensor:
+        """Map a distance along the unfolded back-and-forth path to goal positions ``(N, 3)``."""
+        d = distance % (2.0 * self._length)
+        fraction = torch.where(d <= self._length, d, 2.0 * self._length - d) / self._length
+        return self._low + fraction.unsqueeze(-1) * (self._high - self._low)
+
+
+GOAL_TYPES: dict[str, type[_GoalType]] = {
+    cls.name: cls for cls in (_DiscreteGoal, _SinusoidalGoal, _SquareGoal, _LinearGoal)
+}
 
 
 @register_module("goal_pose")
@@ -333,7 +419,7 @@ class GoalPoseModule(BaseModule):
     frame; identity for types without ``frame``). Observations read the goal-frame values; rewards,
     terminations and visualization convert to the environment frame with :func:`goal_in_env_frame`.
 
-    Every goal type under ``types`` (``discrete``, ``sinusoidal``, ``square``) is used, and the envs
+    Every goal type under ``types`` (``discrete``, ``sinusoidal``, ``square``, ``linear``) is used, and the envs
     are split evenly (contiguous blocks, in block order) over them; an optional ``weight``
     (default 1) gives a type a larger share. Goals are resampled for every env selected by the
     reset buffer on every reset call, and the moving types advance every step.
